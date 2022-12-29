@@ -2,25 +2,21 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 
+
 #include "matmul.h"
 
+#include "ngraph/opsets/opset1.hpp"
 #include "ie_precision.hpp"
-#include "memory_desc/cpu_blocked_memory_desc.h"
 #include "cpu_types.h"
 #include "eltwise.h"
+#include "fake_quantize.h"
+#include "utils/general_utils.h"
+#include "memory_desc/cpu_memory_desc_utils.h"
 
 #include <numeric>
 #include <string>
 #include <vector>
 #include <memory>
-#include "common/cpu_memcpy.h"
-#include <ngraph/opsets/opset1.hpp>
-#include "memory_desc/dnnl_blocked_memory_desc.h"
-#include "fake_quantize.h"
-#include "utils/general_utils.h"
-#include "memory_desc/cpu_memory_desc_utils.h"
-#include <dnnl_extension_utils.h>
-#include <common/primitive_hashing_utils.hpp>
 
 using namespace dnnl;
 using namespace InferenceEngine;
@@ -199,8 +195,8 @@ MatMul::MatMul(const std::shared_ptr<ngraph::Node>& op, const GraphContext::CPtr
             " is not an instance of MatMul from opset1";
     }
 
-    transposeIn[0] = matMul->get_transpose_a();
-    transposeIn[1] = matMul->get_transpose_b();
+    matmulAttrs.transposeA = matMul->get_transpose_a();
+    matmulAttrs.transposeB = matMul->get_transpose_b();
 }
 
 bool MatMul::canFuse(const NodePtr& node) const {
@@ -210,10 +206,7 @@ bool MatMul::canFuse(const NodePtr& node) const {
 void MatMul::setPostOps(dnnl::primitive_attr& attr, const VectorDims& dims, bool initWeights = false) {
     dnnl::post_ops ops;
 
-    dnnl::memory::data_type outputDataType = dnnl::memory::data_type::undef;
-    if (outDataDesc) {
-        outputDataType = outDataDesc->getDataType();
-    }
+    dnnl::memory::data_type outputDataType = DnnlExtensionUtils::IEPrecisionToDataType(outputPrecisions[0]);
 
     bool isINT8 = canBeExecutedInInt8(getOriginalInputPrecisionAtPort(0), getOriginalInputPrecisionAtPort(1));
 
@@ -245,8 +238,6 @@ Node::AttrPtr MatMul::initPrimitiveAttr(const VectorDims &dims) {
 
     setPostOps(*attr, dims, true);
 
-    (*attr).set_scratchpad_mode(dnnl::scratchpad_mode::user);
-
     return attr;
 }
 
@@ -255,65 +246,22 @@ Node::AttrPtr MatMul::initPrimitiveAttr() {
     return initPrimitiveAttr(dummyShape.getStaticDims());
 }
 
-/* Example MatMul:
- * 2x128x512(T) * 2x128x512 = 2x512x512
- * First input 2x128x512(T) should be transposed
- * oneDNN requires memory::desc for this input to:
- * - change shapes configuration as if input already transposed (2x128x512) -> (2x512x128)
- * - provide transposed strides (66536, 128, 1) -> (66536, 1, 512)
- */
-static VectorDims getStridesAndModifyShape(Shape& shape, const bool transpose) {
-    const auto getRank = shape.getRank();
-
-    VectorDims strides(getRank, 1);
-    const auto& staticDims = shape.getStaticDims();
-    for (size_t i = 1; i < getRank; i++) {
-        strides[getRank - i - 1 ] = strides[getRank - i] * staticDims[getRank - i];
-    }
-
-    if (transpose && getRank > 1) {
-        // form new shape
-        auto dims = staticDims;
-        std::swap(dims[getRank - 2], dims[getRank - 1]);
-        shape = Shape{dims};
-        // update strides
-        strides[getRank - 1] = staticDims[getRank - 2];
-        strides[getRank - 2] = 1;
-    }
-
-    return strides;
-}
-
-dnnl::memory::desc MatMul::getBiasDescFrom(const DnnlMemoryDescCPtr outMemDesc) {
-    // oneDNN matmul requires shape for bias desc to be the same rank
-    VectorDims biasDims(outMemDesc->getShape().getRank(), 1);
-    const auto outDims = outMemDesc->getShape().getStaticDims();
-    const auto chIdx = getFusingAxis();
-    biasDims[chIdx] = outDims[chIdx];
-    const auto bdt = DnnlExtensionUtils::IEPrecisionToDataType(getOriginalInputPrecisionAtPort(2));
-
-    return dnnl::memory::desc(DnnlExtensionUtils::convertToDnnlDims(biasDims), bdt, memory::format_tag::any);
-}
-
 void MatMul::getSupportedDescriptors() {
-    if (getParentEdges().size() != getOriginalInputsNumber())
-        IE_THROW()  << errorPrefix << " has incorrect number of input edges for layer " << getName();
-    if (getChildEdges().empty())
-        IE_THROW()  << errorPrefix << " has incorrect number of output edges for layer " << getName();
+}
 
-    withBiases = getOriginalInputsNumber() == 3;
+void MatMul::initSupportedPrimitiveDescriptors() {
+    matmulAttrs.withBias = getOriginalInputsNumber() == 3;
 
-    auto firstInPortPrec = getOriginalInputPrecisionAtPort(0);
-    auto secondInPortPrec = getOriginalInputPrecisionAtPort(1);
-    auto outPortPrec = getOriginalOutputPrecisionAtPort(0);
+    inputPrecisions = getOriginalInputPrecisions();
+    outputPrecisions = getOriginalOutputPrecisions();
 
-    if (firstInPortPrec.size() != secondInPortPrec.size())
-        firstInPortPrec = secondInPortPrec = getMaxPrecision(getOriginalInputPrecisions());
+    if (inputPrecisions[0].size() != inputPrecisions[1].size())
+        inputPrecisions[0] = inputPrecisions[1] = getMaxPrecision(getOriginalInputPrecisions());
 
     // fallback to fp32 for any precision that cannot be handled natively
-    if ((!one_of(firstInPortPrec , Precision::U8, Precision::I8, Precision::BF16, Precision::FP32) ||
-         !one_of(secondInPortPrec , Precision::I8, Precision::BF16, Precision::FP32))) {
-        outPortPrec = firstInPortPrec = secondInPortPrec = Precision::FP32;
+    if ((!one_of(inputPrecisions[0] , Precision::U8, Precision::I8, Precision::BF16, Precision::FP32) ||
+         !one_of(inputPrecisions[1] , Precision::I8, Precision::BF16, Precision::FP32))) {
+        outputPrecisions[0] = inputPrecisions[0] = inputPrecisions[1] = Precision::FP32;
     }
 
     Precision postOpsPrec = outPortPrec;
@@ -365,90 +313,34 @@ void MatMul::getSupportedDescriptors() {
         }
     }
 
-    std::vector<Shape> staticInputShapes{inputShape0, inputShape1};
-    if (inputShape0.isDynamic() || inputShape1.isDynamic()) {
-        std::tie(staticInputShapes[0], staticInputShapes[1]) = makeDummyInputShapes(inputShape0, inputShape1);
+    if (!canBeExecutedInInt8( inputPrecisions[0], inputPrecisions[1]) && one_of(outputPrecisions[0], Precision::U8, Precision::I8))
+        outputPrecisions[0] = Precision::FP32; // INT output is not supported for non-INT inputs
+
+
+    auto& creatorsMap = BlockedDescCreator::getCommonCreators();
+    NodeConfig config;
+    config.dynBatchSupport = true;
+    for (size_t i = 0; i < getOriginalInputsNumber(); i++) {
+        PortConfig portConfig;
+        portConfig.inPlace(-1);
+        portConfig.constant(false);
+        portConfig.setMemDesc(creatorsMap.at(LayoutType::ncsp)->createSharedDesc(inputPrecisions[i], getInputShapeAtPort(i)));
+
+        config.inConfs.push_back(portConfig);
     }
 
-    auto staticOutputShape = outputShape.isStatic() ? outputShape : Shape(shapeInferGeneric(staticInputShapes).front());
+    for (size_t i = 0; i < getOriginalOutputsNumber(); i++) {
+        PortConfig portConfig;
+        portConfig.inPlace(canBeInPlace() ? 0 : -1);
+        portConfig.constant(false);
+        portConfig.setMemDesc(creatorsMap.at(LayoutType::ncsp)->createSharedDesc(outputPrecisions[i], getOutputShapeAtPort(i)));
 
-    const VectorDims inStrides0 = getStridesAndModifyShape(staticInputShapes[0], transposeIn[0]);
-    const VectorDims inStrides1 = getStridesAndModifyShape(staticInputShapes[1], transposeIn[1]);
-
-    inDataDesc[0] = std::make_shared<DnnlBlockedMemoryDesc>(firstInPortPrec, staticInputShapes[0], inStrides0);
-    inDataDesc[1] = std::make_shared<DnnlBlockedMemoryDesc>(secondInPortPrec, staticInputShapes[1], inStrides1);
-    outDataDesc   = std::make_shared<DnnlBlockedMemoryDesc>(outPortPrec, staticOutputShape);
-
-    createDescriptor({inDataDesc[0], inDataDesc[1]}, {outDataDesc});
-}
-
-std::pair<Shape, Shape> MatMul::makeDummyInputShapes(const Shape& in0, const Shape& in1) const {
-    if (in0.getRank() < 2 || in1.getRank() < 2) {
-        IE_THROW() << "Can't create dummy inputs with rank less 2";
+        config.outConfs.push_back(portConfig);
     }
 
-    if (in0.getRank() != in1.getRank()) {
-        IE_THROW() << "Can't create dummy inputs if input's rank not equal";
-    }
-
-    auto swapTranspDims = [&](VectorDims& in0, VectorDims& in1) {
-        if (transposeIn[0]) {
-            std::swap(in0[in0.size() - 1], in0[in0.size() - 2]);
-        }
-        if (transposeIn[1]) {
-            std::swap(in1[in1.size() - 1], in1[in1.size() - 2]);
-        }
-    };
-
-    auto inDims0 = in0.getDims();
-    auto inDims1 = in1.getDims();
-
-    auto minDims0 = in0.getMinDims();
-    auto maxDims0 = in0.getMaxDims();
-    auto minDims1 = in1.getMinDims();
-    auto maxDims1 = in1.getMaxDims();
-
-    swapTranspDims(inDims0, inDims1);
-    swapTranspDims(minDims0, minDims1);
-    swapTranspDims(maxDims0, maxDims1);
-
-    auto fillDummy = [&](size_t idx0, size_t idx1) {
-        if (inDims0[idx0] == Shape::UNDEFINED_DIM && inDims1[idx1] == Shape::UNDEFINED_DIM) {
-            inDims0[idx0] = inDims1[idx1] = std::min(std::min(maxDims0[idx0], maxDims1[idx1]),
-                                            std::max(std::max(minDims0[idx0], minDims1[idx1]), static_cast<Dim>(MemoryDescUtils::DEFAULT_DUMMY_VAL)));
-        } else {
-            if (inDims0[idx0] == Shape::UNDEFINED_DIM && inDims1[idx1] != Shape::UNDEFINED_DIM) {
-                if (inDims1[idx1] == 1 && minDims0[idx0] != Shape::UNDEFINED_DIM) {
-                    inDims0[idx0] = std::max<Dim>(minDims0[idx0], 1);
-                } else {
-                    inDims0[idx0] = inDims1[idx1];
-                }
-            } else if (inDims0[idx0] != Shape::UNDEFINED_DIM && inDims1[idx1] == Shape::UNDEFINED_DIM) {
-                if (inDims0[idx0] == 1 && minDims1[idx1] != Shape::UNDEFINED_DIM) {
-                    inDims1[idx1] = std::max<Dim>(minDims1[idx1], 1);
-                } else {
-                    inDims1[idx1] = inDims0[idx0];
-                }
-            }
-        }
-    };
-
-    // fill k
-    fillDummy(inDims0.size() - 1, inDims1.size() - 2);
-
-    // fill m, n
-    if (inDims0[inDims0.size() - 2] == Shape::UNDEFINED_DIM) {
-        inDims0[inDims0.size() - 2] = std::min(maxDims0[inDims0.size() - 2],
-                                               std::max(minDims0[inDims0.size() - 2], static_cast<Dim>(MemoryDescUtils::DEFAULT_DUMMY_VAL)));
-    }
-    if (inDims1[inDims1.size() - 1] == Shape::UNDEFINED_DIM) {
-        inDims1[inDims1.size() - 1] = std::min(maxDims1[inDims1.size() - 1],
-                                               std::max(minDims1[inDims1.size() - 1], static_cast<Dim>(MemoryDescUtils::DEFAULT_DUMMY_VAL)));
-    }
-
-    // fill batches
-    for (size_t i = 0; i < inDims0.size() - 2; i++) {
-        fillDummy(i, i);
+    std::vector<MemoryDescPtr> srcMemoryDescs;
+    for (int i = 0; i < config.inConfs.size(); i++) {
+        srcMemoryDescs.push_back(config.inConfs[i].getMemDesc());
     }
 
     swapTranspDims(inDims0, inDims1);
@@ -542,50 +434,13 @@ InferenceEngine::Precision MatMul::getRuntimePrecision() const {
 }
 
 void MatMul::prepareParams() {
-    auto& dstMemPtr = getChildEdgeAt(0)->getMemoryPtr();
-    auto& src0MemPtr = getParentEdgeAt(0)->getMemoryPtr();
-    auto& src1MemPtr = getParentEdgeAt(1)->getMemoryPtr();
-    if (!dstMemPtr || !dstMemPtr->isAllocated())
-        IE_THROW()  << errorPrefix << " did not allocate destination memory";
-    if (!src0MemPtr || !src0MemPtr->isAllocated() || !src1MemPtr || !src1MemPtr->isAllocated())
-        IE_THROW()  << errorPrefix << " did not allocate input memory";
-
-    const NodeDesc *selected_pd = getSelectedPrimitiveDescriptor();
-    if (selected_pd == nullptr)
-        IE_THROW()  << errorPrefix << " did not set preferable primitive descriptor";
-
-    DnnlMemoryDescPtr src0TransposedDesc;
-    DnnlMemoryDescPtr src1TransposedDesc;
-
-    AttrPtr attr;
-
-    if (isDynamicNode()) {
-        attr = initPrimitiveAttr(dstMemPtr->getStaticDims());
-
-        const auto& src0Desc = src0MemPtr->getDesc();
-        const auto& src1Desc = src1MemPtr->getDesc();
-
-        auto src0Shape = src0Desc.getShape();
-        auto src0Strides = getStridesAndModifyShape(src0Shape, transposeIn[0]);
-        src0TransposedDesc = std::make_shared<DnnlBlockedMemoryDesc>(src0Desc.getPrecision(), src0Shape, src0Strides);
-
-        auto src1Shape = src1Desc.getShape();
-        auto src1Strides = getStridesAndModifyShape(src1Shape, transposeIn[1]);
-        src1TransposedDesc = std::make_shared<DnnlBlockedMemoryDesc>(src1Desc.getPrecision(), src1Shape, src1Strides);
-    } else {
-        attr = initPrimitiveAttr();
-        src0TransposedDesc = inDataDesc[0];
-        src1TransposedDesc = inDataDesc[1];
+    std::vector<MemoryDescPtr> srcMemoryDescs;
+    for (int i = 0; i < getOriginalInputsNumber(); i++) {
+        srcMemoryDescs.push_back(getParentEdgeAt(i)->getMemoryPtr()->getDescPtr());
     }
-
-    auto dstDnnlDesc = dstMemPtr->GetDescWithType<DnnlMemoryDesc>();
-
-    DnnlMemoryDescPtr dnnlBiasMemDesc = nullptr;
-    if (withBiases) {
-        auto& biasMemory = getParentEdgeAt(2)->getMemoryPtr();
-        if (!biasMemory || !biasMemory->isAllocated())
-            IE_THROW()  << errorPrefix << " did not allocate bias memory";
-        dnnlBiasMemDesc = biasMemory->GetDescWithType<DnnlMemoryDesc>();
+    std::vector<MemoryDescPtr> dstMemoryDescs;
+    for (int i = 0; i < getOriginalOutputsNumber(); i++) {
+        dstMemoryDescs.push_back(getChildEdgeAt(i)->getMemoryPtr()->getDescPtr());
     }
 
     MatMulKey key = {src0TransposedDesc, src1TransposedDesc, dnnlBiasMemDesc,
@@ -675,35 +530,7 @@ void MatMul::executeDynamicImpl(dnnl::stream strm) {
 }
 
 const std::vector<impl_desc_type>& MatMul::getPrimitivesPriority() {
-    std::vector<impl_desc_type> priorities = {
-            impl_desc_type::unknown,
-            impl_desc_type::brgemm_avx512_amx,
-            impl_desc_type::brgemm_avx512,
-            impl_desc_type::gemm_blas,
-            impl_desc_type::gemm_avx512,
-            impl_desc_type::gemm_avx2,
-            impl_desc_type::gemm_avx,
-            impl_desc_type::gemm_sse42,
-            impl_desc_type::gemm_any,
-            impl_desc_type::gemm,
-            impl_desc_type::jit_gemm,
-            impl_desc_type::jit_uni_dw,
-            impl_desc_type::jit_uni_1x1,
-            impl_desc_type::jit_uni,
-            impl_desc_type::jit_avx512_dw,
-            impl_desc_type::jit_avx512_1x1,
-            impl_desc_type::jit_avx512,
-            impl_desc_type::jit_avx2_dw,
-            impl_desc_type::jit_avx2_1x1,
-            impl_desc_type::jit_avx2,
-            impl_desc_type::jit_avx_dw,
-            impl_desc_type::jit_avx_1x1,
-            impl_desc_type::jit_avx,
-            impl_desc_type::jit_sse42_dw,
-            impl_desc_type::jit_sse42_1x1,
-            impl_desc_type::jit_sse42,
-            impl_desc_type::ref,
-    };
+    std::vector<impl_desc_type> priorities;
     for (const auto& impl : priorities) {
         if (std::find(implPriorities.begin(), implPriorities.end(), impl) == implPriorities.end())
             implPriorities.push_back(impl);
