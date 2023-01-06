@@ -7,7 +7,7 @@
 #include <ie_parallel.hpp>
 #include <utils/bfloat16.hpp>
 #include <utils/general_utils.h>
-#include <utils/jit_kernel.hpp>
+#include "nodes/kernels/x64/jit_kernel.hpp"
 #include <selective_build.h>
 #include <openvino/core/type/float16.hpp>
 #include <cpu/x64/jit_generator.hpp>
