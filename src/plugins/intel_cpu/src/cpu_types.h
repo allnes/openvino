@@ -160,7 +160,8 @@ enum class Algorithm {
     EltwiseLogicalXor,
     EltwiseLogicalNot,
     EltwiseRelu,
-    EltwiseGelu,
+    EltwiseGeluErf,
+    EltwiseGeluTanh,
     EltwiseElu,
     EltwiseTanh,
     EltwiseSigmoid,
@@ -184,7 +185,6 @@ enum class Algorithm {
     FQCommon,
     FQQuantization,
     FQBinarization,
-    FQRequantization,
 
     // ROIPooling algorithms
     ROIPoolingMax,

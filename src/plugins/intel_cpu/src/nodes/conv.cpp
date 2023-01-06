@@ -355,6 +355,7 @@ const std::vector<impl_desc_type>& Convolution::getPrimitivesPriority() {
         impl_desc_type::gemm_avx2,
         impl_desc_type::gemm_avx,
         impl_desc_type::gemm_sse42,
+        impl_desc_type::gemm,
         impl_desc_type::jit_gemm,
         impl_desc_type::ref_any,
         impl_desc_type::ref,
@@ -556,6 +557,7 @@ void Convolution::getSupportedDescriptors() {
     auto inputShape = getInputShapeAtPort(0);
     auto outputShape = getOutputShapeAtPort(0);
 
+#if defined(OPENVINO_ARCH_X86_64)
     bool acceptedFormat = inputDataType == memory::data_type::bf16;
     bool nspcAdded = false;
     acceptedFormat |= (shouldTryBrgconv && inputDataType == memory::data_type::f32);
@@ -594,6 +596,11 @@ void Convolution::getSupportedDescriptors() {
         out_candidate = std::make_shared<DnnlBlockedMemoryDesc>(outputShape, outputDataType, nspc);
         createDescriptor({ in_candidate }, { out_candidate });
     }
+#else
+    in_candidate = std::make_shared<DnnlBlockedMemoryDesc>(inputShape, inputDataType, nspc);
+    out_candidate = std::make_shared<DnnlBlockedMemoryDesc>(outputShape, outputDataType, nspc);
+    createDescriptor({ in_candidate }, { out_candidate });
+#endif
 }
 
 void Convolution::setPostOps(dnnl::primitive_attr& attr,
