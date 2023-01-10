@@ -76,6 +76,7 @@ std::tuple<T, T, T> Converter::yuv_to_rgb(float y, float u, float v) {
     return std::make_tuple(r, g, b);
 }
 
+#if defined(OV_CPU_X64)
 struct jit_uni_converter : public jit_kernel {
     DECLARE_CPU_JIT_AUX_FUNCTIONS(jit_uni_converter)
 
@@ -264,6 +265,7 @@ void jit_uni_converter::store_tail(const variable<T*> & dst,
 
     copy<T>(ptr[dst], s.pointer(), copy_size);
 }
+#endif
 
 namespace nv12 {
 
@@ -394,6 +396,7 @@ public:
     }
 };
 
+#if defined(OV_CPU_X64)
 template<typename T>
 class JitConverter;
 
@@ -611,7 +614,7 @@ public:
         });
     }
 };
-
+#endif
 }   // namespace nv12
 
 namespace i420 {
@@ -748,6 +751,7 @@ public:
     }
 };
 
+#if defined(OV_CPU_X64)
 template<typename T>
 class JitConverter;
 
@@ -964,7 +968,7 @@ public:
         });
     }
 };
-
+#endif
 }   // namespace i420
 
 /**
@@ -1098,6 +1102,7 @@ void ColorConvert::initSupportedNV12Impls() {
         impls[Precision::FP32][false] = SUPPORTED_IMPL(TwoPlaneConvert, float, ref);
     }
 
+#if defined(OV_CPU_X64)
     // jit_uni
     {
         auto &impls = _supportedImpls[impl_desc_type::jit_uni][algorithm];
@@ -1106,7 +1111,7 @@ void ColorConvert::initSupportedNV12Impls() {
         impls[Precision::FP32][true] = SUPPORTED_IMPL(SinglePlaneConvert, float, jit_uni);
         impls[Precision::FP32][false] = SUPPORTED_IMPL(TwoPlaneConvert, float, jit_uni);
     }
-
+#endif
     #undef SUPPORTED_IMPL
 }
 
@@ -1125,6 +1130,7 @@ void ColorConvert::initSupportedI420Impls() {
         impls[Precision::FP32][false] = SUPPORTED_IMPL(ThreePlaneConvert, float, ref);
     }
 
+#if defined(OV_CPU_X64)
     // jit_uni
     {
         auto &impls = _supportedImpls[impl_desc_type::jit_uni][algorithm];
@@ -1133,7 +1139,7 @@ void ColorConvert::initSupportedI420Impls() {
         impls[Precision::FP32][true] = SUPPORTED_IMPL(SinglePlaneConvert, float, jit_uni);
         impls[Precision::FP32][false] = SUPPORTED_IMPL(ThreePlaneConvert, float, jit_uni);
     }
-
+#endif
     #undef SUPPORTED_IMPL
 }
 
