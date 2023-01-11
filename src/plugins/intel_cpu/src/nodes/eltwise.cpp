@@ -897,7 +897,7 @@ void Eltwise::appendPostOpsImpl(dnnl::post_ops& ops, const VectorDims &postOpDim
 
         appendMemory(depthwiseData, depthwiseMemory, postOpsMem);
     } else {
-        auto dnnlAlgorithm = DnnlExtensionUtils::convertToDnnlAlgorithm(eltwiseAttrs.algorithm);
+        auto dnnlAlgorithm = DnnlExtensionUtils::convertToDnnlAlgorithm(getAlgorithm());
         if (dnnlAlgorithm != dnnl::algorithm::undef) {
             ops.append_eltwise(dnnlAlgorithm, getAlpha(), getBeta());
         } else {
@@ -948,7 +948,7 @@ bool Eltwise::appendAttrPostOps(DnnlPostOpsComposer& dnnlpoc, bool isLastPostOp,
         dnnlpoc.appendBinary(dnnl::algorithm::binary_prelu, scales);
         break;
     default:
-        auto dnnlAlgorithm = DnnlExtensionUtils::convertToDnnlAlgorithm(eltwiseAttrs.algorithm);
+        auto dnnlAlgorithm = DnnlExtensionUtils::convertToDnnlAlgorithm(getAlgorithm());
         if (dnnlAlgorithm != dnnl::algorithm::undef) {
             if (dnnlAlgorithm == dnnl::algorithm::eltwise_linear) {
                 // call dnnlpoc's specialized API to generate optimized postOps sequence
