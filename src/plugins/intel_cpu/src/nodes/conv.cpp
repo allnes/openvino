@@ -327,6 +327,8 @@ InferenceEngine::Precision Convolution::fusedEltwisePrecision(const NodePtr& fus
 const std::vector<impl_desc_type>& Convolution::getPrimitivesPriority() {
     std::vector<impl_desc_type> priorities = {
         impl_desc_type::unknown,
+        impl_desc_type::winograd_acl,
+        impl_desc_type::gemm_acl,
         impl_desc_type::brgconv_avx512_amx_1x1,
         impl_desc_type::brgconv_avx512_amx,
         impl_desc_type::jit_avx512_amx_dw,
@@ -906,7 +908,7 @@ void Convolution::createDescriptor(const std::vector<MemoryDescPtr>& inputDesc,
 
     if (isWinograd())
         algorithms.push_back(dnnl::algorithm::convolution_winograd);
-    algorithms.push_back(dnnl::algorithm::convolution_direct);
+    algorithms.push_back(dnnl::algorithm::convolution_auto);
 
     updatePadding();
 
@@ -1412,7 +1414,7 @@ void Convolution::prepareParams() {
                                             attr);
         };
 
-        const auto alg = (key.implType & impl_desc_type::winograd) ? dnnl::algorithm::convolution_winograd : dnnl::algorithm::convolution_direct;
+        const auto alg = (key.implType & impl_desc_type::winograd) ? dnnl::algorithm::convolution_winograd : dnnl::algorithm::convolution_auto;
         dnnl::primitive_desc desc = createDnnlConvDesc(engine,
                                                        key.inp0->getDnnlDesc(),
                                                        wghDescAny,
@@ -1463,7 +1465,7 @@ void Convolution::prepareParams() {
                                                       key.dilation,
                                                       key.paddingL,
                                                       key.paddingR,
-                                                      dnnl::algorithm::convolution_direct,
+                                                      dnnl::algorithm::convolution_auto,
                                                       key.attr);
 
             if (reorderConvDesc) {

@@ -455,6 +455,7 @@ std::string Node::getPrimitiveDescriptorType() {
 
     SEARCH_TYPE(winograd);
     SEARCH_TYPE(sparse);
+    SEARCH_TYPE(acl);
     SEARCH_TYPE(_dw);
     SEARCH_TYPE(_1x1);
 
