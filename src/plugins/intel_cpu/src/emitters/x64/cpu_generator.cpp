@@ -15,12 +15,13 @@
 #include "jit_dnnl_ext_emitters.hpp"
 #include "jit_conversion_emitters.hpp"
 
-#include "snippets_transformations/op/load_convert.hpp"
-#include "snippets_transformations/op/store_convert.hpp"
-#include "snippets_transformations/op/fused_mul_add.hpp"
-#include "snippets_transformations/op/brgemm_copy_b.hpp"
-#include "snippets_transformations/op/brgemm_cpu.hpp"
-#include "ngraph_transformations/op/swish_cpu.hpp"
+#include "transformations/snippets/x64/op/load_convert.hpp"
+#include "transformations/snippets/x64/op/store_convert.hpp"
+#include "transformations/snippets/x64/op/fused_mul_add.hpp"
+#include "transformations/snippets/x64/op/brgemm_copy_b.hpp"
+#include "transformations/snippets/x64/op/brgemm_cpu.hpp"
+#include "snippets/op/brgemm.hpp"
+#include "transformations/cpu_opset/common/op/swish_cpu.hpp"
 
 #include <ngraph/opsets/opset5.hpp>
 

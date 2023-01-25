@@ -76,7 +76,7 @@ std::tuple<T, T, T> Converter::yuv_to_rgb(float y, float u, float v) {
     return std::make_tuple(r, g, b);
 }
 
-#if defined(OV_CPU_X64)
+#if defined(OPENVINO_ARCH_X86_64)
 struct jit_uni_converter : public jit_kernel {
     DECLARE_CPU_JIT_AUX_FUNCTIONS(jit_uni_converter)
 
@@ -396,7 +396,7 @@ public:
     }
 };
 
-#if defined(OV_CPU_X64)
+#if defined(OPENVINO_ARCH_X86_64)
 template<typename T>
 class JitConverter;
 
@@ -751,7 +751,7 @@ public:
     }
 };
 
-#if defined(OV_CPU_X64)
+#if defined(OPENVINO_ARCH_X86_64)
 template<typename T>
 class JitConverter;
 
@@ -1102,7 +1102,7 @@ void ColorConvert::initSupportedNV12Impls() {
         impls[Precision::FP32][false] = SUPPORTED_IMPL(TwoPlaneConvert, float, ref);
     }
 
-#if defined(OV_CPU_X64)
+#if defined(OPENVINO_ARCH_X86_64)
     // jit_uni
     {
         auto &impls = _supportedImpls[impl_desc_type::jit_uni][algorithm];
@@ -1130,7 +1130,7 @@ void ColorConvert::initSupportedI420Impls() {
         impls[Precision::FP32][false] = SUPPORTED_IMPL(ThreePlaneConvert, float, ref);
     }
 
-#if defined(OV_CPU_X64)
+#if defined(OPENVINO_ARCH_X86_64)
     // jit_uni
     {
         auto &impls = _supportedImpls[impl_desc_type::jit_uni][algorithm];

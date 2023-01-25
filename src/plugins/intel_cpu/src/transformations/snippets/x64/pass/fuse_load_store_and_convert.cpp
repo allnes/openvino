@@ -7,8 +7,8 @@
 #include "fuse_load_store_and_convert.hpp"
 #include "snippets/snippets_isa.hpp"
 
-#include "snippets_transformations/op/load_convert.hpp"
-#include "snippets_transformations/op/store_convert.hpp"
+#include "transformations/snippets/x64/op/load_convert.hpp"
+#include "transformations/snippets/x64/op/store_convert.hpp"
 
 #include "ngraph/rt_info.hpp"
 #include "ngraph/pattern/op/wrap_type.hpp"
