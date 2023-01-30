@@ -29,12 +29,20 @@ public:
         return implType;
     }
 private:
-    EltwiseAttrs eltwiseAttrs{};
+    EltwiseAttrs aclEltwiseAttrs{};
     impl_desc_type implType = impl_desc_type::acl;
     arm_compute::Tensor src1Tensor;
     arm_compute::Tensor src2Tensor;
     arm_compute::Tensor dstTensor;
-    std::unique_ptr<arm_compute::IFunction> acl_op = nullptr;
+    std::unique_ptr<arm_compute::NEArithmeticAddition> acl_add = nullptr;
+    std::unique_ptr<arm_compute::NEArithmeticSubtraction> acl_sub = nullptr;
+    std::unique_ptr<arm_compute::NEPixelWiseMultiplication> acl_mul = nullptr;
+    std::unique_ptr<arm_compute::NEElementwiseDivision> acl_div = nullptr;
+    std::unique_ptr<arm_compute::NEElementwiseSquaredDiff> acl_sqdiff = nullptr;
+    std::unique_ptr<arm_compute::NEElementwiseMax> acl_max = nullptr;
+    std::unique_ptr<arm_compute::NEElementwiseMin> acl_min = nullptr;
+    std::unique_ptr<arm_compute::NEElementwisePower> acl_pow = nullptr;
+    std::unique_ptr<arm_compute::NEElementwiseComparison> acl_comp = nullptr;
 };
 
 class AclEltwiseExecutorBuilder : public EltwiseExecutorBuilder {
@@ -52,7 +60,24 @@ public:
             !dstDescs[0]->hasLayoutType(LayoutType::ncsp))
             return false;
 
-        return true;
+        for (const auto &desc : srcDescs) {
+            if ((desc->getPrecision() != InferenceEngine::Precision::FP32) ||
+                (desc->getShape().isDynamic()))
+                return false;
+        }
+
+        for (const auto &desc : dstDescs) {
+            if ((desc->getPrecision() != InferenceEngine::Precision::FP32) ||
+                (desc->getShape().isDynamic()))
+                return false;
+        }
+
+        switch (eltwiseAttrs.algorithm) {
+            case Algorithm::EltwiseMulAdd:
+            case Algorithm::EltwiseFloorMod:
+            case Algorithm::EltwiseMod: return false;
+            default: return true;
+        }
     }
 
     EltwiseExecutorPtr makeExecutor() const override {
