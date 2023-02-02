@@ -27,7 +27,6 @@ bool AclEltwiseExecutor::init(const EltwiseAttrs &eltwiseAttrs, const std::vecto
                               const std::vector<MemoryDescPtr> &dstDescs,
                               const std::vector<EltwisePostOp> &postOps) {
     aclEltwiseAttrs = eltwiseAttrs;
-    std::cout << 123 << std::endl;
 
     for (const auto &desc : srcDescs) {
         if (desc->getShape().getRank() > 4)
@@ -38,8 +37,6 @@ bool AclEltwiseExecutor::init(const EltwiseAttrs &eltwiseAttrs, const std::vecto
         if (desc->getShape().getRank() > 4)
             return false;
     }
-
-    std::cout << 321 << std::endl;
 
     auto src1Dims = srcDescs[0]->getShape().getStaticDims();
     auto src2Dims = srcDescs[1]->getShape().getStaticDims();
