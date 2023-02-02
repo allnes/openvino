@@ -69,7 +69,6 @@ bool AclMatMulExecutor::init(const MatMulAttrs& matmulAttrs,
 }
 
 void AclMatMulExecutor::exec(const std::vector<MemoryCPtr>& src, const std::vector<MemoryPtr>& dst, std::unordered_map<int, MemoryPtr> postOpsArgs) {
-    std::cout << "matmul\n";
     srcTensor.allocator()->import_memory(src[0]->GetPtr());
     weiTensor.allocator()->import_memory(src[1]->GetPtr());
     dstTensor.allocator()->import_memory(dst[0]->GetPtr());

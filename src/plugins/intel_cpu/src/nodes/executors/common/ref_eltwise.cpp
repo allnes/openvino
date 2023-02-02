@@ -113,8 +113,6 @@ bool RefEltwiseExecutor::init(const EltwiseAttrs& eltwiseAttrs,
 }
 
 void RefEltwiseExecutor::exec(const std::vector<MemoryCPtr>& src, const std::vector<MemoryPtr>& dst, const void *post_ops_data_) {
-    std::cout << "ref" << std::endl;
-
     std::vector<const float*> src_ptrs;
     for (int i = 0; i < src.size(); i++) {
         src_ptrs.push_back(reinterpret_cast<const float*>(src[i]->GetPtr()));
