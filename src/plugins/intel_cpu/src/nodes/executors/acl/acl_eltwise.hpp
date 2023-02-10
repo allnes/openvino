@@ -5,6 +5,7 @@
 #pragma once
 
 #include "../eltwise.hpp"
+#include "utils/acl_utils.hpp"
 #include "arm_compute/runtime/NEON/NEFunctions.h"
 
 namespace ov {
@@ -43,6 +44,8 @@ private:
     std::unique_ptr<arm_compute::NEElementwiseMin> acl_min = nullptr;
     std::unique_ptr<arm_compute::NEElementwisePower> acl_pow = nullptr;
     std::unique_ptr<arm_compute::NEElementwiseComparison> acl_comp = nullptr;
+    std::unique_ptr<arm_compute::NEActivationLayer> acl_act = nullptr;
+    std::function<void()> run_func;
 };
 
 class AclEltwiseExecutorBuilder : public EltwiseExecutorBuilder {
@@ -50,33 +53,26 @@ public:
     bool isSupported(const EltwiseAttrs& eltwiseAttrs,
                      const std::vector<MemoryDescPtr>& srcDescs,
                      const std::vector<MemoryDescPtr>& dstDescs) const override {
-        if (srcDescs[0]->getPrecision() != InferenceEngine::Precision::FP32 ||
-            srcDescs[1]->getPrecision() != InferenceEngine::Precision::FP32 ||
-            dstDescs[0]->getPrecision() != InferenceEngine::Precision::FP32)
-            return false;
-
-        if (!srcDescs[0]->hasLayoutType(LayoutType::ncsp) ||
-            !srcDescs[1]->hasLayoutType(LayoutType::ncsp) ||
-            !dstDescs[0]->hasLayoutType(LayoutType::ncsp))
-            return false;
-
         for (const auto &desc : srcDescs) {
-            if ((desc->getPrecision() != InferenceEngine::Precision::FP32) ||
-                (desc->getShape().isDynamic()))
+            if (!one_of(desc->getPrecision(),
+                        InferenceEngine::Precision::FP32))
                 return false;
         }
 
         for (const auto &desc : dstDescs) {
-            if ((desc->getPrecision() != InferenceEngine::Precision::FP32) ||
-                (desc->getShape().isDynamic()))
+            if (!one_of(desc->getPrecision(),
+                        InferenceEngine::Precision::FP32))
                 return false;
         }
 
         switch (eltwiseAttrs.algorithm) {
             case Algorithm::EltwiseMulAdd:
             case Algorithm::EltwiseFloorMod:
-            case Algorithm::EltwiseMod: return false;
-            default: return true;
+            case Algorithm::EltwisePowerStatic:
+            case Algorithm::EltwiseMod:
+                return false;
+            default:
+                return true;
         }
     }
 

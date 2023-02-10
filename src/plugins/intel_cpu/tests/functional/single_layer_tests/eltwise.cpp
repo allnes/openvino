@@ -154,6 +154,10 @@ protected:
             } else {
                 auto data_tensor = generate_eltwise_input(ElementType::f32, shape);
                 auto data_ptr = reinterpret_cast<float*>(data_tensor.data());
+//                for (int i = 0; i < 4 * 5 * 17 * 2; i++) {
+//                    std::cout << i << " : ";
+//                    std::cout << data_ptr[i] << std::endl;
+//                }
                 std::vector<float> data(data_ptr, data_ptr + ngraph::shape_size(shape));
                 secondaryInput = ngraph::builder::makeConstant(netType, shape, data);
             }
