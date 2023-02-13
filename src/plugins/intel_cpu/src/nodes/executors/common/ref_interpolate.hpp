@@ -1,0 +1,42 @@
+// Copyright (C) 2018-2023 Intel Corporation
+// SPDX-License-Identifier: Apache-2.0
+//
+
+#pragma once
+
+#include "../interpolate.hpp"
+
+namespace ov {
+namespace intel_cpu {
+
+class InterpolateRefExecutor : public InterpolateExecutor {
+public:
+    InterpolateRefExecutor(const InterpolateAttrs& interpAttrs,
+                           const VectorDims &srcDims,
+                           const VectorDims &dstDims,
+                           const std::vector<float> &_dataScales) : dataScales(_dataScales), antialias(interpAttrs.antialias),
+                                                                    InterpolateExecutor(interpAttrs, srcDims, dstDims, _dataScales) {}
+    bool init(const InterpolateAttrs& reduceAttrs,
+              const std::vector<MemoryDescPtr>& srcDescs,
+              const std::vector<MemoryDescPtr>& dstDescs,
+              const dnnl::primitive_attr &attr) override { return true; };
+    void exec(const uint8_t *in_ptr_, uint8_t *out_ptr_, const void *post_ops_data_) override;
+
+private:
+    void NNRef(const uint8_t *in_ptr_, uint8_t *out_ptr_, int B, int C, int ID, int IH, int IW, int OD, int OH, int OW);
+    void linearOnnxRef(const uint8_t *in_ptr_, uint8_t *out_ptr_, int B, int C, int ID, int IH, int IW, int OD, int OH, int OW);
+
+    void cubicRef(const uint8_t *in_ptr_, uint8_t *out_ptr_, int B, int C, int IH, int IW, int OH, int OW);
+    void linearInterpolation(const uint8_t *in_ptr_, uint8_t *out_ptr_, int B, int C, int ID, int IH, int IW,
+                             float fx, float fy, float fz, int OD, int OH, int OW, int kernel_width, bool antialias);
+
+    static float getValue(const uint8_t *base, size_t offset, InferenceEngine::Precision prec);
+    static void setValue(uint8_t *base, size_t offset, float value, InferenceEngine::Precision prec);
+
+private:
+    bool antialias;
+    std::vector<float> dataScales;
+};
+
+}
+}

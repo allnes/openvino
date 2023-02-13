@@ -1,0 +1,102 @@
+// Copyright (C) 2023 Intel Corporation
+// SPDX-License-Identifier: Apache-2.0
+//
+
+#pragma once
+
+#include "executor.hpp"
+
+#include "interpolate.hpp"
+//#if defined(OV_CPU_WITH_ACL)
+//#include "acl/acl_Interpolate.hpp"
+//#endif
+//#include "common/ref_Interpolate.hpp"
+
+#include "onednn/iml_type_mapper.h"
+#include "common/primitive_cache.hpp"
+
+namespace ov {
+namespace intel_cpu {
+
+struct InterpolateExecutorDesc {
+    ExecutorType executorType;
+    InterpolateExecutorBuilderCPtr builder;
+};
+
+const std::vector<InterpolateExecutorDesc>& getInterpolateExecutorsList();
+
+class InterpolateExecutorFactory : public ExecutorFactory {
+public:
+    InterpolateExecutorFactory(const InterpolateAttrs& InterpolateAttrs,
+                          const std::vector<MemoryDescPtr>& srcDescs,
+                          const std::vector<MemoryDescPtr>& dstDescs,
+                          const ExecutorContext::CPtr context) : ExecutorFactory(context) {
+        for (auto& desc : getInterpolateExecutorsList()) {
+            if (desc.builder->isSupported(InterpolateAttrs, srcDescs, dstDescs)) {
+                supportedDescs.push_back(desc);
+            }
+        }
+    }
+
+    ~InterpolateExecutorFactory() = default;
+    virtual InterpolateExecutorPtr makeExecutor(const InterpolateAttrs& InterpolateAttrs,
+                                               const std::vector<MemoryDescPtr>& srcDescs,
+                                               const std::vector<MemoryDescPtr>& dstDescs,
+                                               const dnnl::primitive_attr &attr) {
+        auto build = [&](const InterpolateExecutorDesc* desc) {
+            switch (desc->executorType) {
+#if defined(OPENVINO_ARCH_X86_64)
+                case ExecutorType::x64: {
+            auto builder = [&](const JitInterpolateExecutor::Key& key) -> InterpolateExecutorPtr {
+                auto executor = desc->builder->makeExecutor(context);
+                if (executor->init(InterpolateAttrs, srcDescs, dstDescs, attr)) {
+                    return executor;
+                } else {
+                    return nullptr;
+                }
+            };
+
+            auto key = JitInterpolateExecutor::Key(InterpolateAttrs, srcDescs, dstDescs, attr);
+            auto res = runtimeCache->getOrCreate(key, builder);
+            return res.first;
+        } break;
+#endif
+                default: {
+                    auto executor = desc->builder->makeExecutor(context);
+                    if (executor->init(InterpolateAttrs, srcDescs, dstDescs, attr)) {
+                        return executor;
+                    }
+                } break;
+            }
+
+            InterpolateExecutorPtr ptr = nullptr;
+            return ptr;
+        };
+
+
+        if (chosenDesc) {
+            if (auto executor = build(chosenDesc)) {
+                return executor;
+            }
+        }
+
+        for (const auto& sd : supportedDescs) {
+            if (auto executor = build(&sd)) {
+                chosenDesc = &sd;
+                return executor;
+            }
+        }
+
+        IE_THROW() << "Supported executor is not found";
+    }
+
+private:
+    std::vector<InterpolateExecutorDesc> supportedDescs;
+    const InterpolateExecutorDesc* chosenDesc = nullptr;
+};
+
+using InterpolateExecutorFactoryPtr = std::shared_ptr<InterpolateExecutorFactory>;
+using InterpolateExecutorFactoryCPtr = std::shared_ptr<const InterpolateExecutorFactory>;
+
+}   // namespace intel_cpu
+}   // namespace ov
