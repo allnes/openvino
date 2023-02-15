@@ -44,7 +44,8 @@ public:
                      const std::vector<MemoryDescPtr>& srcDescs,
                      const std::vector<MemoryDescPtr>& dstDescs) const override {
         for (const auto &desc : srcDescs) {
-            if (desc->hasLayoutType(LayoutType::nCsp8c)) {
+            if (desc->hasLayoutType(LayoutType::nCsp8c) ||
+                desc->hasLayoutType(LayoutType::nCsp16c)) {
                 return false;
             }
             if (!one_of(desc->getPrecision(),
@@ -54,7 +55,8 @@ public:
         }
 
         for (const auto &desc : dstDescs) {
-            if (desc->hasLayoutType(LayoutType::nCsp8c)) {
+            if (desc->hasLayoutType(LayoutType::nCsp8c) ||
+                desc->hasLayoutType(LayoutType::nCsp16c)) {
                 return false;
             }
             if (!one_of(desc->getPrecision(),
