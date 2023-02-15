@@ -7,6 +7,9 @@
 #include "executor.hpp"
 
 #include "mvn.hpp"
+#if defined(OV_CPU_WITH_ACL)
+#include "acl/acl_mvn.hpp"
+#endif
 #include "x64/jit_mvn.hpp"
 #include "common/ref_mvn.hpp"
 
@@ -27,7 +30,8 @@ class MVNExecutorFactory : public ExecutorFactory {
 public:
     MVNExecutorFactory(const MVNAttrs& mvnAttrs,
                        const std::vector<MemoryDescCPtr>& srcDescs,
-                       const std::vector<MemoryDescCPtr>& dstDescs) : ExecutorFactory() {
+                       const std::vector<MemoryDescCPtr>& dstDescs,
+                       const ExecutorContext::CPtr context) : ExecutorFactory(context) {
         for (auto& desc : getMVNExecutorsList()) {
             if (desc.builder->isSupported(mvnAttrs, srcDescs, dstDescs)) {
                 supportedDescs.push_back(desc);
@@ -45,7 +49,7 @@ public:
 #if defined(OPENVINO_ARCH_X86_64)
                 case ExecutorType::x64: {
                     auto builder = [&](const JitMVNExecutor::Key& key) -> MVNExecutorPtr {
-                        auto executor = desc->builder->makeExecutor();
+                        auto executor = desc->builder->makeExecutor(context);
                         if (executor->init(mvnAttrs, srcDescs, dstDescs, attr)) {
                             return executor;
                         } else {
@@ -54,12 +58,12 @@ public:
                     };
 
                     auto key = JitMVNExecutor::Key(mvnAttrs, srcDescs, dstDescs, attr);
-                    auto res = runtimeCache->getOrCreate(key, builder);
+                    auto res = context->getRuntimeCache()->getOrCreate(key, builder);
                     return res.first;
                 } break;
 #endif
                 default: {
-                    auto executor = desc->builder->makeExecutor();
+                    auto executor = desc->builder->makeExecutor(context);
                     if (executor->init(mvnAttrs, srcDescs, dstDescs, attr)) {
                         return executor;
                     }
