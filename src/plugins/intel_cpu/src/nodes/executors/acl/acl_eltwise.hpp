@@ -35,17 +35,8 @@ private:
     arm_compute::Tensor src1Tensor;
     arm_compute::Tensor src2Tensor;
     arm_compute::Tensor dstTensor;
-    std::unique_ptr<arm_compute::NEArithmeticAddition> acl_add = nullptr;
-    std::unique_ptr<arm_compute::NEArithmeticSubtraction> acl_sub = nullptr;
-    std::unique_ptr<arm_compute::NEPixelWiseMultiplication> acl_mul = nullptr;
-    std::unique_ptr<arm_compute::NEElementwiseDivision> acl_div = nullptr;
-    std::unique_ptr<arm_compute::NEElementwiseSquaredDiff> acl_sqdiff = nullptr;
-    std::unique_ptr<arm_compute::NEElementwiseMax> acl_max = nullptr;
-    std::unique_ptr<arm_compute::NEElementwiseMin> acl_min = nullptr;
-    std::unique_ptr<arm_compute::NEElementwisePower> acl_pow = nullptr;
-    std::unique_ptr<arm_compute::NEElementwiseComparison> acl_comp = nullptr;
-    std::unique_ptr<arm_compute::NEActivationLayer> acl_act = nullptr;
-    std::function<void()> run_func;
+    std::function<void()> exec_func;
+    bool is_unary_op = false;
 };
 
 class AclEltwiseExecutorBuilder : public EltwiseExecutorBuilder {
@@ -54,22 +45,45 @@ public:
                      const std::vector<MemoryDescPtr>& srcDescs,
                      const std::vector<MemoryDescPtr>& dstDescs) const override {
         for (const auto &desc : srcDescs) {
+            if (desc->hasLayoutType(LayoutType::nCsp8c)) {
+                return false;
+            }
             if (!one_of(desc->getPrecision(),
+                        InferenceEngine::Precision::FP16,
                         InferenceEngine::Precision::FP32))
                 return false;
         }
 
         for (const auto &desc : dstDescs) {
+            if (desc->hasLayoutType(LayoutType::nCsp8c)) {
+                return false;
+            }
             if (!one_of(desc->getPrecision(),
+                        InferenceEngine::Precision::FP16,
                         InferenceEngine::Precision::FP32))
                 return false;
         }
 
         switch (eltwiseAttrs.algorithm) {
-            case Algorithm::EltwiseMulAdd:
+            case Algorithm::EltwiseIsFinite:
+            case Algorithm::EltwiseIsInf:
+            case Algorithm::EltwiseIsNaN:
             case Algorithm::EltwiseFloorMod:
-            case Algorithm::EltwisePowerStatic:
             case Algorithm::EltwiseMod:
+            case Algorithm::EltwisePowerStatic:
+            case Algorithm::EltwiseMulAdd:
+            case Algorithm::EltwiseLogicalAnd:
+            case Algorithm::EltwiseLogicalOr:
+            case Algorithm::EltwiseLogicalXor:
+            case Algorithm::EltwiseLogicalNot:
+            case Algorithm::EltwiseGeluTanh:
+            case Algorithm::EltwisePrelu: // TODO: accuracy problem
+            case Algorithm::EltwiseMish:
+            case Algorithm::EltwiseHsigmoid:
+            case Algorithm::EltwiseRoundHalfToEven:
+            case Algorithm::EltwiseRoundHalfAwayFromZero:
+            case Algorithm::EltwiseErf:
+            case Algorithm::EltwiseSoftSign:
                 return false;
             default:
                 return true;

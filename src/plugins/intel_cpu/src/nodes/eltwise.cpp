@@ -848,12 +848,6 @@ void Eltwise::execute(dnnl::stream strm) {
     dstMemory.push_back(getChildEdgeAt(0)->getMemoryPtr());
 
     execPtr->exec(srcMemory, dstMemory, fqDataPtrs.data());
-//    for (int i = 0; i < 4 * 5 * 17 * 2; i++) {
-//        std::cout << i << " : ";
-//        std::cout << reinterpret_cast<float*>(srcMemory[0]->GetPtr())[i] << " + ";
-//        std::cout << reinterpret_cast<float*>(srcMemory[1]->GetPtr())[i] << " = ";
-//        std::cout << reinterpret_cast<float*>(dstMemory[0]->GetPtr())[i] << std::endl;
-//    }
 }
 
 void Eltwise::executeDynamicImpl(dnnl::stream strm) {

@@ -9,11 +9,10 @@ namespace intel_cpu {
 
 const std::vector<EltwiseExecutorDesc>& getEltwiseExecutorsList() {
     static std::vector<EltwiseExecutorDesc> descs = {
+        OV_CPU_INSTANCE_X64(ExecutorType::x64, std::make_shared<JitEltwiseExecutorBuilder>())
         OV_CPU_INSTANCE_ACL(ExecutorType::Acl, std::make_shared<AclEltwiseExecutorBuilder>())
-//        OV_CPU_INSTANCE_X64(ExecutorType::x64, std::make_shared<JitEltwiseExecutorBuilder>())
-//        OV_CPU_INSTANCE_COMMON(ExecutorType::Common, std::make_shared<RefEltwiseExecutorBuilder>())
+        OV_CPU_INSTANCE_COMMON(ExecutorType::Common, std::make_shared<RefEltwiseExecutorBuilder>())
     };
-
     return descs;
 }
 
