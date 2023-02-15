@@ -266,10 +266,10 @@ bool AclEltwiseExecutor::init(const EltwiseAttrs &eltwiseAttrs, const std::vecto
             };
             break;
         case Algorithm::EltwiseAbs:
-            if (!NEElementwiseUnaryLayer<ElementWiseUnary::ABS>::validate(&src1TensorInfo, &dstTensorInfo))
+            if (!NEAbsLayer::validate(&src1TensorInfo, &dstTensorInfo))
                 return false;
             exec_func = [this]{
-                auto acl_op = std::make_unique<NEElementwiseUnaryLayer<ElementWiseUnary::ABS>>();
+                auto acl_op = std::make_unique<NEAbsLayer>();
                 acl_op->configure(&src1Tensor, &dstTensor);
                 acl_op->run();
             };
