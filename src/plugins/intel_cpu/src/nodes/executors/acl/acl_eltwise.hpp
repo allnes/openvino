@@ -5,7 +5,6 @@
 #pragma once
 
 #include "../eltwise.hpp"
-#include "utils/acl_utils.hpp"
 #include "arm_compute/runtime/NEON/NEFunctions.h"
 
 namespace ov {
@@ -15,7 +14,7 @@ arm_compute::TensorShape eltwiseShapeCast(const VectorDims& dims);
 
 class AclEltwiseExecutor : public EltwiseExecutor {
 public:
-    AclEltwiseExecutor();
+    AclEltwiseExecutor(const ExecutorContext::CPtr context);
 
     bool init(const EltwiseAttrs& eltwiseAttrs,
               const std::vector<MemoryDescPtr>& srcDescs,
@@ -90,8 +89,8 @@ public:
         }
     }
 
-    EltwiseExecutorPtr makeExecutor() const override {
-        return std::make_shared<AclEltwiseExecutor>();
+    EltwiseExecutorPtr makeExecutor(const ExecutorContext::CPtr context) const override {
+        return std::make_shared<AclEltwiseExecutor>(context);
     }
 };
 

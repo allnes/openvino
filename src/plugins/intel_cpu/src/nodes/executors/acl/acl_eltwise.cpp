@@ -3,6 +3,7 @@
 //
 
 #include "acl_eltwise.hpp"
+#include "acl_utils.hpp"
 
 namespace ov {
 namespace intel_cpu {
@@ -37,7 +38,7 @@ std::vector<ov::intel_cpu::Dim> reshape_sizes(std::vector<ov::intel_cpu::Dim> di
     return result_dims;
 }
 
-AclEltwiseExecutor::AclEltwiseExecutor() : EltwiseExecutor() {}
+AclEltwiseExecutor::AclEltwiseExecutor(const ExecutorContext::CPtr context) : EltwiseExecutor(context) {}
 
 bool AclEltwiseExecutor::init(const EltwiseAttrs &eltwiseAttrs, const std::vector<MemoryDescPtr> &srcDescs,
                               const std::vector<MemoryDescPtr> &dstDescs,
