@@ -466,7 +466,6 @@ void Interpolate::initSupportedPrimitiveDescriptors() {
             pushDesc(LayoutType::ncsp, jit_avx2);
         }
     }
-    std::cout << "initSupportedPrimitiveDescriptors - end" << std::endl;
 }
 
 bool Interpolate::needShapeInfer() const {
