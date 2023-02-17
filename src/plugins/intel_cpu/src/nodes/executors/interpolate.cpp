@@ -50,7 +50,7 @@ void ov::intel_cpu::InterpolateExecutor::buildTblNN(const SizeVector& srcDimPad5
                                                   const std::vector<float>& dataScales, InterpolateLayoutType layout, InterpolateNearestMode nearestMode) {
     const int dimSize = dataRank;
     float fz = (dimSize == 5) ? dataScales[dimSize - 3] : 1.f;
-    float fy = dataScales[dimSize - 2];
+     float fy = dataScales[dimSize - 2];
     float fx = dataScales[dimSize - 1];
     size_t ID = srcDimPad5d[2], IH = srcDimPad5d[3], IW = srcDimPad5d[4];
     size_t OD = dstDim5d[2], OH = dstDim5d[3], OW = dstDim5d[4];

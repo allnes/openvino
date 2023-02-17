@@ -140,9 +140,6 @@ public:
 
     virtual impl_desc_type getImplType() const = 0;
 
-    void setImplPriorities(const std::vector<impl_desc_type>& implPriorities) {
-        this->implPriorities = implPriorities;
-    }
     virtual ~InterpolateExecutor() = default;
     VectorDims getSrcDimPad5d() const { return srcDimPad5d; }
 
@@ -169,7 +166,6 @@ protected:
     size_t dataRank;
     std::vector<int> indexTable;
     const ExecutorContext::CPtr _context;
-    std::vector<impl_desc_type> implPriorities;
 };
 
 using InterpolateExecutorPtr = std::shared_ptr<InterpolateExecutor>;

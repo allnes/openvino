@@ -333,8 +333,6 @@ Interpolate::Interpolate(const std::shared_ptr<ngraph::Node>& op, const GraphCon
 }
 
 void Interpolate::getSupportedDescriptors() {
-    std::cout << "getSupportedDescriptors" << std::endl;
-
     if (getParentEdges().size() != 3 && getParentEdges().size() != 4)
         // data, target_shape, scale, axis(optional).
         IE_THROW() << errorPrefix << " has incorrect number of input edges";
@@ -468,6 +466,7 @@ void Interpolate::initSupportedPrimitiveDescriptors() {
             pushDesc(LayoutType::ncsp, jit_avx2);
         }
     }
+    std::cout << "initSupportedPrimitiveDescriptors - end" << std::endl;
 }
 
 bool Interpolate::needShapeInfer() const {
@@ -552,6 +551,7 @@ void Interpolate::prepareParams() {\
     }
 
     auto dataScales = getScales(getPaddedInputShape(srcDims, interpAttrs.padBegin, interpAttrs.padEnd), dstDims);
+    interpAttrs.dataScales = dataScales;
     if (getOutputShapeAtPort(0).getRank() > 2 && (dataScales[0] != 1.f || dataScales[1] != 1.f)) {
         IE_THROW() << "Interpolate layer only supports resize on spatial dimensions(depth, height and width)";
     }
