@@ -19,7 +19,8 @@
 #include "transformations/utils/utils.hpp"
 #include "common/pass/rnn_sequences_optimization.hpp"
 #include "transformations/common_optimizations/reshape_sequence_fusion.hpp"
-#include "ngram_fusion.hpp"
+#include "common/pass/ngram_fusion.hpp"
+#include "transformations/defs.hpp"
 
 #include "itt.hpp"
 
@@ -31,22 +32,25 @@ inline void ConvertToCPUSpecificOpset(std::shared_ptr<ngraph::Function> &nGraphF
 
     ngraph::pass::Manager manager;
     manager.set_per_pass_validation(false);
-    manager.register_pass<ConvertMatMulToFC>();
-    manager.register_pass<AlignMatMulInputRanks>();
-    manager.register_pass<ConvertTileToSeqTiles>();
-    manager.register_pass<FullyConnectedBiasFusion>();
-    manager.register_pass<ConvertToPowerStatic>();
-    manager.register_pass<ConvertToLeakyRelu>();
-    manager.register_pass<ConvertToSwishCPU>();
-    manager.register_pass<OptimizeSequenceTransposes>();
+    CPU_REGISTER_PASS_COMMON(manager, ConvertMatMulToFC);
+    CPU_REGISTER_PASS_COMMON(manager, AlignMatMulInputRanks);
+    CPU_REGISTER_PASS_COMMON(manager, ConvertTileToSeqTiles);
+    CPU_REGISTER_PASS_COMMON(manager, FullyConnectedBiasFusion);
+    CPU_REGISTER_PASS_COMMON(manager, ConvertToPowerStatic);
+    CPU_REGISTER_PASS_COMMON(manager, ConvertToLeakyRelu);
+    CPU_REGISTER_PASS_COMMON(manager, ConvertToSwishCPU);
+    CPU_REGISTER_PASS_COMMON(manager, OptimizeSequenceTransposes);
     if (!ov::op::util::has_op_with_type<ngraph::op::FakeQuantize>(nGraphFunc)) {
-        manager.register_pass<ReshapeFullyConnectedFusion>();
+        CPU_REGISTER_PASS_COMMON(manager, ReshapeFullyConnectedFusion);
     }
     // after transformation "MoveEltwiseUpThroughDataMov" there can be Reshape sequences that should be eliminated or fused
-    manager.register_pass<ov::pass::ReshapeSequenceFusion>();
-    manager.register_pass<ngraph::pass::ConstantFolding>();
-    manager.register_pass<ov::pass::ConvertPrecision>(precisions_map {{ ngraph::element::i64, ngraph::element::i32 }});
-    manager.register_pass<NgramFusion>();
+    CPU_REGISTER_PASS_COMMON(manager, ov::pass::ReshapeSequenceFusion);
+    CPU_REGISTER_PASS_COMMON(manager, ov::pass::ConstantFolding);
+    CPU_REGISTER_PASS_COMMON(manager, ov::pass::ConvertPrecision, precisions_map {{ ngraph::element::i64, ngraph::element::i32 }});
+    CPU_REGISTER_PASS_COMMON(manager, NgramFusion);
+    CPU_REGISTER_PASS_COMMON(manager, ov::pass::Validate);
+
+        manager.register_pass<NgramFusion>();
     manager.register_pass<ov::pass::Validate>();
 
     manager.run_passes(nGraphFunc);
