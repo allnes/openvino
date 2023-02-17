@@ -328,8 +328,10 @@ const std::vector<double> cubeCoefs = {
 
 const std::vector<fusingSpecificParams> interpolateFusingParamsSet{
         emptyFusingSpec,
+#if defined(OPENVINO_ARCH_X86) || defined(OPENVINO_ARCH_X86_64)
         fusingSwish,
         fusingFakeQuantizePerTensorRelu,
+#endif
 };
 
 std::vector<std::map<std::string, std::string>> filterAdditionalConfig() {

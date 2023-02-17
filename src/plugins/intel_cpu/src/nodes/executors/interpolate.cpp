@@ -4,42 +4,44 @@
 
 #include "interpolate.hpp"
 
-ov::intel_cpu::InterpolateExecutor::InterpolateExecutor(const InterpolateAttrs& interpAttrs,
-                                                      const VectorDims &srcDims,
-                                                      const VectorDims &dstDims,
-                                                      const std::vector<float> &dataScales) :
-    mode(interpAttrs.mode), configured_for_layout(interpAttrs.layout), coordTransMode(interpAttrs.coordTransMode),
-    inputPrec(interpAttrs.inPrc), outputPrec(interpAttrs.outPrc) {
-    srcDimPad5d = to5Dim(getPaddedInputShape(srcDims, interpAttrs.padBegin, interpAttrs.padEnd));
+bool ov::intel_cpu::InterpolateExecutor::init(const InterpolateAttrs& interpolateAttrs,
+                                         const std::vector<MemoryDescPtr>& srcDescs,
+                                         const std::vector<MemoryDescPtr>& dstDescs,
+                                         const dnnl::primitive_attr &attr) {
+    const auto &srcDims = srcDescs[0]->getShape().getStaticDims();
+    const auto &dstDims = dstDescs[0]->getShape().getStaticDims();
+    interpAttrs = interpolateAttrs;
+    srcDimPad5d = to5Dim(getPaddedInputShape(srcDims, interpolateAttrs.padBegin, interpolateAttrs.padEnd));
     dstDim5d = to5Dim(dstDims);
-    srcDataSize = interpAttrs.inPrc.size();
-    dstDataSize = interpAttrs.outPrc.size();
+    srcDataSize = interpolateAttrs.inPrc.size();
+    dstDataSize = interpolateAttrs.outPrc.size();
     dataRank = srcDims.size();
     spatialDimSize = getSpatialDimsNum(dataRank);
 
-    switch (mode) {
+    switch (interpAttrs.mode) {
         case InterpolateMode::nearest: {
-            buildTblNN(srcDimPad5d, dstDim5d, dataScales, interpAttrs.layout, interpAttrs.nearestMode);
+            buildTblNN(srcDimPad5d, dstDim5d, interpAttrs.dataScales, interpolateAttrs.layout, interpolateAttrs.nearestMode);
             break;
         }
         case InterpolateMode::linear_onnx: {
-            buildTblLinearOnnx(srcDimPad5d, dstDim5d, dataScales, interpAttrs.layout);
+            buildTblLinearOnnx(srcDimPad5d, dstDim5d, interpAttrs.dataScales, interpolateAttrs.layout);
             break;
         }
         case InterpolateMode::linear: {
             static constexpr int LINEAR_KERNEL = 2;
-            buildTblLinear(srcDimPad5d, dstDim5d, dataScales, LINEAR_KERNEL, interpAttrs.antialias);
+            buildTblLinear(srcDimPad5d, dstDim5d, interpAttrs.dataScales, LINEAR_KERNEL, interpolateAttrs.antialias);
             break;
         }
         case InterpolateMode::cubic: {
-            buildTblCubic(srcDimPad5d, dstDim5d, dataScales, interpAttrs.cubeCoeff, interpAttrs.layout);
+            buildTblCubic(srcDimPad5d, dstDim5d, interpAttrs.dataScales, interpolateAttrs.cubeCoeff, interpolateAttrs.layout);
             break;
         }
         default: {
-            IE_THROW() << "Interpolate executor does not support interpolate mode: " << mode;
+            IE_THROW() << "Interpolate executor does not support interpolate mode: " << interpAttrs.mode;
             break;
         }
     }
+    return true;
 }
 // =====================================================================================================================
 // index layout:
@@ -81,7 +83,7 @@ float ov::intel_cpu::InterpolateExecutor::coordTransToInput(int outCoord, float 
     if (scale == 1.0f || (inShape == outShape)) {
         return outCoord;
     }
-    switch (coordTransMode) {
+    switch (interpAttrs.coordTransMode) {
         case InterpolateCoordTransMode::half_pixel: {
             return (outCoord + 0.5f) / scale - 0.5f;
             break;

@@ -425,6 +425,7 @@ void Graph::InitNodes() {
     OV_ITT_SCOPE(FIRST_INFERENCE, itt::domains::intel_cpu_LT, "Graph::InitNodes");
     for (auto &node : graphNodes) {
         node->init();
+        std::cout << node->getName() << std::endl;
     }
 }
 

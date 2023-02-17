@@ -9,18 +9,20 @@
 namespace ov {
 namespace intel_cpu {
 
-class InterpolateRefExecutor : public InterpolateExecutor {
+class RefInterpolateExecutor : public InterpolateExecutor {
 public:
-    InterpolateRefExecutor(const InterpolateAttrs& interpAttrs,
-                           const VectorDims &srcDims,
-                           const VectorDims &dstDims,
-                           const std::vector<float> &_dataScales) : dataScales(_dataScales), antialias(interpAttrs.antialias),
-                                                                    InterpolateExecutor(interpAttrs, srcDims, dstDims, _dataScales) {}
-    bool init(const InterpolateAttrs& reduceAttrs,
+    RefInterpolateExecutor(const ExecutorContext::CPtr context) : InterpolateExecutor(context) {}
+
+    bool init(const InterpolateAttrs& interpolateAttrs,
               const std::vector<MemoryDescPtr>& srcDescs,
               const std::vector<MemoryDescPtr>& dstDescs,
-              const dnnl::primitive_attr &attr) override { return true; };
+              const dnnl::primitive_attr &attr) override;
+
     void exec(const uint8_t *in_ptr_, uint8_t *out_ptr_, const void *post_ops_data_) override;
+
+    impl_desc_type getImplType() const override {
+        return implType;
+    }
 
 private:
     void NNRef(const uint8_t *in_ptr_, uint8_t *out_ptr_, int B, int C, int ID, int IH, int IW, int OD, int OH, int OW);
@@ -34,9 +36,22 @@ private:
     static void setValue(uint8_t *base, size_t offset, float value, InferenceEngine::Precision prec);
 
 private:
+    impl_desc_type implType = impl_desc_type::ref;
     bool antialias;
     std::vector<float> dataScales;
 };
 
+class RefInterpolateExecutorBuilder : public InterpolateExecutorBuilder {
+public:
+    bool isSupported(const InterpolateAttrs& interpolateAttrs,
+                     const std::vector<MemoryDescPtr>& srcDescs,
+                     const std::vector<MemoryDescPtr>& dstDescs) const override {
+        return true;
+    }
+
+    InterpolateExecutorPtr makeExecutor(const ExecutorContext::CPtr context) const override {
+        return std::make_shared<RefInterpolateExecutor>(context);
+    }
+};
 }
 }

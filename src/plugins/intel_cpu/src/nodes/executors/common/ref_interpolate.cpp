@@ -7,11 +7,11 @@
 #include "nodes/common/cpu_memcpy.h"
 #include "utils/bfloat16.hpp"
 
-void ov::intel_cpu::InterpolateRefExecutor::exec(const uint8_t *in_ptr_, uint8_t *out_ptr_, const void *post_ops_data_) {
+void ov::intel_cpu::RefInterpolateExecutor::exec(const uint8_t *in_ptr_, uint8_t *out_ptr_, const void *post_ops_data_) {
     size_t N = srcDimPad5d[0], C = srcDimPad5d[1], ID = srcDimPad5d[2], IH = srcDimPad5d[3], IW = srcDimPad5d[4];
     size_t OD = dstDim5d[2], OH = dstDim5d[3], OW = dstDim5d[4];
 
-    switch (mode) {
+    switch (interpAttrs.mode) {
         case InterpolateMode::nearest: {
             NNRef(in_ptr_, out_ptr_, N, C, ID, IH, IW, OD, OH, OW);
             break;
@@ -35,13 +35,13 @@ void ov::intel_cpu::InterpolateRefExecutor::exec(const uint8_t *in_ptr_, uint8_t
             break;
         }
         default: {
-            IE_THROW() << "Interpolate layer has unsupported interpolate mode: " << mode;
+            IE_THROW() << "Interpolate layer has unsupported interpolate mode: " << interpAttrs.mode;
         }
     }
 }
 
-void ov::intel_cpu::InterpolateRefExecutor::NNRef(const uint8_t *in_ptr_, uint8_t *out_ptr_, int B, int C, int ID, int IH, int IW,
-                                                int OD, int OH, int OW) {
+void ov::intel_cpu::RefInterpolateExecutor::NNRef(const uint8_t *in_ptr_, uint8_t *out_ptr_, int B, int C, int ID, int IH, int IW,
+                                                  int OD, int OH, int OW) {
     int *index_d = static_cast<int*>(&indexTable[0]);
     int *index_h = static_cast<int*>(&indexTable[OD]);
     int *index_w = static_cast<int*>(&indexTable[OD + OH]);
@@ -62,8 +62,8 @@ void ov::intel_cpu::InterpolateRefExecutor::NNRef(const uint8_t *in_ptr_, uint8_
     });
 }
 
-void ov::intel_cpu::InterpolateRefExecutor::linearOnnxRef(const uint8_t *in_ptr_, uint8_t *out_ptr_, int B, int C, int ID, int IH, int IW,
-                                                        int OD, int OH, int OW) {
+void ov::intel_cpu::RefInterpolateExecutor::linearOnnxRef(const uint8_t *in_ptr_, uint8_t *out_ptr_, int B, int C, int ID, int IH, int IW,
+                                                          int OD, int OH, int OW) {
     std::vector<int*> indexPtr(MAX_INPUT_INTERPOLATE, 0);
     std::vector<float*> weightPtr(MAX_INPUT_INTERPOLATE, 0);
     // FrontTopLeft:0, FrontTopRight:1, FrontBottomLeft:2, FrontBottomRight:3,
@@ -160,7 +160,7 @@ void ov::intel_cpu::InterpolateRefExecutor::linearOnnxRef(const uint8_t *in_ptr_
     });
 }
 
-void ov::intel_cpu::InterpolateRefExecutor::cubicRef(const uint8_t *in_ptr_, uint8_t *out_ptr_, int B, int C, int IH, int IW, int OH, int OW) {
+void ov::intel_cpu::RefInterpolateExecutor::cubicRef(const uint8_t *in_ptr_, uint8_t *out_ptr_, int B, int C, int IH, int IW, int OH, int OW) {
     const int idxNum = 1;
     int *xOrigin = static_cast<int*>(&indexTable[0]);
     float *xFactor = reinterpret_cast<float*>(&indexTable[OW]);
@@ -192,7 +192,7 @@ void ov::intel_cpu::InterpolateRefExecutor::cubicRef(const uint8_t *in_ptr_, uin
     });
 }
 
-float ov::intel_cpu::InterpolateRefExecutor::getValue(const uint8_t *base, size_t offset, InferenceEngine::Precision prec) {
+float ov::intel_cpu::RefInterpolateExecutor::getValue(const uint8_t *base, size_t offset, InferenceEngine::Precision prec) {
     const uint8_t *baseOffset = base + offset;
     switch (prec) {
         case Precision::U8: {
@@ -221,7 +221,7 @@ float ov::intel_cpu::InterpolateRefExecutor::getValue(const uint8_t *base, size_
     }
 }
 
-void ov::intel_cpu::InterpolateRefExecutor::setValue(uint8_t *base, size_t offset, float value, InferenceEngine::Precision prec) {
+void ov::intel_cpu::RefInterpolateExecutor::setValue(uint8_t *base, size_t offset, float value, InferenceEngine::Precision prec) {
     uint8_t *baseOffset = base + offset;
     switch (prec) {
         case Precision::U8: {
@@ -250,12 +250,12 @@ void ov::intel_cpu::InterpolateRefExecutor::setValue(uint8_t *base, size_t offse
     }
 }
 
-void ov::intel_cpu::InterpolateRefExecutor::linearInterpolation(const uint8_t *in_ptr_, uint8_t *out_ptr_, int B, int C, int ID, int IH, int IW,
-                                                              float fx, float fy, float fz, int OD, int OH, int OW, int kernel_width, bool antialias) {
+void ov::intel_cpu::RefInterpolateExecutor::linearInterpolation(const uint8_t *in_ptr_, uint8_t *out_ptr_, int B, int C, int ID, int IH, int IW,
+                                                                float fx, float fy, float fz, int OD, int OH, int OW, int kernel_width, bool antialias) {
     if (IW == OW && IH == OH && ID == OD) {
         size_t spatialDimSize = IW * IH * ID;
         // TODO: enable when fusing into interp with linear mode will support
-        if (/*fusedWith.empty() &&*/ inputPrec == outputPrec) {
+        if (/*fusedWith.empty() &&*/ interpAttrs.inPrc == interpAttrs.outPrc) {
             size_t size = B * C * spatialDimSize * srcDataSize;
             cpu_memcpy(out_ptr_, in_ptr_, size);
         } else {
@@ -263,8 +263,8 @@ void ov::intel_cpu::InterpolateRefExecutor::linearInterpolation(const uint8_t *i
                 const uint8_t *in_ptr_nc = in_ptr_ + (spatialDimSize * C * b + spatialDimSize * c) * srcDataSize;
                 uint8_t *out_ptr_nc = out_ptr_ + (spatialDimSize * C * b + spatialDimSize * c) * dstDataSize;
                 for (size_t i = 0; i < spatialDimSize; i++) {
-                    float dstValue = getValue(in_ptr_nc, i * srcDataSize, inputPrec);
-                    setValue(out_ptr_nc, i * dstDataSize, dstValue, outputPrec);
+                    float dstValue = getValue(in_ptr_nc, i * srcDataSize, interpAttrs.inPrc);
+                    setValue(out_ptr_nc, i * dstDataSize, dstValue, interpAttrs.outPrc);
                 }
             });
         }
@@ -348,7 +348,7 @@ void ov::intel_cpu::InterpolateRefExecutor::linearInterpolation(const uint8_t *i
                                 float w = weightOD[oz * diaOD + iz] * weightOH[oy * diaOH + iy] * weightOW[ox * diaOW + ix];
                                 float value = getValue(in_ptr_nc,
                                                        (idxOD[oz * diaOD + iz] * IH * IW + idxOH[oy * diaOH + iy] * IW + idxOW[ox * diaOW + ix])
-                                                       * srcDataSize, inputPrec);
+                                                       * srcDataSize, interpAttrs.inPrc);
 
                                 sum += w * value;
                                 wsum += w;
@@ -357,14 +357,21 @@ void ov::intel_cpu::InterpolateRefExecutor::linearInterpolation(const uint8_t *i
                     }
 
                     if (!wsum) {
-                        setValue(out_ptr_ncdh, ox * dstDataSize, 0.f, outputPrec);
+                        setValue(out_ptr_ncdh, ox * dstDataSize, 0.f, interpAttrs.outPrc);
                     } else {
                         float dst_value = sum / wsum;
-                        setValue(out_ptr_ncdh, ox * dstDataSize, dst_value, outputPrec);
+                        setValue(out_ptr_ncdh, ox * dstDataSize, dst_value, interpAttrs.outPrc);
                     }
                 }
             }
         }
     });
+}
+
+bool ov::intel_cpu::RefInterpolateExecutor::init(const ov::intel_cpu::InterpolateAttrs &interpolateAttrs,
+                                                 const std::vector<MemoryDescPtr> &srcDescs,
+                                                 const std::vector<MemoryDescPtr> &dstDescs,
+                                                 const dnnl::primitive_attr &attr) {
+    return InterpolateExecutor::init(interpolateAttrs, srcDescs, dstDescs, attr);
 }
 

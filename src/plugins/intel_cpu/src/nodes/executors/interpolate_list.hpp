@@ -10,8 +10,8 @@
 //#if defined(OV_CPU_WITH_ACL)
 //#include "acl/acl_Interpolate.hpp"
 //#endif
-//#include "common/ref_Interpolate.hpp"
-
+#include "common/ref_interpolate.hpp"
+#include "x64/jit_interpolate.hpp"
 #include "onednn/iml_type_mapper.h"
 #include "common/primitive_cache.hpp"
 
@@ -39,7 +39,7 @@ public:
     }
 
     ~InterpolateExecutorFactory() = default;
-    virtual InterpolateExecutorPtr makeExecutor(const InterpolateAttrs& InterpolateAttrs,
+    virtual InterpolateExecutorPtr makeExecutor(const InterpolateAttrs& interpolateAttrs,
                                                const std::vector<MemoryDescPtr>& srcDescs,
                                                const std::vector<MemoryDescPtr>& dstDescs,
                                                const dnnl::primitive_attr &attr) {
@@ -63,7 +63,7 @@ public:
 #endif
                 default: {
                     auto executor = desc->builder->makeExecutor(context);
-                    if (executor->init(InterpolateAttrs, srcDescs, dstDescs, attr)) {
+                    if (executor->init(interpolateAttrs, srcDescs, dstDescs, attr)) {
                         return executor;
                     }
                 } break;

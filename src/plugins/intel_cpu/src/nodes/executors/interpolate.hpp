@@ -12,7 +12,6 @@
 
 #define MAX_INPUT_INTERPOLATE 8
 
-
 using namespace InferenceEngine;
 
 namespace ov {
@@ -63,6 +62,7 @@ struct InterpolateAttrs {
     InferenceEngine::Precision inPrc;
     InferenceEngine::Precision outPrc;
     InterpolateLayoutType layout;
+    std::vector<float> dataScales;
 };
 
 inline SizeVector getPaddedInputShape(const VectorDims &srcDims,
@@ -130,17 +130,19 @@ public:
     static constexpr size_t SCALES_ID = 2;
     static constexpr size_t AXES_ID = 3;
     static constexpr int CUBIC_GRID_LEN = 4;
-    InterpolateExecutor(const InterpolateAttrs& interpAttrs,
-                        const VectorDims &srcDims,
-                        const VectorDims &dstDims,
-                        const std::vector<float> &dataScales);
+    InterpolateExecutor(const ExecutorContext::CPtr context) : _context(context) {};
 
-    virtual bool init(const InterpolateAttrs& reduceAttrs,
+    virtual bool init(const InterpolateAttrs& interpolateAttrs,
                       const std::vector<MemoryDescPtr>& srcDescs,
                       const std::vector<MemoryDescPtr>& dstDescs,
-                      const dnnl::primitive_attr &attr) = 0;
+                      const dnnl::primitive_attr &attr);
     virtual void exec(const uint8_t *in_ptr_, uint8_t *out_ptr_, const void *post_ops_data_) = 0;
 
+    virtual impl_desc_type getImplType() const = 0;
+
+    void setImplPriorities(const std::vector<impl_desc_type>& implPriorities) {
+        this->implPriorities = implPriorities;
+    }
     virtual ~InterpolateExecutor() = default;
     VectorDims getSrcDimPad5d() const { return srcDimPad5d; }
 
@@ -160,15 +162,14 @@ private:
     std::vector<float> getCubicCoeffs(float mantissa, float a);
 
 protected:
-    InterpolateMode mode;
-    InterpolateCoordTransMode coordTransMode;
-    InterpolateLayoutType configured_for_layout;
+    InterpolateAttrs interpAttrs;
     VectorDims srcDimPad5d, dstDim5d;
-    InferenceEngine::Precision inputPrec, outputPrec;
     size_t srcDataSize, dstDataSize;
     int spatialDimSize;
     size_t dataRank;
     std::vector<int> indexTable;
+    const ExecutorContext::CPtr _context;
+    std::vector<impl_desc_type> implPriorities;
 };
 
 using InterpolateExecutorPtr = std::shared_ptr<InterpolateExecutor>;
