@@ -420,9 +420,9 @@ void Interpolate::initSupportedPrimitiveDescriptors() {
             config.inConfs[AXES_ID].setMemDesc(creatorsMap.at(LayoutType::ncsp)->createSharedDesc(axesType, getInputShapeAtPort(AXES_ID)));
 
         config.outConfs[0].setMemDesc(creatorsMap.at(dataFormat)->createSharedDesc(outputPrecision, getOutputShapeAtPort(0)));
-#if defined(OPENVINO_ARCH_X86_64)
-        supportedPrimitiveDescriptors.push_back({config, impl_type});
-#else
+//#if defined(OPENVINO_ARCH_X86_64)
+//        supportedPrimitiveDescriptors.push_back({config, impl_type});
+//#else
         std::vector<MemoryDescPtr> srcMemoryDescs;
         for (int i = 0; i < config.inConfs.size(); i++) {
             srcMemoryDescs.push_back(config.inConfs[i].getMemDesc());
@@ -435,7 +435,7 @@ void Interpolate::initSupportedPrimitiveDescriptors() {
         auto factory = std::make_shared<InterpolateExecutorFactory>(interpAttrs, srcMemoryDescs, dstMemoryDescs,
                                                                     std::make_shared<ExecutorContext>(context, getPrimitivesPriority()));
         supportedPrimitiveDescriptors.push_back({config, implDetail, factory});
-#endif
+//#endif
     };
 
     const auto &dataMinDims = getInputShapeAtPort(DATA_ID).getMinDims();
@@ -556,26 +556,26 @@ void Interpolate::prepareParams() {\
     }
     InterpolateKey key = {interpAttrs, srcDims, dstDims, dnnl::primitive_attr()};
     setPostOps(key.attr, dstDims);
-#if defined(OPENVINO_ARCH_X86_64)
-    auto buildExecutor = [&](const InterpolateKey& key) -> std::shared_ptr<InterpolateExecutor> {
-        std::shared_ptr<InterpolateExecutor> executor;
-        if ((key.nodeAttrs.mode == InterpolateMode::nearest || key.nodeAttrs.mode == InterpolateMode::linear_onnx ||
-            key.nodeAttrs.mode == InterpolateMode::cubic) &&
-            ((key.nodeAttrs.layout != InterpolateLayoutType::planar && mayiuse(cpu::x64::sse41)) ||
-                (mayiuse(cpu::x64::avx2) && key.nodeAttrs.inPrc == Precision::FP32))) {
-            executor = std::make_shared<InterpolateJitExecutor>(key.nodeAttrs,
-                                                               key.srcDims,
-                                                               key.dstDims,
-                                                               key.nodeAttrs.dataScales,
-                                                               key.attr);
-        }
-        return executor;
-    };
-
-    auto cache = context->getParamsCache();
-    auto result = cache->getOrCreate(key, buildExecutor);
-    execPtr = result.first;
-#else
+//#if defined(OPENVINO_ARCH_X86_64)
+//    auto buildExecutor = [&](const InterpolateKey& key) -> std::shared_ptr<InterpolateExecutor> {
+//        std::shared_ptr<InterpolateExecutor> executor;
+//        if ((key.nodeAttrs.mode == InterpolateMode::nearest || key.nodeAttrs.mode == InterpolateMode::linear_onnx ||
+//            key.nodeAttrs.mode == InterpolateMode::cubic) &&
+//            ((key.nodeAttrs.layout != InterpolateLayoutType::planar && mayiuse(cpu::x64::sse41)) ||
+//                (mayiuse(cpu::x64::avx2) && key.nodeAttrs.inPrc == Precision::FP32))) {
+//            executor = std::make_shared<InterpolateJitExecutor>(key.nodeAttrs,
+//                                                               key.srcDims,
+//                                                               key.dstDims,
+//                                                               key.nodeAttrs.dataScales,
+//                                                               key.attr);
+//        }
+//        return executor;
+//    };
+//
+//    auto cache = context->getParamsCache();
+//    auto result = cache->getOrCreate(key, buildExecutor);
+//    execPtr = result.first;
+//#else
     std::vector<MemoryDescPtr> srcMemoryDescs;
     for (int i = 0; i < getOriginalInputsNumber(); i++) {
         srcMemoryDescs.push_back(getParentEdgeAt(i)->getMemoryPtr()->getDescPtr());
@@ -587,7 +587,7 @@ void Interpolate::prepareParams() {\
     auto selectedPD = getSelectedPrimitiveDescriptor();
     execPtr = selectedPD->getExecutorFactoryAs<InterpolateExecutorFactory>()->makeExecutor(interpAttrs, srcMemoryDescs, dstMemoryDescs, key.attr);
     selectedPD->setImplementationType(execPtr->getImplType());
-#endif
+//#endif
     lastOutputDims = dstDims;
 }
 

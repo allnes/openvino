@@ -1348,12 +1348,12 @@ private:
 
 // for ndhwc and nCdhw8c[16c]
 // input may be f32/bf16/int8, fused->output varies
-void ov::intel_cpu::InterpolateJitExecutor::NNCGathered(const uint8_t *in_ptr_, uint8_t *out_ptr_, const void *post_ops_data_,
+void ov::intel_cpu::JITInterpolateExecutor::NNCGathered(const uint8_t *in_ptr_, uint8_t *out_ptr_, const void *post_ops_data_,
                                                       int B, int C, int ID, int IH, int IW, int OD, int OH, int OW) {
     int *index_d = static_cast<int*>(&indexTable[0]);
     int *index_h = static_cast<int*>(&indexTable[OD]);
     int *index_w = static_cast<int*>(&indexTable[OD + OH]);
-    bool is_nhwc = (configured_for_layout == by_channel);
+    bool is_nhwc = (jitInterpolateAttrs.layout == by_channel);
 
     for (int b = 0; b < B; b++) {
         if (is_nhwc) {
@@ -1404,7 +1404,7 @@ void ov::intel_cpu::InterpolateJitExecutor::NNCGathered(const uint8_t *in_ptr_, 
 }
 
 
-void ov::intel_cpu::InterpolateJitExecutor::NNPlanar(const uint8_t *in_ptr_, uint8_t *out_ptr_, const void *post_ops_data_,
+void ov::intel_cpu::JITInterpolateExecutor::NNPlanar(const uint8_t *in_ptr_, uint8_t *out_ptr_, const void *post_ops_data_,
                                                    int B, int C, int ID, int IH, int IW, int OD, int OH, int OW) {
     int *index_d = static_cast<int*>(&indexTable[0]);
     int *index_h = static_cast<int*>(&indexTable[OD]);
@@ -1436,7 +1436,7 @@ void ov::intel_cpu::InterpolateJitExecutor::NNPlanar(const uint8_t *in_ptr_, uin
 }
 
 
-void ov::intel_cpu::InterpolateJitExecutor::linearOnnxPlanar(const uint8_t *in_ptr_, uint8_t *out_ptr_, const void *post_ops_data_, int B, int C,
+void ov::intel_cpu::JITInterpolateExecutor::linearOnnxPlanar(const uint8_t *in_ptr_, uint8_t *out_ptr_, const void *post_ops_data_, int B, int C,
                                                            int ID, int IH, int IW, int OD, int OH, int OW) {
     // FrontTopLeft:0, FrontTopRight:1, FrontBottomLeft:2, FrontBottomRight:3, EndTopLeft:4,   EndTopRight:5,   EndBottomLeft:6,   EndBottomRight:7
     // weight: Left:0, ritht:1, top:2, bottom:3, front:4, end:5
@@ -1460,7 +1460,7 @@ void ov::intel_cpu::InterpolateJitExecutor::linearOnnxPlanar(const uint8_t *in_p
     });
 }
 
-void ov::intel_cpu::InterpolateJitExecutor::linearOnnxCGathered(const uint8_t *in_ptr_, uint8_t *out_ptr_, const void *post_ops_data_,
+void ov::intel_cpu::JITInterpolateExecutor::linearOnnxCGathered(const uint8_t *in_ptr_, uint8_t *out_ptr_, const void *post_ops_data_,
                                                               int B, int C, int ID, int IH, int IW, int OD, int OH, int OW) {
     // left:OW right:OW Top:OH Bottom:OH Front:OD End:OD
     std::vector<int*> indexPtr(MAX_INPUT_INTERPOLATE, 0);
@@ -1480,7 +1480,7 @@ void ov::intel_cpu::InterpolateJitExecutor::linearOnnxCGathered(const uint8_t *i
     weightPtr[4] = reinterpret_cast<float*>(&indexTable[scratchLen + 2 * OW + 2 * OH]);
     weightPtr[5] = reinterpret_cast<float*>(&indexTable[scratchLen + 2 * OW + 2 * OH + OD]);
 
-    bool isByChannel = (configured_for_layout == by_channel) ? true : false;
+    bool isByChannel = (jitInterpolateAttrs.layout == by_channel) ? true : false;
 
     int blkSize = mayiuse(cpu::x64::avx512_core) ? 16 : 8;
     int CB = isByChannel ? 1 : div_up(C, blkSize);
@@ -1532,7 +1532,7 @@ void ov::intel_cpu::InterpolateJitExecutor::linearOnnxCGathered(const uint8_t *i
     });
 }
 
-void ov::intel_cpu::InterpolateJitExecutor::cubicCGathered(const uint8_t *in_ptr_, uint8_t *out_ptr_, const void *post_ops_data_,
+void ov::intel_cpu::JITInterpolateExecutor::cubicCGathered(const uint8_t *in_ptr_, uint8_t *out_ptr_, const void *post_ops_data_,
                                                          int B, int C, int IH, int IW, int OH, int OW) {
     const int idxNum = 1;
     int *xOrigin = static_cast<int*>(&indexTable[0]);
@@ -1542,9 +1542,9 @@ void ov::intel_cpu::InterpolateJitExecutor::cubicCGathered(const uint8_t *in_ptr
 
     int blkSize = mayiuse(cpu::x64::avx512_core) ? 16 : 8;
     int CB = div_up(C, blkSize);
-    int CSize = configured_for_layout == InterpolateLayoutType::by_channel ? C : blkSize * CB;
-    int CGatherLen = configured_for_layout == InterpolateLayoutType::by_channel ? C : blkSize;
-    int workAmount = configured_for_layout == InterpolateLayoutType::by_channel ? C : CB;
+    int CSize = jitInterpolateAttrs.layout == InterpolateLayoutType::by_channel ? C : blkSize * CB;
+    int CGatherLen = jitInterpolateAttrs.layout == InterpolateLayoutType::by_channel ? C : blkSize;
+    int workAmount = jitInterpolateAttrs.layout == InterpolateLayoutType::by_channel ? C : CB;
 
     parallel_for3d(B, OH, OW, [&](size_t b, size_t h, size_t w) {
         uint8_t *out_ptr_nhw = out_ptr_ + (OH * OW * CSize * b + OW * CGatherLen * h + CGatherLen * w) * dstDataSize;
@@ -1579,7 +1579,7 @@ void ov::intel_cpu::InterpolateJitExecutor::cubicCGathered(const uint8_t *in_ptr
     });
 }
 
-void ov::intel_cpu::InterpolateJitExecutor::cubicPlanar(const uint8_t *in_ptr_, uint8_t *out_ptr_, const void *post_ops_data_,
+void ov::intel_cpu::JITInterpolateExecutor::cubicPlanar(const uint8_t *in_ptr_, uint8_t *out_ptr_, const void *post_ops_data_,
                                                       int B, int C, int IH, int IW, int OH, int OW) {
     int tblAdvance = 0;
     int *xOrigin = static_cast<int*>(&indexTable[tblAdvance]);
@@ -1615,12 +1615,11 @@ void ov::intel_cpu::InterpolateJitExecutor::cubicPlanar(const uint8_t *in_ptr_, 
     });
 }
 
-ov::intel_cpu::InterpolateJitExecutor::InterpolateJitExecutor(const InterpolateAttrs& interpAttrs,
-                                                            const VectorDims &srcDims,
-                                                            const VectorDims &dstDims,
-                                                            const std::vector<float> &dataScales,
-                                                            const dnnl::primitive_attr &attr) :
-        InterpolateExecutor(interpAttrs, srcDims, dstDims, dataScales) {
+bool ov::intel_cpu::JITInterpolateExecutor::init(const InterpolateAttrs &interpolateAttrs,
+                                                 const std::vector<MemoryDescPtr> &srcDescs,
+                                                 const std::vector<MemoryDescPtr> &dstDescs,
+                                                 const dnnl::primitive_attr &attr) {
+    jitInterpolateAttrs = interpolateAttrs;
     auto jcp = jit_interpolate_config_params();
     jcp.mode = interpAttrs.mode;
     jcp.src_prc = interpAttrs.inPrc;
@@ -1635,7 +1634,7 @@ ov::intel_cpu::InterpolateJitExecutor::InterpolateJitExecutor(const InterpolateA
     jcp.IW = srcDimPad5d[4];
     jcp.IH = srcDimPad5d[3];
     jcp.ID = srcDimPad5d[2];
-    jcp.spatial_dim_size = getSpatialDimsNum(srcDims.size());
+    jcp.spatial_dim_size = getSpatialDimsNum(srcDescs[0]->getShape().getDims().size());
     jcp.layout = interpAttrs.layout;
     if (jcp.layout != InterpolateLayoutType::planar) {
         if (mayiuse(cpu::x64::avx512_core)) {
@@ -1656,18 +1655,21 @@ ov::intel_cpu::InterpolateJitExecutor::InterpolateJitExecutor(const InterpolateA
     } else {
         IE_THROW() << "Can't compile InterpolateJitExecutor";
     }
+    return true;
 }
 
-void ov::intel_cpu::InterpolateJitExecutor::exec(const uint8_t *in_ptr_, uint8_t *out_ptr_, const void *post_ops_data_) {
+void ov::intel_cpu::JITInterpolateExecutor::exec(const std::vector<MemoryCPtr>& src, const std::vector<MemoryPtr>& dst, const void *post_ops_data_) {
+    auto in_ptr_ = static_cast<const uint8_t *>(src[0]->GetPtr());
+    auto out_ptr_ = static_cast<uint8_t *>(dst[0]->GetPtr());
     size_t N = srcDimPad5d[0], C = srcDimPad5d[1], ID = srcDimPad5d[2], IH = srcDimPad5d[3], IW = srcDimPad5d[4];
     size_t OD = dstDim5d[2], OH = dstDim5d[3], OW = dstDim5d[4];
 
     if (!interpolateKernel) {
         IE_THROW() << "Can't execute, kernel for Interpolate node is not compiled";
     }
-    switch (mode) {
+    switch (jitInterpolateAttrs.mode) {
         case InterpolateMode::nearest: {
-            if (configured_for_layout == InterpolateLayoutType::planar) {
+            if (jitInterpolateAttrs.layout == InterpolateLayoutType::planar) {
                 NNPlanar(in_ptr_, out_ptr_, post_ops_data_, N, C, ID, IH, IW, OD, OH, OW);
             } else {
                 NNCGathered(in_ptr_, out_ptr_, post_ops_data_, N, C, ID, IH, IW, OD, OH, OW);
@@ -1675,7 +1677,7 @@ void ov::intel_cpu::InterpolateJitExecutor::exec(const uint8_t *in_ptr_, uint8_t
             break;
         }
         case InterpolateMode::linear_onnx: {
-            if (configured_for_layout == InterpolateLayoutType::planar) {
+            if (jitInterpolateAttrs.layout == InterpolateLayoutType::planar) {
                 linearOnnxPlanar(in_ptr_, out_ptr_, post_ops_data_, N, C, ID, IH, IW, OD, OH, OW);
             } else {
                 linearOnnxCGathered(in_ptr_, out_ptr_, post_ops_data_, N, C, ID, IH, IW, OD, OH, OW);
@@ -1683,7 +1685,7 @@ void ov::intel_cpu::InterpolateJitExecutor::exec(const uint8_t *in_ptr_, uint8_t
             break;
         }
         case InterpolateMode::cubic: {
-            if (configured_for_layout == InterpolateLayoutType::planar) {
+            if (jitInterpolateAttrs.layout == InterpolateLayoutType::planar) {
                 cubicPlanar(in_ptr_, out_ptr_, post_ops_data_, N, C, IH, IW, OH, OW);
             } else {
                 cubicCGathered(in_ptr_, out_ptr_, post_ops_data_, N, C, IH, IW, OH, OW);
@@ -1691,10 +1693,10 @@ void ov::intel_cpu::InterpolateJitExecutor::exec(const uint8_t *in_ptr_, uint8_t
             break;
         }
         default: {
-            IE_THROW() << "InterpolateJitExecutor has unsupported interpolate mode: " << mode;
+            IE_THROW() << "JITInterpolateExecutor has unsupported interpolate mode: " << jitInterpolateAttrs.mode;
         }
     }
 }
 
-}
-}
+} // namespace intel_cpu
+} // namespace ov

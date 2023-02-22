@@ -51,20 +51,20 @@ struct jit_uni_interpolate_kernel {
     const dnnl_primitive_attr &attr_;
 };
 
-class InterpolateJitExecutor : public InterpolateExecutor {
+class JITInterpolateExecutor : public InterpolateExecutor {
 public:
-    InterpolateJitExecutor(const InterpolateAttrs &interpAttrs,
-                           const VectorDims &srcDims,
-                           const VectorDims &dstDims,
-                           const std::vector<float> &dataScales,
-                           const dnnl::primitive_attr &attr);
+    JITInterpolateExecutor(const ExecutorContext::CPtr context) : InterpolateExecutor(context) {}
 
     bool init(const InterpolateAttrs &interpolateAttrs,
               const std::vector<MemoryDescPtr> &srcDescs,
               const std::vector<MemoryDescPtr> &dstDescs,
-              const dnnl::primitive_attr &attr) override { return true; };
+              const dnnl::primitive_attr &attr) override;
 
     void exec(const std::vector<MemoryCPtr>& src, const std::vector<MemoryPtr>& dst, const void *post_ops_data_) override;
+
+    impl_desc_type getImplType() const override {
+        return implType;
+    }
 
 private:
     // nearest neighbor
@@ -89,8 +89,23 @@ private:
                         int B, int C, int IH, int IW, int OH, int OW);
 
 private:
+    InterpolateAttrs jitInterpolateAttrs;
+    impl_desc_type implType = impl_desc_type::jit;
     std::shared_ptr<jit_uni_interpolate_kernel> interpolateKernel = nullptr;
 };
 
-}
-}
+class JITInterpolateExecutorBuilder : public InterpolateExecutorBuilder {
+public:
+    bool isSupported(const InterpolateAttrs& interpolateAttrs,
+                     const std::vector<MemoryDescPtr>& srcDescs,
+                     const std::vector<MemoryDescPtr>& dstDescs) const override {
+        return true;
+    }
+
+    InterpolateExecutorPtr makeExecutor(const ExecutorContext::CPtr context) const override {
+        return std::make_shared<JITInterpolateExecutor>(context);
+    }
+};
+
+} // namespace intel_cpu
+} // namespace ov

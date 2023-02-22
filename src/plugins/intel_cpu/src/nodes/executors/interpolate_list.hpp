@@ -11,7 +11,10 @@
 #include "acl/acl_interpolate.hpp"
 #endif
 #include "common/ref_interpolate.hpp"
+#if defined(OPENVINO_ARCH_X86) || defined(OPENVINO_ARCH_X86_64)
 #include "x64/jit_interpolate.hpp"
+#endif
+
 #include "onednn/iml_type_mapper.h"
 #include "common/primitive_cache.hpp"
 
@@ -45,22 +48,22 @@ public:
                                                const dnnl::primitive_attr &attr) {
         auto build = [&](const InterpolateExecutorDesc* desc) {
             switch (desc->executorType) {
-#if defined(OPENVINO_ARCH_X86_64)
-                case ExecutorType::x64: {
-            auto builder = [&](const JitInterpolateExecutor::Key& key) -> InterpolateExecutorPtr {
-                auto executor = desc->builder->makeExecutor(context);
-                if (executor->init(InterpolateAttrs, srcDescs, dstDescs, attr)) {
-                    return executor;
-                } else {
-                    return nullptr;
-                }
-            };
-
-            auto key = JitInterpolateExecutor::Key(InterpolateAttrs, srcDescs, dstDescs, attr);
-            auto res = runtimeCache->getOrCreate(key, builder);
-            return res.first;
-        } break;
-#endif
+//#if defined(OPENVINO_ARCH_X86_64)
+//                case ExecutorType::x64: {
+//            auto builder = [&](const JitInterpolateExecutor::Key& key) -> InterpolateExecutorPtr {
+//                auto executor = desc->builder->makeExecutor(context);
+//                if (executor->init(interpolateAttrs, srcDescs, dstDescs, attr)) {
+//                    return executor;
+//                } else {
+//                    return nullptr;
+//                }
+//            };
+//
+//            auto key = JitInterpolateExecutor::Key(interpolateAttrs, srcDescs, dstDescs, attr);
+//            auto res = runtimeCache->getOrCreate(key, builder);
+//            return res.first;
+//        } break;
+//#endif
                 default: {
                     auto executor = desc->builder->makeExecutor(context);
                     if (executor->init(interpolateAttrs, srcDescs, dstDescs, attr)) {
