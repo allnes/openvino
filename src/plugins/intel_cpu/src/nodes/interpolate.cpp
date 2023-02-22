@@ -668,7 +668,6 @@ void Interpolate::execute(dnnl::stream strm) {
     auto &dstMemPtr = getChildEdgeAt(0)->getMemoryPtr();
     auto &srcMemPtr = getParentEdgeAt(DATA_ID)->getMemoryPtr();
 
-    uint8_t *dst_data = reinterpret_cast<uint8_t*>(dstMemPtr->GetPtr());
     const uint8_t *src_data_origin = reinterpret_cast<uint8_t*>(srcMemPtr->GetData());
 
     const auto &srcDim = srcMemPtr->getStaticDims();
@@ -742,8 +741,8 @@ void Interpolate::execute(dnnl::stream strm) {
     } else {
         src_data = src_data_origin;
     }
-
-    execPtr->exec(src_data, dst_data, postOpsDataPtrs.data());
+    srcMemPtr->setDataHandle(const_cast<void *>(reinterpret_cast<const void *>(src_data)));
+    execPtr->exec({srcMemPtr}, {dstMemPtr}, postOpsDataPtrs.data());
 }
 
 bool Interpolate::canFuse(const NodePtr& node) const {

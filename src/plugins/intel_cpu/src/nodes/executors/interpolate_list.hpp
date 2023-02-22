@@ -8,7 +8,7 @@
 
 #include "interpolate.hpp"
 #if defined(OV_CPU_WITH_ACL)
-#include "acl/acl_Interpolate.hpp"
+#include "acl/acl_interpolate.hpp"
 #endif
 #include "common/ref_interpolate.hpp"
 #include "x64/jit_interpolate.hpp"

@@ -86,9 +86,9 @@ bool ov::intel_cpu::ACLInterpolateExecutor::init(const InterpolateAttrs &interpo
     return true;
 }
 
-void ov::intel_cpu::ACLInterpolateExecutor::exec(const uint8_t *in_ptr_, uint8_t *out_ptr_, const void *post_ops_data_) {
-    srcTensor.allocator()->import_memory(const_cast<void *>(reinterpret_cast<const void *>(in_ptr_)));
-    dstTensor.allocator()->import_memory(reinterpret_cast<void *>(out_ptr_));
+void ov::intel_cpu::ACLInterpolateExecutor::exec(const std::vector<MemoryCPtr>& src, const std::vector<MemoryPtr>& dst, const void *post_ops_data_) {
+    srcTensor.allocator()->import_memory(src[0]->GetPtr());
+    dstTensor.allocator()->import_memory(dst[0]->GetPtr());
 
     auto acl_op = std::make_shared<arm_compute::NEScale>();
     acl_op->configure(&srcTensor, &dstTensor, arm_compute::ScaleKernelInfo(acl_policy,

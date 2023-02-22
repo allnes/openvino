@@ -64,7 +64,7 @@ public:
               const std::vector<MemoryDescPtr> &dstDescs,
               const dnnl::primitive_attr &attr) override { return true; };
 
-    void exec(const uint8_t *in_ptr_, uint8_t *out_ptr_, const void *post_ops_data_) override;
+    void exec(const std::vector<MemoryCPtr>& src, const std::vector<MemoryPtr>& dst, const void *post_ops_data_) override;
 
 private:
     // nearest neighbor

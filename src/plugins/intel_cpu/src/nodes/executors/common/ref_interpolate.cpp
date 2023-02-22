@@ -7,9 +7,12 @@
 #include "nodes/common/cpu_memcpy.h"
 #include "utils/bfloat16.hpp"
 
-void ov::intel_cpu::RefInterpolateExecutor::exec(const uint8_t *in_ptr_, uint8_t *out_ptr_, const void *post_ops_data_) {
+void ov::intel_cpu::RefInterpolateExecutor::exec(const std::vector<MemoryCPtr>& src, const std::vector<MemoryPtr>& dst, const void *post_ops_data_) {
     size_t N = srcDimPad5d[0], C = srcDimPad5d[1], ID = srcDimPad5d[2], IH = srcDimPad5d[3], IW = srcDimPad5d[4];
     size_t OD = dstDim5d[2], OH = dstDim5d[3], OW = dstDim5d[4];
+
+    auto in_ptr_ = static_cast<const uint8_t *>(src[0]->GetPtr());
+    auto out_ptr_ = static_cast<uint8_t *>(dst[0]->GetPtr());
 
     switch (interpAttrs.mode) {
         case InterpolateMode::nearest: {
