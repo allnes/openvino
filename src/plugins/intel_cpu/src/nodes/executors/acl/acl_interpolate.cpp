@@ -83,6 +83,13 @@ bool ov::intel_cpu::ACLInterpolateExecutor::init(const InterpolateAttrs &interpo
     srcTensor.allocator()->init(srcTensorInfo);
     dstTensor.allocator()->init(dstTensorInfo);
 
+    acl_scale = std::make_unique<arm_compute::NEScale>();
+    acl_scale->configure(&srcTensor, &dstTensor, arm_compute::ScaleKernelInfo(acl_policy,
+                                                                              arm_compute::BorderMode::REPLICATE,
+                                                                              arm_compute::PixelValue(),
+                                                                              acl_coord,
+                                                                              false,
+                                                                              aclInterpolateAttrs.coordTransMode == InterpolateCoordTransMode::align_corners));
     return true;
 }
 
@@ -90,14 +97,7 @@ void ov::intel_cpu::ACLInterpolateExecutor::exec(const std::vector<MemoryCPtr>& 
     srcTensor.allocator()->import_memory(src[0]->GetPtr());
     dstTensor.allocator()->import_memory(dst[0]->GetPtr());
 
-    auto acl_op = std::make_shared<arm_compute::NEScale>();
-    acl_op->configure(&srcTensor, &dstTensor, arm_compute::ScaleKernelInfo(acl_policy,
-                                                                           arm_compute::BorderMode::REPLICATE,
-                                                                           arm_compute::PixelValue(),
-                                                                           acl_coord,
-                                                                           false,
-                                                                           aclInterpolateAttrs.coordTransMode == InterpolateCoordTransMode::align_corners));
-    acl_op->run();
+    acl_scale->run();
 
     srcTensor.allocator()->free();
     dstTensor.allocator()->free();
