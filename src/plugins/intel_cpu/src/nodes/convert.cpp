@@ -84,11 +84,13 @@ bool Convert::isSupportedDesc(const MemoryDesc &desc) {
 void Convert::initSupportedPrimitiveDescriptors() {
     if (!supportedPrimitiveDescriptors.empty())
         return;
-
+    bool is_supported_cpu_primitives = false;
+#if defined(OPENVINO_ARCH_X86) || defined(OPENVINO_ARCH_X86_64)
+    is_supported_other_primitives = true;
+#endif
     NodeConfig config;
     PortConfig dataIn;
     PortConfig dataConfigOut;
-
     config.dynBatchSupport = false;
 
     bool canInitExternalDesc = false;
@@ -104,16 +106,40 @@ void Convert::initSupportedPrimitiveDescriptors() {
         dataIn.setMemDesc(input);
         config.inConfs.push_back(dataIn);
 
+        convertAttrs.srcPrc = input->getPrecision();
+        convertAttrs.srcShape = dataIn.getMemDesc()->getShape();
+        convertAttrs.dstPrc = output->getPrecision();
+        convertAttrs.dstShape = dataConfigOut.getMemDesc()->getShape();
+
         // inp/out layouts must be the same
         dataConfigOut.setMemDesc(config.inConfs[0].getMemDesc());
         dataConfigOut.setMemDesc(dataConfigOut.getMemDesc()->cloneWithNewPrecision(output->getPrecision()));
         config.outConfs.push_back(dataConfigOut);
-        supportedPrimitiveDescriptors.emplace_back(config, impl_desc_type::unknown);
+        if (is_supported_cpu_primitives) {
+            supportedPrimitiveDescriptors.emplace_back(config, impl_desc_type::unknown);
+        } else {
+            std::vector<MemoryDescPtr> srcMemoryDescs;
+            for (int i = 0; i < getOriginalInputsNumber(); i++) {
+                srcMemoryDescs.push_back(getParentEdgeAt(i)->getMemoryPtr()->getDescPtr());
+            }
+            std::vector<MemoryDescPtr> dstMemoryDescs;
+            for (int i = 0; i < getOriginalOutputsNumber(); i++) {
+                dstMemoryDescs.push_back(getChildEdgeAt(i)->getMemoryPtr()->getDescPtr());
+            }
+            auto factory = std::make_shared<ConvertExecutorFactory>(convertAttrs, srcMemoryDescs, dstMemoryDescs,
+                                                                   std::make_shared<ExecutorContext>(context, getPrimitivesPriority()));
+            supportedPrimitiveDescriptors.push_back({config, impl_desc_type::unknown, factory});
+        }
     } else if (inputShapes.size() == 1 && outputShapes.size() == 1) {
         const Shape& insShape = getInputShapeAtPort(0);
         auto insPrecision = getOriginalInputPrecisionAtPort(0);
         const Shape& outputShape = getOutputShapeAtPort(0);
         auto outPrecision = getOriginalOutputPrecisionAtPort(0);
+
+        convertAttrs.srcShape = insShape;
+        convertAttrs.dstShape = outputShape;
+        convertAttrs.srcPrc = insPrecision;
+        convertAttrs.dstPrc = outPrecision;
 
         config.inConfs.push_back(dataIn);
         config.outConfs.push_back(dataConfigOut);
@@ -124,8 +150,17 @@ void Convert::initSupportedPrimitiveDescriptors() {
         for (auto itr = range.first; itr != range.second; ++itr) {
             config.inConfs[0].setMemDesc(std::make_shared<CpuBlockedMemoryDesc>(itr->second->createDesc(insPrecision, insShape)));
             config.outConfs[0].setMemDesc(std::make_shared<CpuBlockedMemoryDesc>(itr->second->createDesc(outPrecision, outputShape)));
-
-            supportedPrimitiveDescriptors.emplace_back(config, impl_desc_type::unknown);
+            if (is_supported_cpu_primitives) {
+                supportedPrimitiveDescriptors.emplace_back(config, impl_desc_type::unknown);
+            } else {
+                std::vector<MemoryDescPtr> srcMemoryDescs;
+                srcMemoryDescs.push_back(input);
+                std::vector<MemoryDescPtr> dstMemoryDescs;
+                dstMemoryDescs.push_back(output);
+                auto factory = std::make_shared<ConvertExecutorFactory>(convertAttrs, srcMemoryDescs, dstMemoryDescs,
+                                                                        std::make_shared<ExecutorContext>(context, getPrimitivesPriority()));
+                supportedPrimitiveDescriptors.push_back({config, impl_desc_type::unknown, factory});
+            }
         }
     } else {
         IE_THROW() << errorPrefix << " has incorrect number of input/output edges";
@@ -145,20 +180,52 @@ void Convert::execute(dnnl::stream strm) {
 
     if (parentPaddElemCount != childPaddElemCount)
         IE_THROW() << errorPrefix << " has different elements number in input and output buffers";
-
+#if defined(OPENVINO_ARCH_X86) || defined(OPENVINO_ARCH_X86_64)
     void* srcPtr = parentMem.GetPtr();
     void* dstPtr = childMem.GetPtr();
-
     cpu_convert(srcPtr,
                 dstPtr,
                 parentMem.getDesc().getPrecision(),
                 origPrc,
                 childMem.getDesc().getPrecision(),
                 parentPaddElemCount);
+#else
+    if (!execPtr) {
+        IE_THROW() << "Can't execute Reduce node. Executor is not created";
+    }
+
+    std::vector<MemoryCPtr> srcMemory;
+    for (int i = 0; i < getOriginalInputsNumber(); i++) {
+        srcMemory.push_back(getParentEdgeAt(i)->getMemoryPtr());
+    }
+    std::vector<MemoryPtr> dstMemory;
+    for (int i = 0; i < getOriginalOutputsNumber(); i++) {
+        dstMemory.push_back(getChildEdgeAt(i)->getMemoryPtr());
+    }
+
+    execPtr->exec(srcMemory, dstMemory, postOpsArgs);
+#endif
 }
 
 bool Convert::created() const {
     return getType() == Type::Convert;
+}
+
+void Convert::createPrimitive() {
+    Node::createPrimitive();
+    std::vector<MemoryDescPtr> srcMemoryDescs;
+    for (int i = 0; i < getOriginalInputsNumber(); i++) {
+        srcMemoryDescs.push_back(getParentEdgeAt(i)->getMemoryPtr()->getDescPtr());
+    }
+    std::vector<MemoryDescPtr> dstMemoryDescs;
+    for (int i = 0; i < getOriginalOutputsNumber(); i++) {
+        dstMemoryDescs.push_back(getChildEdgeAt(i)->getMemoryPtr()->getDescPtr());
+    }
+    dnnl::primitive_attr attr;
+    auto selectedPD = getSelectedPrimitiveDescriptor();
+
+    execPtr = selectedPD->getExecutorFactoryAs<ConvertExecutorFactory>()->makeExecutor(convertAttrs, srcMemoryDescs, dstMemoryDescs, attr);
+    selectedPD->setImplementationType(execPtr->getImplType());
 }
 
 }   // namespace node

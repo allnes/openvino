@@ -8,6 +8,7 @@
 #include <node.h>
 #include <string>
 #include <vector>
+#include "executors/convert_list.hpp"
 
 namespace ov {
 namespace intel_cpu {
@@ -24,6 +25,7 @@ public:
     void execute(dnnl::stream strm) override;
     void executeDynamicImpl(dnnl::stream strm) override;
     bool created() const override;
+    void createPrimitive() override;
     bool canBeInPlace() const override {
         return false;
     }
@@ -50,6 +52,8 @@ private:
     MemoryDescPtr input;
     MemoryDescPtr output;
     InferenceEngine::Precision origPrc;
+    ConvertAttrs convertAttrs;
+    std::shared_ptr<ConvertExecutor> execPtr = nullptr;
 
     std::string errorPrefix;
 };
