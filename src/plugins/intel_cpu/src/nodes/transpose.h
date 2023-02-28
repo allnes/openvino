@@ -41,24 +41,28 @@ protected:
     void executeDynamicImpl(dnnl::stream strm) override;
 
 private:
-    struct TransposeExecutor {
+    class TransposeExecutor {
+    public:
         TransposeExecutor() = default;
-        virtual void exec(Transpose* node, MemoryPtr& srcMemPtr, MemoryPtr& dstMemPtr, const int MB) = 0;
+        virtual void exec(MemoryPtr& srcMemPtr, MemoryPtr& dstMemPtr, const int MB) = 0;
+        void setNode(Transpose* _node) { curr_node = _node; }
         virtual ~TransposeExecutor() = default;
+    protected:
+        Transpose *curr_node;
     };
     using executorPtr = std::shared_ptr<TransposeExecutor>;
     executorPtr execPtr = nullptr;
 
     struct TransposeJitExecutor : public TransposeExecutor {
         TransposeJitExecutor(const PermuteParams& params);
-        void exec(Transpose* node, MemoryPtr& srcMemPtr, MemoryPtr& dstMemPtr, const int MB) override;
+        void exec(MemoryPtr& srcMemPtr, MemoryPtr& dstMemPtr, const int MB) override;
 
         std::shared_ptr<PermuteKernel> pKernel;
     };
 
     struct TransposeRefExecutor : public TransposeExecutor {
         TransposeRefExecutor() = default;
-        void exec(Transpose* node, MemoryPtr& srcMemPtr, MemoryPtr& dstMemPtr, const int MB) override;
+        void exec(MemoryPtr& srcMemPtr, MemoryPtr& dstMemPtr, const int MB) override;
     };
 
     template<typename T> void optimizedExecute(const int MB, const MemoryPtr& srcMemPtr, MemoryPtr& dstMemPtr);

@@ -369,8 +369,8 @@ void Transpose::execute(dnnl::stream strm) {
         } else {
             MB = batchToProcess();
         }
-
-        execPtr->exec(this, srcMemPtr, dstMemPtr, MB);
+        execPtr->setNode(this);
+        execPtr->exec(srcMemPtr, dstMemPtr, MB);
     } else {
         IE_THROW() << "Could not execute Transpose node. Primitive was not created.";
     }
@@ -384,7 +384,7 @@ Transpose::TransposeJitExecutor::TransposeJitExecutor(const PermuteParams& param
     pKernel = std::make_shared<PermuteKernel>(params);
 }
 
-void Transpose::TransposeJitExecutor::exec(Transpose* node, MemoryPtr& srcMemPtr, MemoryPtr& dstMemPtr, const int MB) {
+void Transpose::TransposeJitExecutor::exec(MemoryPtr& srcMemPtr, MemoryPtr& dstMemPtr, const int MB) {
     if (!pKernel)
         IE_THROW() << "Could not execute. Kernel for Transpose node was not compiled.";
 
@@ -394,9 +394,9 @@ void Transpose::TransposeJitExecutor::exec(Transpose* node, MemoryPtr& srcMemPtr
     pKernel->execute(srcData, dstData, MB);
 }
 
-void Transpose::TransposeRefExecutor::exec(Transpose* node, MemoryPtr& srcMemPtr, MemoryPtr& dstMemPtr, const int MB) {
+void Transpose::TransposeRefExecutor::exec(MemoryPtr& srcMemPtr, MemoryPtr& dstMemPtr, const int MB) {
     const size_t dataSize = srcMemPtr->getDesc().getPrecision().size();
-    TransposeContext ctx = {node, srcMemPtr, dstMemPtr, MB};
+    TransposeContext ctx = {curr_node, srcMemPtr, dstMemPtr, MB};
     OV_SWITCH(intel_cpu, TransposeOptimizedEmitter, ctx, dataSize,
               OV_CASE(1, PrecisionTrait<Precision::U8>::value_type),
               OV_CASE(2, PrecisionTrait<Precision::U16>::value_type),
