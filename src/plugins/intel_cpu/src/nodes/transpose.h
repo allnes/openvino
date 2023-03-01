@@ -5,7 +5,7 @@
 #pragma once
 
 #include "common/permute_kernel.h"
-
+#include "executors/transpose.hpp"
 #include <memory>
 #include <string>
 #include <utility>
@@ -41,16 +41,6 @@ protected:
     void executeDynamicImpl(dnnl::stream strm) override;
 
 private:
-    class TransposeExecutor {
-    public:
-        TransposeExecutor() = default;
-        virtual void exec(MemoryPtr& srcMemPtr, MemoryPtr& dstMemPtr, const int MB) = 0;
-        void setNode(Transpose* _node) { curr_node = _node; }
-        virtual ~TransposeExecutor() = default;
-    protected:
-        Transpose *curr_node;
-    };
-    using executorPtr = std::shared_ptr<TransposeExecutor>;
     executorPtr execPtr = nullptr;
 
     struct TransposeJitExecutor : public TransposeExecutor {

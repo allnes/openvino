@@ -396,7 +396,7 @@ void Transpose::TransposeJitExecutor::exec(MemoryPtr& srcMemPtr, MemoryPtr& dstM
 
 void Transpose::TransposeRefExecutor::exec(MemoryPtr& srcMemPtr, MemoryPtr& dstMemPtr, const int MB) {
     const size_t dataSize = srcMemPtr->getDesc().getPrecision().size();
-    TransposeContext ctx = {curr_node, srcMemPtr, dstMemPtr, MB};
+    TransposeContext ctx = {dynamic_cast<Transpose *>(curr_node), srcMemPtr, dstMemPtr, MB};
     OV_SWITCH(intel_cpu, TransposeOptimizedEmitter, ctx, dataSize,
               OV_CASE(1, PrecisionTrait<Precision::U8>::value_type),
               OV_CASE(2, PrecisionTrait<Precision::U16>::value_type),
