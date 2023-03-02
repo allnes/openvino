@@ -278,7 +278,7 @@ const auto params_4D_fusing = ::testing::Combine(
 INSTANTIATE_TEST_SUITE_P(smoke_CompareWithRefs_4D_Fusing, EltwiseLayerCPUTest, params_4D_fusing, EltwiseLayerCPUTest::getTestCaseName);
 
 const auto params_4D_emptyCPUSpec = ::testing::Combine(
-        ::testing::Combine(git
+        ::testing::Combine(
                 ::testing::ValuesIn(static_shapes_to_test_representation(inShapes_4D)),
                 ::testing::ValuesIn(eltwiseOpTypesDiffInp),
                 ::testing::ValuesIn(secondaryInputTypes),
