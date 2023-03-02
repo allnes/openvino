@@ -219,7 +219,7 @@ std::vector<CPUSpecificParams> cpuParams_5D = {
 
 const std::vector<fusingSpecificParams> fusingParamsSet{
     emptyFusingSpec,
-#if defined(OPENVINO_ARCH_X86_64)
+#if defined(OPENVINO_ARCH_X86) || defined(OPENVINO_ARCH_X86_64)
     // eltwise
     fusingSigmoid,
     fusingPRelu1D,
@@ -278,7 +278,7 @@ const auto params_4D_fusing = ::testing::Combine(
 INSTANTIATE_TEST_SUITE_P(smoke_CompareWithRefs_4D_Fusing, EltwiseLayerCPUTest, params_4D_fusing, EltwiseLayerCPUTest::getTestCaseName);
 
 const auto params_4D_emptyCPUSpec = ::testing::Combine(
-        ::testing::Combine(
+        ::testing::Combine(git
                 ::testing::ValuesIn(static_shapes_to_test_representation(inShapes_4D)),
                 ::testing::ValuesIn(eltwiseOpTypesDiffInp),
                 ::testing::ValuesIn(secondaryInputTypes),
@@ -342,7 +342,9 @@ std::vector<ngraph::helpers::EltwiseTypes> eltwiseOpTypesI32 = {
 
 const std::vector<fusingSpecificParams> fusingParamsSetI32{
     emptyFusingSpec,
+#if defined(OPENVINO_ARCH_X86) || defined(OPENVINO_ARCH_X86_64)
     fusingMultiplyAddPerChannel,
+#endif
 };
 
 const auto params_5D_emptyCPUSpec_I32 = ::testing::Combine(

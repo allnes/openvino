@@ -72,7 +72,7 @@ public:
             case Algorithm::EltwiseLogicalXor:
             case Algorithm::EltwiseLogicalNot:
             case Algorithm::EltwiseGeluTanh:
-            case Algorithm::EltwisePrelu: // TODO: accuracy problem
+//            case Algorithm::EltwisePrelu: // TODO: accuracy problem
             case Algorithm::EltwiseMish:
             case Algorithm::EltwiseHsigmoid:
             case Algorithm::EltwiseRoundHalfToEven:
