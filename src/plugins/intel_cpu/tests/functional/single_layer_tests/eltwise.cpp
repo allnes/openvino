@@ -361,8 +361,9 @@ const auto params_5D_emptyCPUSpec_I32 = ::testing::Combine(
         ::testing::Values(emptyCPUSpec),
         ::testing::ValuesIn(fusingParamsSetI32));
 
+#if defined(OPENVINO_ARCH_X86) || defined(OPENVINO_ARCH_X86_64)
 INSTANTIATE_TEST_SUITE_P(smoke_CompareWithRefs_5D_I32, EltwiseLayerCPUTest, params_5D_emptyCPUSpec_I32, EltwiseLayerCPUTest::getTestCaseName);
-
+#endif
 
 std::vector<std::vector<ov::Shape>> inShapes_4D_Blocked_Planar = {
         {{2, 17, 31, 3}, {2, 1, 31, 3}},
