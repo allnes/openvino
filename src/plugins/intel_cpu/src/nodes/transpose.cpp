@@ -4,6 +4,7 @@
 
 #include "transpose.h"
 #include "ie_parallel.hpp"
+#include "executors/transpose_list.hpp"
 
 #include <algorithm>
 #include <string>
@@ -79,6 +80,7 @@ Transpose::Transpose(const std::shared_ptr<ov::Node>& op, const GraphContext::CP
             }
         }
     }
+    transpose_context = std::make_shared<ExecutorContext>(context, getPrimitivesPriority());
 }
 
 void Transpose::getSupportedDescriptors() {
@@ -103,35 +105,51 @@ void Transpose::initSupportedPrimitiveDescriptors() {
             Precision::I32, getInputShapeAtPort(INPUT_ORDER_IDX)));
     config.outConfs[0].inPlace(-1);
     config.outConfs[0].constant(false);
+    auto supportedPrimitiveDescriptorsBuilder = [this](NodeConfig config, PermuteParams params) {
+#if defined(OPENVINO_ARCH_X86) || defined(OPENVINO_ARCH_X86_64)
+        supportedPrimitiveDescriptors.push_back({config, impl_desc_type::unknown});
+#else
+        std::vector<MemoryDescPtr> srcMemoryDescs;
+        for (int i = 0; i < config.inConfs.size(); i++) {
+            srcMemoryDescs.push_back(config.inConfs[i].getMemDesc());
+        }
+        std::vector<MemoryDescPtr> dstMemoryDescs;
+        for (int i = 0; i < config.outConfs.size(); i++) {
+            dstMemoryDescs.push_back(config.outConfs[i].getMemDesc());
+        }
+
+        auto factory = std::make_shared<TransposeExecutorFactory>(params, srcMemoryDescs, dstMemoryDescs, transpose_context);
+        supportedPrimitiveDescriptors.push_back({config, impl_desc_type::unknown, factory});
+#endif
+    };
 
     const auto& inputDataShape = getInputShapeAtPort(INPUT_DATA_IDX);
     const auto& outputDataShape = getOutputShapeAtPort(0);
     if (inputDataShape.getRank() == 4 || inputDataShape.getRank() == 5) {
         config.inConfs[0].setMemDesc(creatorsMap.at(LayoutType::ncsp)->createSharedDesc(prec, inputDataShape));
         config.outConfs[0].setMemDesc(creatorsMap.at(LayoutType::ncsp)->createSharedDesc(prec, outputDataShape));
-        supportedPrimitiveDescriptors.push_back({config, impl_desc_type::unknown});
-
+        supportedPrimitiveDescriptorsBuilder(config, params);
         const auto& srcDims = inputDataShape.getDims();
         if (srcDims[1] != Shape::UNDEFINED_DIM && srcDims[1] % 8 == 0) {
             config.inConfs[0].setMemDesc(creatorsMap.at(LayoutType::nCsp8c)->createSharedDesc(prec, inputDataShape));
-            supportedPrimitiveDescriptors.push_back({config, impl_desc_type::unknown});
+            supportedPrimitiveDescriptorsBuilder(config, params);
         }
 
         if (srcDims[1] != Shape::UNDEFINED_DIM && srcDims[1] % 16 == 0) {
             config.inConfs[0].setMemDesc(creatorsMap.at(LayoutType::nCsp16c)->createSharedDesc(prec, inputDataShape));
-            supportedPrimitiveDescriptors.push_back({config, impl_desc_type::unknown});
+            supportedPrimitiveDescriptorsBuilder(config, params);
         }
 
         if (prec == Precision::FP32 || prec == Precision::I8 || prec == Precision::U8) {
             config.inConfs[0].setMemDesc(creatorsMap.at(LayoutType::nspc)->createSharedDesc(prec, inputDataShape));
             config.outConfs[0].setMemDesc(creatorsMap.at(LayoutType::nspc)->createSharedDesc(prec, outputDataShape));
-            supportedPrimitiveDescriptors.push_back({config, impl_desc_type::unknown});
+            supportedPrimitiveDescriptorsBuilder(config, params);
         }
     } else {
         // general plain case
         config.inConfs[0].setMemDesc(creatorsMap.at(LayoutType::ncsp)->createSharedDesc(prec, inputDataShape));
         config.outConfs[0].setMemDesc(creatorsMap.at(LayoutType::ncsp)->createSharedDesc(prec, outputDataShape));
-        supportedPrimitiveDescriptors.push_back({config, impl_desc_type::unknown});
+        supportedPrimitiveDescriptorsBuilder(config, params);
     }
 }
 
@@ -204,18 +222,41 @@ void Transpose::prepareParams() {
     }
 
     auto engine = getEngine();
-    auto builder = [&engine](const PermuteParams& key) -> std::shared_ptr<TransposeJitExecutor> {
-        return std::make_shared<TransposeJitExecutor>(key);
+#if defined(OPENVINO_ARCH_X86) || defined(OPENVINO_ARCH_X86_64)
+    auto builder = [&engine, this](const PermuteParams& key) -> std::shared_ptr<TransposeJitExecutor> {
+        auto jitExecutor = std::make_shared<TransposeJitExecutor>(transpose_context);
+        std::vector<MemoryDescPtr> srcMemoryDescs;
+        for (int i = 0; i < getOriginalInputsNumber(); i++) {
+            srcMemoryDescs.push_back(getParentEdgeAt(i)->getMemoryPtr()->getDescPtr());
+        }
+        std::vector<MemoryDescPtr> dstMemoryDescs;
+        for (int i = 0; i < getOriginalOutputsNumber(); i++) {
+            dstMemoryDescs.push_back(getChildEdgeAt(i)->getMemoryPtr()->getDescPtr());
+        }
+        dnnl::primitive_attr attr;
+        jitExecutor->init(key, srcMemoryDescs, dstMemoryDescs, attr);
+        return jitExecutor;
     };
 
     auto cache = context->getParamsCache();
     auto result = cache->getOrCreate(params, builder);
-
     if (!result.first) {
         IE_THROW() << "Primitive descriptor was not found for node " << getName() << ".";
     }
-
     execPtr = result.first;
+#else
+    std::vector<MemoryDescPtr> srcMemoryDescs;
+    for (int i = 0; i < getOriginalInputsNumber(); i++) {
+        srcMemoryDescs.push_back(getParentEdgeAt(i)->getMemoryPtr()->getDescPtr());
+    }
+    std::vector<MemoryDescPtr> dstMemoryDescs;
+    for (int i = 0; i < getOriginalOutputsNumber(); i++) {
+        dstMemoryDescs.push_back(getChildEdgeAt(i)->getMemoryPtr()->getDescPtr());
+    }
+    dnnl::primitive_attr attr;
+    auto selectedPD = getSelectedPrimitiveDescriptor();
+    execPtr = selectedPD->getExecutorFactoryAs<TransposeExecutorFactory>()->makeExecutor(params, srcMemoryDescs, dstMemoryDescs, attr);
+#endif
 }
 
 void Transpose::createPrimitive() {
@@ -235,8 +276,10 @@ void Transpose::createPrimitive() {
     } else if (getParentEdgeAt(INPUT_DATA_IDX)->getMemory().getDesc().hasLayoutType(LayoutType::ncsp) &&
             std::find(optimizedOrders.begin(), optimizedOrders.end(), order) != optimizedOrders.end()) {
         isOptimized = true;
-        execPtr = std::make_shared<TransposeRefExecutor>();
+#if defined(OPENVINO_ARCH_X86) || defined(OPENVINO_ARCH_X86_64)
+        execPtr = std::make_shared<TransposeRefExecutor>(transpose_context);
         return;
+#endif
     }
 
     if (!performAsReorder) {
@@ -339,23 +382,6 @@ static void transpose_to_051234(const int MB, const MemoryPtr& srcMemPtr, Memory
     });
 }
 
-template<typename T>
-void Transpose::optimizedExecute(const int MB, const MemoryPtr& srcMemPtr, MemoryPtr& dstMemPtr) {
-    switch (srcMemPtr->getStaticDims().size()) {
-        case 4:
-            transpose_to_0312<T>(MB, srcMemPtr, dstMemPtr);
-            break;
-        case 5:
-            transpose_to_04123<T>(MB, srcMemPtr, dstMemPtr);
-            break;
-        case 6:
-            transpose_to_051234<T>(MB, srcMemPtr, dstMemPtr);
-            break;
-        default:
-            IE_THROW() << "Transpose '" << getName() << "' supports optimized execution with only 4D, 5D and 6D shapes";
-    }
-}
-
 void Transpose::execute(dnnl::stream strm) {
     if (prim) {
         (*prim).execute(strm, primArgs);
@@ -370,7 +396,7 @@ void Transpose::execute(dnnl::stream strm) {
             MB = batchToProcess();
         }
         execPtr->setNode(this);
-        execPtr->exec(srcMemPtr, dstMemPtr, MB);
+        execPtr->exec({srcMemPtr}, {dstMemPtr}, MB);
     } else {
         IE_THROW() << "Could not execute Transpose node. Primitive was not created.";
     }
@@ -380,28 +406,37 @@ void Transpose::executeDynamicImpl(dnnl::stream strm) {
     execute(strm);
 }
 
-Transpose::TransposeJitExecutor::TransposeJitExecutor(const PermuteParams& params) {
-    pKernel = std::make_shared<PermuteKernel>(params);
-}
-
-void Transpose::TransposeJitExecutor::exec(MemoryPtr& srcMemPtr, MemoryPtr& dstMemPtr, const int MB) {
+void Transpose::TransposeJitExecutor::exec(const std::vector<MemoryCPtr>& src, const std::vector<MemoryPtr>& dst, const int MB) {
     if (!pKernel)
         IE_THROW() << "Could not execute. Kernel for Transpose node was not compiled.";
 
-    const uint8_t* srcData = reinterpret_cast<const uint8_t*>(srcMemPtr->GetPtr());
-    uint8_t* dstData = reinterpret_cast<uint8_t*>(dstMemPtr->GetPtr());
+    const uint8_t* srcData = reinterpret_cast<const uint8_t*>(src[0]->GetPtr());
+    uint8_t* dstData = reinterpret_cast<uint8_t*>(dst[0]->GetPtr());
 
     pKernel->execute(srcData, dstData, MB);
 }
 
-void Transpose::TransposeRefExecutor::exec(MemoryPtr& srcMemPtr, MemoryPtr& dstMemPtr, const int MB) {
-    const size_t dataSize = srcMemPtr->getDesc().getPrecision().size();
-    TransposeContext ctx = {dynamic_cast<Transpose *>(curr_node), srcMemPtr, dstMemPtr, MB};
+Transpose::TransposeJitExecutor::TransposeJitExecutor(const ExecutorContext::CPtr context) : TransposeExecutor(context) {}
+
+bool Transpose::TransposeJitExecutor::init(const PermuteParams &permuteParams,
+                                           const std::vector<MemoryDescPtr> &srcDescs,
+                                           const std::vector<MemoryDescPtr> &dstDescs, const primitive_attr &attr) {
+    pKernel = std::make_shared<PermuteKernel>(permuteParams);
+    return true;
+}
+
+void Transpose::TransposeRefExecutor::exec(const std::vector<MemoryCPtr>& src, const std::vector<MemoryPtr>& dst, const int MB) {
+    MemoryPtr tmpSrc;
+    tmpSrc->setDataHandle(const_cast<void *>(reinterpret_cast<const void *>(src[0]->GetPtr())));
+    const size_t dataSize = src[0]->getDesc().getPrecision().size();
+    TransposeContext ctx = {{tmpSrc}, dst[0], MB};
     OV_SWITCH(intel_cpu, TransposeOptimizedEmitter, ctx, dataSize,
               OV_CASE(1, PrecisionTrait<Precision::U8>::value_type),
               OV_CASE(2, PrecisionTrait<Precision::U16>::value_type),
               OV_CASE(4, PrecisionTrait<Precision::I32>::value_type));
 }
+
+Transpose::TransposeRefExecutor::TransposeRefExecutor(const ExecutorContext::CPtr context) : TransposeExecutor(context) {}
 
 bool Transpose::created() const {
     return getType() == Type::Transpose;
