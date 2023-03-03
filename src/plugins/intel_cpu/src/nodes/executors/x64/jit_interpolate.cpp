@@ -1619,6 +1619,7 @@ bool ov::intel_cpu::JITInterpolateExecutor::init(const InterpolateAttrs &interpo
                                                  const std::vector<MemoryDescPtr> &srcDescs,
                                                  const std::vector<MemoryDescPtr> &dstDescs,
                                                  const dnnl::primitive_attr &attr) {
+    InterpolateExecutor::init(interpolateAttrs, srcDescs, dstDescs, attr);
     jitInterpolateAttrs = interpolateAttrs;
     auto jcp = jit_interpolate_config_params();
     jcp.mode = interpAttrs.mode;
