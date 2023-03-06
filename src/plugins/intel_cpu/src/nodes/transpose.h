@@ -7,6 +7,7 @@
 #include "common/permute_kernel.h"
 #include "executors/transpose.hpp"
 #include "executors/common/ref_transpose.hpp"
+#include "nodes/executors/dnnl/dnnl_transpose.hpp"
 #include <memory>
 #include <string>
 #include <utility>
@@ -44,22 +45,6 @@ protected:
 
 private:
     TransposeExecutorPtr execPtr = nullptr;
-
-    class TransposeJitExecutor : public TransposeExecutor {
-    public:
-        explicit TransposeJitExecutor(const ExecutorContext::CPtr context);
-        bool init(const PermuteParams& permuteParams,
-                  const std::vector<MemoryDescPtr>& srcDescs,
-                  const std::vector<MemoryDescPtr>& dstDescs,
-                  const dnnl::primitive_attr &attr) override {
-            pKernel = std::make_shared<PermuteKernel>(permuteParams);
-            return true;
-        }
-        void exec(const std::vector<MemoryCPtr>& src, const std::vector<MemoryPtr>& dst, const int MB) override;
-
-        std::shared_ptr<PermuteKernel> pKernel;
-    };
-
     InferenceEngine::SizeVector order;
     InferenceEngine::Precision prec;
     bool isOptimized = false;

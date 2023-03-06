@@ -286,18 +286,6 @@ void Transpose::executeDynamicImpl(dnnl::stream strm) {
     execute(strm);
 }
 
-void Transpose::TransposeJitExecutor::exec(const std::vector<MemoryCPtr>& src, const std::vector<MemoryPtr>& dst, const int MB) {
-    if (!pKernel)
-        IE_THROW() << "Could not execute. Kernel for Transpose node was not compiled.";
-
-    const uint8_t* srcData = reinterpret_cast<const uint8_t*>(src[0]->GetPtr());
-    uint8_t* dstData = reinterpret_cast<uint8_t*>(dst[0]->GetPtr());
-
-    pKernel->execute(srcData, dstData, MB);
-}
-
-Transpose::TransposeJitExecutor::TransposeJitExecutor(const ExecutorContext::CPtr context) : TransposeExecutor(context) {}
-
 bool Transpose::created() const {
     return getType() == Type::Transpose;
 }
