@@ -4,7 +4,7 @@
 
 #include "dnnl_transpose.hpp"
 
-void ov::intel_cpu::TransposeJitExecutor::exec(const std::vector<MemoryCPtr>& src, const std::vector<MemoryPtr>& dst, const int MB) {
+void ov::intel_cpu::DNNLTransposeExecutor::exec(const std::vector<MemoryCPtr>& src, const std::vector<MemoryPtr>& dst, const int MB) {
     if (!pKernel)
         IE_THROW() << "Could not execute. Kernel for Transpose node was not compiled.";
 
@@ -14,11 +14,11 @@ void ov::intel_cpu::TransposeJitExecutor::exec(const std::vector<MemoryCPtr>& sr
     pKernel->execute(srcData, dstData, MB);
 }
 
-ov::intel_cpu::TransposeJitExecutor::TransposeJitExecutor(const ExecutorContext::CPtr context) : TransposeExecutor(context) {}
+ov::intel_cpu::DNNLTransposeExecutor::DNNLTransposeExecutor(const ExecutorContext::CPtr context) : TransposeExecutor(context) {}
 
-bool ov::intel_cpu::TransposeJitExecutor::init(const PermuteParams &permuteParams,
-                                           const std::vector<MemoryDescPtr> &srcDescs,
-                                           const std::vector<MemoryDescPtr> &dstDescs, const dnnl::primitive_attr &attr) {
+bool ov::intel_cpu::DNNLTransposeExecutor::init(const PermuteParams &permuteParams,
+                                                const std::vector<MemoryDescPtr> &srcDescs,
+                                                const std::vector<MemoryDescPtr> &dstDescs, const dnnl::primitive_attr &attr) {
     pKernel = std::make_shared<PermuteKernel>(permuteParams);
     return true;
 }

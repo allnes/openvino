@@ -20,6 +20,7 @@ public:
                       const std::vector<MemoryDescPtr>& dstDescs,
                       const dnnl::primitive_attr &attr) = 0;
     virtual void exec(const std::vector<MemoryCPtr>& src, const std::vector<MemoryPtr>& dst, const int MB) = 0;
+    virtual impl_desc_type getImplType() const = 0;
     virtual ~TransposeExecutor() = default;
 protected:
     PermuteParams permuteParams;
@@ -27,6 +28,18 @@ protected:
 };
 using TransposeExecutorPtr = std::shared_ptr<TransposeExecutor>;
 using TransposeExecutorCPtr = std::shared_ptr<const TransposeExecutor>;
+
+class TransposeExecutorBuilder {
+public:
+    ~TransposeExecutorBuilder() = default;
+    virtual bool isSupported(const PermuteParams& permuteParams,
+                             const std::vector<MemoryDescPtr>& srcDescs,
+                             const std::vector<MemoryDescPtr>& dstDescs) const = 0;
+    virtual TransposeExecutorPtr makeExecutor(const ExecutorContext::CPtr context) const = 0;
+};
+
+using TransposeExecutorBuilderPtr = std::shared_ptr<TransposeExecutorBuilder>;
+using TransposeExecutorBuilderCPtr = std::shared_ptr<const TransposeExecutorBuilder>;
 
 } // namespace intel_cpu
 } // namespace ov

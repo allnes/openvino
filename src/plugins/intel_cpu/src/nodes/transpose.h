@@ -5,9 +5,8 @@
 #pragma once
 
 #include "common/permute_kernel.h"
-#include "executors/transpose.hpp"
-#include "executors/common/ref_transpose.hpp"
-#include "nodes/executors/dnnl/dnnl_transpose.hpp"
+#include "executors/transpose_list.hpp"
+#include "executors/dnnl/dnnl_transpose.hpp"
 #include <memory>
 #include <string>
 #include <utility>

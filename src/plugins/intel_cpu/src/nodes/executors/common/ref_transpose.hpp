@@ -41,15 +41,30 @@ struct TransposeOptimizedEmitter {
     }
 };
 
-class TransposeRefExecutor : public TransposeExecutor {
+class RefTransposeExecutor : public TransposeExecutor {
 public:
-    explicit TransposeRefExecutor(const ExecutorContext::CPtr context);
+    explicit RefTransposeExecutor(const ExecutorContext::CPtr context);
     bool init(const PermuteParams &permuteParams,
               const std::vector<MemoryDescPtr> &srcDescs,
               const std::vector<MemoryDescPtr> &dstDescs,
               const dnnl::primitive_attr &attr) override { return true; }
-
     void exec(const std::vector<MemoryCPtr> &src, const std::vector<MemoryPtr> &dst, const int MB) override;
+    impl_desc_type getImplType() const override { return implType; }
+private:
+    impl_desc_type implType = impl_desc_type::ref;
+};
+
+class RefTransposeExecutorBuilder : public TransposeExecutorBuilder {
+public:
+    bool isSupported(const PermuteParams& permuteParams,
+                     const std::vector<MemoryDescPtr>& srcDescs,
+                     const std::vector<MemoryDescPtr>& dstDescs) const override {
+        return true;
+    }
+
+    TransposeExecutorPtr makeExecutor(const ExecutorContext::CPtr context) const override {
+        return std::make_shared<RefTransposeExecutor>(context);
+    }
 };
 
 } // namespace intel_cpu

@@ -89,7 +89,7 @@ static void ov::intel_cpu::transpose_to_051234(const int MB, const MemoryPtr& sr
     });
 }
 
-void ov::intel_cpu::TransposeRefExecutor::exec(const std::vector<MemoryCPtr>& src, const std::vector<MemoryPtr>& dst, const int MB) {
+void ov::intel_cpu::RefTransposeExecutor::exec(const std::vector<MemoryCPtr>& src, const std::vector<MemoryPtr>& dst, const int MB) {
     MemoryPtr tmpSrc;
     tmpSrc->setDataHandle(const_cast<void *>(reinterpret_cast<const void *>(src[0]->GetPtr())));
     const size_t dataSize = src[0]->getDesc().getPrecision().size();
@@ -100,4 +100,4 @@ void ov::intel_cpu::TransposeRefExecutor::exec(const std::vector<MemoryCPtr>& sr
               OV_CASE(4, InferenceEngine::PrecisionTrait<InferenceEngine::Precision::I32>::value_type));
 }
 
-ov::intel_cpu::TransposeRefExecutor::TransposeRefExecutor(const ExecutorContext::CPtr context) : TransposeExecutor(context) {}
+ov::intel_cpu::RefTransposeExecutor::RefTransposeExecutor(const ExecutorContext::CPtr context) : TransposeExecutor(context) {}

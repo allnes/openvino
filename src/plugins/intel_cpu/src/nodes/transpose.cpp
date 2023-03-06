@@ -104,35 +104,49 @@ void Transpose::initSupportedPrimitiveDescriptors() {
             Precision::I32, getInputShapeAtPort(INPUT_ORDER_IDX)));
     config.outConfs[0].inPlace(-1);
     config.outConfs[0].constant(false);
+    transpose_context = std::make_shared<ExecutorContext>(context, getPrimitivesPriority());
+
+    auto supportedPrimitiveDescriptorsBuilder = [this](NodeConfig config, PermuteParams permuteParams) {
+        std::vector<MemoryDescPtr> srcMemoryDescs;
+        for (int i = 0; i < config.inConfs.size(); i++) {
+            srcMemoryDescs.push_back(config.inConfs[i].getMemDesc());
+        }
+        std::vector<MemoryDescPtr> dstMemoryDescs;
+        for (int i = 0; i < config.outConfs.size(); i++) {
+            dstMemoryDescs.push_back(config.outConfs[i].getMemDesc());
+        }
+        auto factory = std::make_shared<TransposeExecutorFactory>(permuteParams, srcMemoryDescs, dstMemoryDescs, transpose_context);
+        supportedPrimitiveDescriptors.push_back({config, impl_desc_type::unknown, factory});
+    };
 
     const auto& inputDataShape = getInputShapeAtPort(INPUT_DATA_IDX);
     const auto& outputDataShape = getOutputShapeAtPort(0);
     if (inputDataShape.getRank() == 4 || inputDataShape.getRank() == 5) {
         config.inConfs[0].setMemDesc(creatorsMap.at(LayoutType::ncsp)->createSharedDesc(prec, inputDataShape));
         config.outConfs[0].setMemDesc(creatorsMap.at(LayoutType::ncsp)->createSharedDesc(prec, outputDataShape));
-        supportedPrimitiveDescriptors.push_back({config, impl_desc_type::unknown});
+        supportedPrimitiveDescriptorsBuilder(config, params);
 
         const auto& srcDims = inputDataShape.getDims();
         if (srcDims[1] != Shape::UNDEFINED_DIM && srcDims[1] % 8 == 0) {
             config.inConfs[0].setMemDesc(creatorsMap.at(LayoutType::nCsp8c)->createSharedDesc(prec, inputDataShape));
-            supportedPrimitiveDescriptors.push_back({config, impl_desc_type::unknown});
+            supportedPrimitiveDescriptorsBuilder(config, params);
         }
 
         if (srcDims[1] != Shape::UNDEFINED_DIM && srcDims[1] % 16 == 0) {
             config.inConfs[0].setMemDesc(creatorsMap.at(LayoutType::nCsp16c)->createSharedDesc(prec, inputDataShape));
-            supportedPrimitiveDescriptors.push_back({config, impl_desc_type::unknown});
+            supportedPrimitiveDescriptorsBuilder(config, params);
         }
 
         if (prec == Precision::FP32 || prec == Precision::I8 || prec == Precision::U8) {
             config.inConfs[0].setMemDesc(creatorsMap.at(LayoutType::nspc)->createSharedDesc(prec, inputDataShape));
             config.outConfs[0].setMemDesc(creatorsMap.at(LayoutType::nspc)->createSharedDesc(prec, outputDataShape));
-            supportedPrimitiveDescriptors.push_back({config, impl_desc_type::unknown});
+            supportedPrimitiveDescriptorsBuilder(config, params);
         }
     } else {
         // general plain case
         config.inConfs[0].setMemDesc(creatorsMap.at(LayoutType::ncsp)->createSharedDesc(prec, inputDataShape));
         config.outConfs[0].setMemDesc(creatorsMap.at(LayoutType::ncsp)->createSharedDesc(prec, outputDataShape));
-        supportedPrimitiveDescriptors.push_back({config, impl_desc_type::unknown});
+        supportedPrimitiveDescriptorsBuilder(config, params);
     }
 }
 
@@ -206,8 +220,8 @@ void Transpose::prepareParams() {
     }
 
     auto engine = getEngine();
-    auto builder = [&engine, &srcDesc, &dstDesc, this](const PermuteParams& key) -> std::shared_ptr<TransposeJitExecutor> {
-        auto jitExec = std::make_shared<TransposeJitExecutor>(transpose_context);
+    auto builder = [&engine, &srcDesc, &dstDesc, this](const PermuteParams& key) -> std::shared_ptr<DNNLTransposeExecutor> {
+        auto jitExec = std::make_shared<DNNLTransposeExecutor>(transpose_context);
         dnnl::primitive_attr attr;
         jitExec->init(key, {srcDesc}, {dstDesc}, attr);
         return jitExec;
@@ -234,8 +248,6 @@ void Transpose::createPrimitive() {
     if (getSelectedPrimitiveDescriptor() == nullptr)
         IE_THROW() << "Preferable primitive descriptor was not set.";
 
-    transpose_context = std::make_shared<ExecutorContext>(context, getPrimitivesPriority());
-
     if (getParentEdgeAt(INPUT_DATA_IDX)->getMemory().getDesc().hasLayoutType(LayoutType::ncsp) &&
         getChildEdgeAt(0)->getMemory().getDesc().hasLayoutType(LayoutType::ncsp) &&
         order == std::vector<size_t>{0, 3, 1, 2}) {
@@ -243,7 +255,18 @@ void Transpose::createPrimitive() {
     } else if (getParentEdgeAt(INPUT_DATA_IDX)->getMemory().getDesc().hasLayoutType(LayoutType::ncsp) &&
             std::find(optimizedOrders.begin(), optimizedOrders.end(), order) != optimizedOrders.end()) {
         isOptimized = true;
-        execPtr = std::make_shared<TransposeRefExecutor>(transpose_context);
+        std::vector<MemoryDescPtr> srcMemoryDescs;
+        for (int i = 0; i < getOriginalInputsNumber(); i++) {
+            srcMemoryDescs.push_back(getParentEdgeAt(i)->getMemoryPtr()->getDescPtr());
+        }
+        std::vector<MemoryDescPtr> dstMemoryDescs;
+        for (int i = 0; i < getOriginalOutputsNumber(); i++) {
+            dstMemoryDescs.push_back(getChildEdgeAt(i)->getMemoryPtr()->getDescPtr());
+        }
+        dnnl::primitive_attr attr;
+        auto selectedPD = getSelectedPrimitiveDescriptor();
+        execPtr = selectedPD->getExecutorFactoryAs<TransposeExecutorFactory>()->makeExecutor(params, srcMemoryDescs, dstMemoryDescs, attr);
+        selectedPD->setImplementationType(execPtr->getImplType());
         return;
     }
 
