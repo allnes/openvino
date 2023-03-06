@@ -352,8 +352,7 @@ void Transpose::execute(dnnl::stream strm) {
         } else {
             MB = batchToProcess();
         }
-        execPtr->setNode(this);
-        execPtr->exec(srcMemPtr, dstMemPtr, MB);
+        execPtr->exec({srcMemPtr}, {dstMemPtr}, MB);
     } else {
         IE_THROW() << "Could not execute Transpose node. Primitive was not created.";
     }
@@ -367,19 +366,21 @@ Transpose::TransposeJitExecutor::TransposeJitExecutor(const PermuteParams& param
     pKernel = std::make_shared<PermuteKernel>(params);
 }
 
-void Transpose::TransposeJitExecutor::exec(MemoryPtr& srcMemPtr, MemoryPtr& dstMemPtr, const int MB) {
+void Transpose::TransposeJitExecutor::exec(const std::vector<MemoryCPtr>& src, const std::vector<MemoryPtr>& dst, const int MB) {
     if (!pKernel)
         IE_THROW() << "Could not execute. Kernel for Transpose node was not compiled.";
 
-    const uint8_t* srcData = reinterpret_cast<const uint8_t*>(srcMemPtr->GetPtr());
-    uint8_t* dstData = reinterpret_cast<uint8_t*>(dstMemPtr->GetPtr());
+    const uint8_t* srcData = reinterpret_cast<const uint8_t*>(src[0]->GetPtr());
+    uint8_t* dstData = reinterpret_cast<uint8_t*>(dst[0]->GetPtr());
 
     pKernel->execute(srcData, dstData, MB);
 }
 
-void Transpose::TransposeRefExecutor::exec(MemoryPtr& srcMemPtr, MemoryPtr& dstMemPtr, const int MB) {
-    const size_t dataSize = srcMemPtr->getDesc().getPrecision().size();
-    TransposeContext ctx = {srcMemPtr, dstMemPtr, MB};
+void Transpose::TransposeRefExecutor::exec(const std::vector<MemoryCPtr>& src, const std::vector<MemoryPtr>& dst, const int MB) {
+    MemoryPtr tmpSrc;
+    tmpSrc->setDataHandle(const_cast<void *>(reinterpret_cast<const void *>(src[0]->GetPtr())));
+    const size_t dataSize = src[0]->getDesc().getPrecision().size();
+    TransposeContext ctx = {tmpSrc, dst[0], MB};
     OV_SWITCH(intel_cpu, TransposeOptimizedEmitter, ctx, dataSize,
               OV_CASE(1, PrecisionTrait<Precision::U8>::value_type),
               OV_CASE(2, PrecisionTrait<Precision::U16>::value_type),

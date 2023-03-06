@@ -52,14 +52,14 @@ private:
 
     struct TransposeJitExecutor : public TransposeExecutor {
         TransposeJitExecutor(const PermuteParams& params);
-        void exec(MemoryPtr& srcMemPtr, MemoryPtr& dstMemPtr, const int MB) override;
+        void exec(const std::vector<MemoryCPtr>& src, const std::vector<MemoryPtr>& dst, const int MB) override;
 
         std::shared_ptr<PermuteKernel> pKernel;
     };
 
     struct TransposeRefExecutor : public TransposeExecutor {
         TransposeRefExecutor() = default;
-        void exec(MemoryPtr& srcMemPtr, MemoryPtr& dstMemPtr, const int MB) override;
+        void exec(const std::vector<MemoryCPtr>& src, const std::vector<MemoryPtr>& dst, const int MB) override;
     };
 
     InferenceEngine::SizeVector order;

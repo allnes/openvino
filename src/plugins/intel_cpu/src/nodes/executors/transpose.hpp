@@ -14,11 +14,8 @@ namespace intel_cpu {
 class TransposeExecutor {
 public:
     TransposeExecutor() = default;
-    virtual void exec(MemoryPtr& srcMemPtr, MemoryPtr& dstMemPtr, const int MB) = 0;
+    virtual void exec(const std::vector<MemoryCPtr>& src, const std::vector<MemoryPtr>& dst, const int MB) = 0;
     virtual ~TransposeExecutor() = default;
-    void setNode(Node* _node) { curr_node = _node; }
-protected:
-    Node *curr_node;
 };
 using executorPtr = std::shared_ptr<TransposeExecutor>;
 
