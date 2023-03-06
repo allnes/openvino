@@ -88,7 +88,7 @@ bool MatMul::canFuse(const NodePtr& node) const {
                                                     Algorithm::EltwisePrelu,
                                                     Algorithm::EltwiseMulAdd,
                                                     Algorithm::EltwisePowerStatic) &&
-                eltwiseNode->getBroadcastingPolicy() != Eltwise::PerTensor) {
+                eltwiseNode->getBroadcastingPolicy() != EltwiseAttrs::PerTensor) {
                 return false;
             }
         } else if (const auto* fakeQuantizeNode = dynamic_cast<FakeQuantize *>(node.get())) {

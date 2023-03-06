@@ -108,7 +108,7 @@ public:
 
 }   // namespace
 
-Eltwise::BroadcastingPolicy Eltwise::determineBroadcastingPolicy(const std::shared_ptr<ngraph::Node>& op) {
+EltwiseAttrs::BroadcastingPolicy Eltwise::determineBroadcastingPolicy(const std::shared_ptr<ngraph::Node>& op) {
     const auto const1 = std::dynamic_pointer_cast<ngraph::opset1::Constant>(op->get_input_node_shared_ptr(0));
     const auto const2 = std::dynamic_pointer_cast<ngraph::opset1::Constant>(op->get_input_node_shared_ptr(1));
     int constPort = -1;
@@ -117,32 +117,32 @@ Eltwise::BroadcastingPolicy Eltwise::determineBroadcastingPolicy(const std::shar
     } else if (const1) {
         constPort = 0;
     } else {
-        return Undefined;
+        return EltwiseAttrs::Undefined;
     }
 
     auto const_shape = op->get_input_shape(constPort);
     if (ngraph::shape_size(const_shape) == 1)
-        return PerTensor;
+        return EltwiseAttrs::PerTensor;
     else
-        return PerChannel;
+        return EltwiseAttrs::PerChannel;
 }
 
 const std::map<const ngraph::DiscreteTypeInfo, Eltwise::Initializer> Eltwise::initializers = {
     {ngraph::op::v1::Add::get_type_info_static(), [](const std::shared_ptr<ngraph::Node>& op, Eltwise& node) {
         node.algorithm = Algorithm::EltwiseAdd;
-        node.broadcastingPolicy = determineBroadcastingPolicy(op);
+        node.eltwiseAttrs.broadcastingPolicy = determineBroadcastingPolicy(op);
     }},
     {ngraph::op::v1::Subtract::get_type_info_static(), [](const std::shared_ptr<ngraph::Node>& op, Eltwise& node) {
         node.algorithm = Algorithm::EltwiseSubtract;
-        node.broadcastingPolicy = determineBroadcastingPolicy(op);
+        node.eltwiseAttrs.broadcastingPolicy = determineBroadcastingPolicy(op);
     }},
     {ngraph::op::v1::Multiply::get_type_info_static(), [](const std::shared_ptr<ngraph::Node>& op, Eltwise& node) {
         node.algorithm = Algorithm::EltwiseMultiply;
-        node.broadcastingPolicy = determineBroadcastingPolicy(op);
+        node.eltwiseAttrs.broadcastingPolicy = determineBroadcastingPolicy(op);
     }},
     {ngraph::op::v1::Divide::get_type_info_static(), [](const std::shared_ptr<ngraph::Node>& op, Eltwise& node) {
         node.algorithm = Algorithm::EltwiseDivide;
-        node.broadcastingPolicy = determineBroadcastingPolicy(op);
+        node.eltwiseAttrs.broadcastingPolicy = determineBroadcastingPolicy(op);
     }},
     {ngraph::op::v0::SquaredDifference::get_type_info_static(), [](const std::shared_ptr<ngraph::Node>& op, Eltwise& node) {
         node.algorithm = Algorithm::EltwiseSquaredDifference;
@@ -168,7 +168,7 @@ const std::map<const ngraph::DiscreteTypeInfo, Eltwise::Initializer> Eltwise::in
         node.eltwiseAttrs.alpha = powerStatic->get_power();
         node.eltwiseAttrs.beta = powerStatic->get_scale();
         node.eltwiseAttrs.gamma = powerStatic->get_shift();
-        node.broadcastingPolicy = PerTensor;
+        node.eltwiseAttrs.broadcastingPolicy = EltwiseAttrs::PerTensor;
     }},
     {ngraph::op::v1::Equal::get_type_info_static(), [](const std::shared_ptr<ngraph::Node>& op, Eltwise& node) {
         node.algorithm = Algorithm::EltwiseEqual;
@@ -296,7 +296,7 @@ const std::map<const ngraph::DiscreteTypeInfo, Eltwise::Initializer> Eltwise::in
     }},
     {ngraph::op::v0::PRelu::get_type_info_static(), [](const std::shared_ptr<ngraph::Node>& op, Eltwise& node) {
         node.algorithm = Algorithm::EltwisePrelu;
-        node.broadcastingPolicy = determineBroadcastingPolicy(op);
+        node.eltwiseAttrs.broadcastingPolicy = determineBroadcastingPolicy(op);
     }},
     {ngraph::op::v0::Erf::get_type_info_static(), [](const std::shared_ptr<ngraph::Node>& op, Eltwise& node) {
         node.algorithm = Algorithm::EltwiseErf;
@@ -452,7 +452,7 @@ bool Eltwise::isSupportedOperation(const std::shared_ptr<const ngraph::Node>& op
 }
 
 Eltwise::Eltwise(const std::shared_ptr<ngraph::Node>& op, const GraphContext::CPtr context) :
-    Node(op, context, EltwiseShapeInferFactory()), broadcastingPolicy(Undefined) {
+    Node(op, context, EltwiseShapeInferFactory()) {
     std::string errorMessage;
     if (!isSupportedOperation(op, errorMessage)) {
         IE_THROW(NotImplemented) << errorMessage;
@@ -800,7 +800,11 @@ void Eltwise::prepareParams() {
     for (const auto &node : fusedWith) {
         if (node->getType() == Type::Eltwise) {
             if (auto eltwise = std::dynamic_pointer_cast<Eltwise>(node)) {
-                postOps.push_back(EltwisePostOp({eltwise->getAlgorithm(), eltwise->getAlpha(), eltwise->getBeta(), eltwise->getGamma()}));
+                postOps.push_back(EltwisePostOp({eltwise->getAlgorithm(),
+                                                 eltwise->getAlpha(),
+                                                 eltwise->getBeta(),
+                                                 eltwise->getGamma(),
+                                                 eltwise->getBroadcastingPolicy()}));
             }
         } else if (node->getType() == Type::FakeQuantize) {
             dnnl::post_ops ops;

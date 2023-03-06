@@ -221,7 +221,7 @@ std::vector<CPUSpecificParams> cpuParams_5D = {
 
 const std::vector<fusingSpecificParams> fusingParamsSet{
     emptyFusingSpec,
-#if defined(OPENVINO_ARCH_X86_64)
+#if defined(OPENVINO_ARCH_X86) || defined(OPENVINO_ARCH_X86_64)
     // eltwise
     fusingSigmoid,
     fusingPRelu1D,
@@ -368,7 +368,6 @@ const auto params_5D_emptyCPUSpec_I32 = ::testing::Combine(
 #if defined(OPENVINO_ARCH_X86) || defined(OPENVINO_ARCH_X86_64)
 INSTANTIATE_TEST_SUITE_P(smoke_CompareWithRefs_5D_I32, EltwiseLayerCPUTest, params_5D_emptyCPUSpec_I32, EltwiseLayerCPUTest::getTestCaseName);
 #endif
-
 
 std::vector<std::vector<ov::Shape>> inShapes_4D_Blocked_Planar = {
         {{2, 17, 31, 3}, {2, 1, 31, 3}},
