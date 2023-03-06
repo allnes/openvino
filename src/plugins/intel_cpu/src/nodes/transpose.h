@@ -6,6 +6,7 @@
 
 #include "common/permute_kernel.h"
 #include "executors/transpose.hpp"
+#include "executors/common/ref_transpose.hpp"
 #include <memory>
 #include <string>
 #include <utility>
@@ -14,13 +15,6 @@
 namespace ov {
 namespace intel_cpu {
 namespace node {
-
-template <typename T>
-static void transpose_to_0312(const int MB, const MemoryPtr& srcMemPtr, MemoryPtr& dstMemPtr);
-template<typename T>
-static void transpose_to_04123(const int MB, const MemoryPtr& srcMemPtr, MemoryPtr& dstMemPtr);
-template<typename T>
-static void transpose_to_051234(const int MB, const MemoryPtr& srcMemPtr, MemoryPtr& dstMemPtr);
 
 class Transpose : public Node {
 public:
@@ -66,16 +60,6 @@ private:
         std::shared_ptr<PermuteKernel> pKernel;
     };
 
-    class TransposeRefExecutor : public TransposeExecutor {
-    public:
-        explicit TransposeRefExecutor(const ExecutorContext::CPtr context);
-        bool init(const PermuteParams& permuteParams,
-                  const std::vector<MemoryDescPtr>& srcDescs,
-                  const std::vector<MemoryDescPtr>& dstDescs,
-                  const dnnl::primitive_attr &attr) override { return true; }
-        void exec(const std::vector<MemoryCPtr>& src, const std::vector<MemoryPtr>& dst, const int MB) override;
-    };
-
     InferenceEngine::SizeVector order;
     InferenceEngine::Precision prec;
     bool isOptimized = false;
@@ -87,31 +71,6 @@ private:
     };
 
     PermuteParams params;
-
-    struct TransposeContext {
-        MemoryPtr srcMemPtr;
-        MemoryPtr dstMemPtr;
-        int MB;
-    };
-
-    template<typename T>
-    struct TransposeOptimizedEmitter {
-        void operator()(TransposeContext& ctx) {
-            switch (ctx.srcMemPtr->getStaticDims().size()) {
-                case 4:
-                    transpose_to_0312<T>(ctx.MB, ctx.srcMemPtr, ctx.dstMemPtr);
-                    break;
-                case 5:
-                    transpose_to_04123<T>(ctx.MB, ctx.srcMemPtr, ctx.dstMemPtr);
-                    break;
-                case 6:
-                    transpose_to_051234<T>(ctx.MB, ctx.srcMemPtr, ctx.dstMemPtr);
-                    break;
-                default:
-                    IE_THROW() << "Transpose supports optimized execution with only 4D, 5D and 6D shapes";
-            }
-        }
-    };
 
     bool isInputOrderConst = false;
 
