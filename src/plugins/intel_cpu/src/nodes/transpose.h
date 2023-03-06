@@ -46,17 +46,21 @@ public:
 
 protected:
     void executeDynamicImpl(dnnl::stream strm) override;
+    std::shared_ptr<ExecutorContext> transpose_context;
 
 private:
-    executorPtr execPtr = nullptr;
+    TransposeExecutorPtr execPtr = nullptr;
 
     class TransposeJitExecutor : public TransposeExecutor {
     public:
-        TransposeJitExecutor(const PermuteParams& params);
+        explicit TransposeJitExecutor(const ExecutorContext::CPtr context);
         bool init(const PermuteParams& permuteParams,
                   const std::vector<MemoryDescPtr>& srcDescs,
                   const std::vector<MemoryDescPtr>& dstDescs,
-                  const dnnl::primitive_attr &attr) override { return true; }
+                  const dnnl::primitive_attr &attr) override {
+            pKernel = std::make_shared<PermuteKernel>(permuteParams);
+            return true;
+        }
         void exec(const std::vector<MemoryCPtr>& src, const std::vector<MemoryPtr>& dst, const int MB) override;
 
         std::shared_ptr<PermuteKernel> pKernel;
@@ -64,7 +68,7 @@ private:
 
     class TransposeRefExecutor : public TransposeExecutor {
     public:
-        TransposeRefExecutor() = default;
+        explicit TransposeRefExecutor(const ExecutorContext::CPtr context);
         bool init(const PermuteParams& permuteParams,
                   const std::vector<MemoryDescPtr>& srcDescs,
                   const std::vector<MemoryDescPtr>& dstDescs,

@@ -206,8 +206,11 @@ void Transpose::prepareParams() {
     }
 
     auto engine = getEngine();
-    auto builder = [&engine](const PermuteParams& key) -> std::shared_ptr<TransposeJitExecutor> {
-        return std::make_shared<TransposeJitExecutor>(key);
+    auto builder = [&engine, &srcDesc, &dstDesc, this](const PermuteParams& key) -> std::shared_ptr<TransposeJitExecutor> {
+        auto jitExec = std::make_shared<TransposeJitExecutor>(transpose_context);
+        dnnl::primitive_attr attr;
+        jitExec->init(key, {srcDesc}, {dstDesc}, attr);
+        return jitExec;
     };
 
     auto cache = context->getParamsCache();
@@ -231,6 +234,8 @@ void Transpose::createPrimitive() {
     if (getSelectedPrimitiveDescriptor() == nullptr)
         IE_THROW() << "Preferable primitive descriptor was not set.";
 
+    transpose_context = std::make_shared<ExecutorContext>(context, getPrimitivesPriority());
+
     if (getParentEdgeAt(INPUT_DATA_IDX)->getMemory().getDesc().hasLayoutType(LayoutType::ncsp) &&
         getChildEdgeAt(0)->getMemory().getDesc().hasLayoutType(LayoutType::ncsp) &&
         order == std::vector<size_t>{0, 3, 1, 2}) {
@@ -238,7 +243,7 @@ void Transpose::createPrimitive() {
     } else if (getParentEdgeAt(INPUT_DATA_IDX)->getMemory().getDesc().hasLayoutType(LayoutType::ncsp) &&
             std::find(optimizedOrders.begin(), optimizedOrders.end(), order) != optimizedOrders.end()) {
         isOptimized = true;
-        execPtr = std::make_shared<TransposeRefExecutor>();
+        execPtr = std::make_shared<TransposeRefExecutor>(transpose_context);
         return;
     }
 
@@ -365,10 +370,6 @@ void Transpose::executeDynamicImpl(dnnl::stream strm) {
     execute(strm);
 }
 
-Transpose::TransposeJitExecutor::TransposeJitExecutor(const PermuteParams& params) {
-    pKernel = std::make_shared<PermuteKernel>(params);
-}
-
 void Transpose::TransposeJitExecutor::exec(const std::vector<MemoryCPtr>& src, const std::vector<MemoryPtr>& dst, const int MB) {
     if (!pKernel)
         IE_THROW() << "Could not execute. Kernel for Transpose node was not compiled.";
@@ -378,6 +379,8 @@ void Transpose::TransposeJitExecutor::exec(const std::vector<MemoryCPtr>& src, c
 
     pKernel->execute(srcData, dstData, MB);
 }
+
+Transpose::TransposeJitExecutor::TransposeJitExecutor(const ExecutorContext::CPtr context) : TransposeExecutor(context) {}
 
 void Transpose::TransposeRefExecutor::exec(const std::vector<MemoryCPtr>& src, const std::vector<MemoryPtr>& dst, const int MB) {
     MemoryPtr tmpSrc;
@@ -389,6 +392,8 @@ void Transpose::TransposeRefExecutor::exec(const std::vector<MemoryCPtr>& src, c
               OV_CASE(2, PrecisionTrait<Precision::U16>::value_type),
               OV_CASE(4, PrecisionTrait<Precision::I32>::value_type));
 }
+
+Transpose::TransposeRefExecutor::TransposeRefExecutor(const ExecutorContext::CPtr context) : TransposeExecutor(context) {}
 
 bool Transpose::created() const {
     return getType() == Type::Transpose;

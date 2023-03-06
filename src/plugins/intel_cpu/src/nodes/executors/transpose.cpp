@@ -4,4 +4,4 @@
 
 #include "transpose.hpp"
 
-//ov::intel_cpu::TransposeExecutor::TransposeExecutor(const ov::intel_cpu::ExecutorContext::CPtr context) : context(context) {}
+ov::intel_cpu::TransposeExecutor::TransposeExecutor(const ov::intel_cpu::ExecutorContext::CPtr context) : context(context) {}

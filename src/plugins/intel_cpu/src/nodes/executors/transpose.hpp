@@ -14,15 +14,19 @@ namespace intel_cpu {
 
 class TransposeExecutor {
 public:
-    TransposeExecutor() = default;
+    explicit TransposeExecutor(const ExecutorContext::CPtr context);
     virtual bool init(const PermuteParams& permuteParams,
                       const std::vector<MemoryDescPtr>& srcDescs,
                       const std::vector<MemoryDescPtr>& dstDescs,
                       const dnnl::primitive_attr &attr) = 0;
     virtual void exec(const std::vector<MemoryCPtr>& src, const std::vector<MemoryPtr>& dst, const int MB) = 0;
     virtual ~TransposeExecutor() = default;
+protected:
+    PermuteParams permuteParams;
+    const ExecutorContext::CPtr context;
 };
-using executorPtr = std::shared_ptr<TransposeExecutor>;
+using TransposeExecutorPtr = std::shared_ptr<TransposeExecutor>;
+using TransposeExecutorCPtr = std::shared_ptr<const TransposeExecutor>;
 
 } // namespace intel_cpu
 } // namespace ov
