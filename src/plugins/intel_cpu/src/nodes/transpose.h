@@ -50,15 +50,25 @@ protected:
 private:
     executorPtr execPtr = nullptr;
 
-    struct TransposeJitExecutor : public TransposeExecutor {
+    class TransposeJitExecutor : public TransposeExecutor {
+    public:
         TransposeJitExecutor(const PermuteParams& params);
+        bool init(const PermuteParams& permuteParams,
+                  const std::vector<MemoryDescPtr>& srcDescs,
+                  const std::vector<MemoryDescPtr>& dstDescs,
+                  const dnnl::primitive_attr &attr) override { return true; }
         void exec(const std::vector<MemoryCPtr>& src, const std::vector<MemoryPtr>& dst, const int MB) override;
 
         std::shared_ptr<PermuteKernel> pKernel;
     };
 
-    struct TransposeRefExecutor : public TransposeExecutor {
+    class TransposeRefExecutor : public TransposeExecutor {
+    public:
         TransposeRefExecutor() = default;
+        bool init(const PermuteParams& permuteParams,
+                  const std::vector<MemoryDescPtr>& srcDescs,
+                  const std::vector<MemoryDescPtr>& dstDescs,
+                  const dnnl::primitive_attr &attr) override { return true; }
         void exec(const std::vector<MemoryCPtr>& src, const std::vector<MemoryPtr>& dst, const int MB) override;
     };
 
