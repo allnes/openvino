@@ -55,10 +55,6 @@ public:
             }
         }
 
-        if (eltwiseAttrs.broadcastingPolicy != EltwiseAttrs::BroadcastingPolicy::Undefined) {
-            return false;
-        }
-
         switch (eltwiseAttrs.algorithm) {
             case Algorithm::EltwiseIsFinite:
             case Algorithm::EltwiseIsInf:

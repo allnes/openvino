@@ -46,6 +46,11 @@ bool AclEltwiseExecutor::init(const EltwiseAttrs &eltwiseAttrs, const std::vecto
     if (!postOps.empty()) { return false; }
     aclEltwiseAttrs = eltwiseAttrs;
 
+    if (srcDescs.size() == 2 &&
+        srcDescs[0]->getShape().getDims() != srcDescs[1]->getShape().getDims()) {
+        return false;
+    }
+
     std::vector<VectorDims> srcVecDims(srcDescs.size()), dstVecDims(dstDescs.size());
     std::vector<TensorInfo> srcTensorsInfo(srcDescs.size()), dstTensorsInfo(dstDescs.size());
     srcTensors = std::vector<arm_compute::Tensor>(srcDescs.size());
@@ -54,8 +59,8 @@ bool AclEltwiseExecutor::init(const EltwiseAttrs &eltwiseAttrs, const std::vecto
     for (int i = 0; i < srcVecDims.size(); i++) {
         srcVecDims[i] = reshape_sizes(srcDescs[i]->getShape().getDims());
         srcTensorsInfo[i] = TensorInfo(eltwiseShapeCast(srcVecDims[i]), 1,
-                                    precisionToAclDataType(srcDescs[i]->getPrecision()),
-                                    getAclDataLayoutByMemoryDesc(srcDescs[i]));
+                                       precisionToAclDataType(srcDescs[i]->getPrecision()),
+                                       getAclDataLayoutByMemoryDesc(srcDescs[i]));
         srcTensors[i].allocator()->init(srcTensorsInfo[i]);
     }
 
