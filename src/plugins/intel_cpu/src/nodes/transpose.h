@@ -15,6 +15,13 @@ namespace ov {
 namespace intel_cpu {
 namespace node {
 
+template <typename T>
+static void transpose_to_0312(const int MB, const MemoryPtr& srcMemPtr, MemoryPtr& dstMemPtr);
+template<typename T>
+static void transpose_to_04123(const int MB, const MemoryPtr& srcMemPtr, MemoryPtr& dstMemPtr);
+template<typename T>
+static void transpose_to_051234(const int MB, const MemoryPtr& srcMemPtr, MemoryPtr& dstMemPtr);
+
 class Transpose : public Node {
 public:
     Transpose(const std::shared_ptr<ngraph::Node>& op, const GraphContext::CPtr context);
@@ -55,8 +62,6 @@ private:
         void exec(MemoryPtr& srcMemPtr, MemoryPtr& dstMemPtr, const int MB) override;
     };
 
-    template<typename T> void optimizedExecute(const int MB, const MemoryPtr& srcMemPtr, MemoryPtr& dstMemPtr);
-
     InferenceEngine::SizeVector order;
     InferenceEngine::Precision prec;
     bool isOptimized = false;
@@ -70,7 +75,6 @@ private:
     PermuteParams params;
 
     struct TransposeContext {
-        Transpose* nodePtr;
         MemoryPtr srcMemPtr;
         MemoryPtr dstMemPtr;
         int MB;
@@ -79,7 +83,19 @@ private:
     template<typename T>
     struct TransposeOptimizedEmitter {
         void operator()(TransposeContext& ctx) {
-            ctx.nodePtr->optimizedExecute<T>(ctx.MB, ctx.srcMemPtr, ctx.dstMemPtr);
+            switch (ctx.srcMemPtr->getStaticDims().size()) {
+                case 4:
+                    transpose_to_0312<T>(ctx.MB, ctx.srcMemPtr, ctx.dstMemPtr);
+                    break;
+                case 5:
+                    transpose_to_04123<T>(ctx.MB, ctx.srcMemPtr, ctx.dstMemPtr);
+                    break;
+                case 6:
+                    transpose_to_051234<T>(ctx.MB, ctx.srcMemPtr, ctx.dstMemPtr);
+                    break;
+                default:
+                    IE_THROW() << "Transpose supports optimized execution with only 4D, 5D and 6D shapes";
+            }
         }
     };
 

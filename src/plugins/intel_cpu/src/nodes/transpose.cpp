@@ -339,23 +339,6 @@ static void transpose_to_051234(const int MB, const MemoryPtr& srcMemPtr, Memory
     });
 }
 
-template<typename T>
-void Transpose::optimizedExecute(const int MB, const MemoryPtr& srcMemPtr, MemoryPtr& dstMemPtr) {
-    switch (srcMemPtr->getStaticDims().size()) {
-        case 4:
-            transpose_to_0312<T>(MB, srcMemPtr, dstMemPtr);
-            break;
-        case 5:
-            transpose_to_04123<T>(MB, srcMemPtr, dstMemPtr);
-            break;
-        case 6:
-            transpose_to_051234<T>(MB, srcMemPtr, dstMemPtr);
-            break;
-        default:
-            IE_THROW() << "Transpose '" << getName() << "' supports optimized execution with only 4D, 5D and 6D shapes";
-    }
-}
-
 void Transpose::execute(dnnl::stream strm) {
     if (prim) {
         (*prim).execute(strm, primArgs);
@@ -396,7 +379,7 @@ void Transpose::TransposeJitExecutor::exec(MemoryPtr& srcMemPtr, MemoryPtr& dstM
 
 void Transpose::TransposeRefExecutor::exec(MemoryPtr& srcMemPtr, MemoryPtr& dstMemPtr, const int MB) {
     const size_t dataSize = srcMemPtr->getDesc().getPrecision().size();
-    TransposeContext ctx = {dynamic_cast<Transpose *>(curr_node), srcMemPtr, dstMemPtr, MB};
+    TransposeContext ctx = {srcMemPtr, dstMemPtr, MB};
     OV_SWITCH(intel_cpu, TransposeOptimizedEmitter, ctx, dataSize,
               OV_CASE(1, PrecisionTrait<Precision::U8>::value_type),
               OV_CASE(2, PrecisionTrait<Precision::U16>::value_type),
