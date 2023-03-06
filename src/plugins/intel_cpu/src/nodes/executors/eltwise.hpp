@@ -16,23 +16,17 @@ struct EltwiseAttrs {
     float alpha;
     float beta;
     float gamma;
-    enum BroadcastingPolicy {
-        PerChannel,
-        PerTensor,
-        Undefined,
-    } broadcastingPolicy;
 
-    EltwiseAttrs() : algorithm(Algorithm::Default), alpha(0), beta(0), gamma(0), broadcastingPolicy(Undefined) {}
-    EltwiseAttrs(Algorithm algorithm, float alpha, float beta, float gamma, BroadcastingPolicy broadcastingPolicy)
-        : algorithm(algorithm), alpha(alpha), beta(beta), gamma(gamma), broadcastingPolicy(broadcastingPolicy) {}
+    EltwiseAttrs() : algorithm(Algorithm::Default), alpha(0), beta(0), gamma(0) {}
+    EltwiseAttrs(Algorithm algorithm, float alpha, float beta, float gamma) : algorithm(algorithm), alpha(alpha), beta(beta), gamma(gamma) {}
 
     bool operator==(const EltwiseAttrs& rhs) const {
         bool retVal = true;
         retVal = algorithm == rhs.algorithm &&
                  alpha == rhs.alpha &&
                  beta == rhs.beta &&
-                 gamma == rhs.gamma &&
-                 broadcastingPolicy == rhs.broadcastingPolicy;
+                 gamma == rhs.gamma;
+
         return retVal;
     }
 };

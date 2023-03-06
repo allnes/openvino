@@ -58,13 +58,22 @@ public:
     void executeDynamicImpl(dnnl::stream strm) override;
 
     void setDynamicBatchLim(int lim) override;
-    EltwiseAttrs::BroadcastingPolicy getBroadcastingPolicy() const { return eltwiseAttrs.broadcastingPolicy; }
+
+    enum BroadcastingPolicy {
+        PerChannel,
+        PerTensor,
+        Undefined,
+    };
+
+    BroadcastingPolicy getBroadcastingPolicy() const { return broadcastingPolicy; }
 
     static bool isSupportedOperation(const std::shared_ptr<const ngraph::Node>& op, std::string& errorMessage) noexcept;
 
 private:
     EltwiseAttrs eltwiseAttrs;
     std::shared_ptr<EltwiseExecutor> execPtr = nullptr;
+
+    BroadcastingPolicy broadcastingPolicy;
 
     bool canUseOptimizedImpl = false;
     bool isDynBatchEnabled = false;
@@ -88,7 +97,7 @@ private:
     using Initializer = std::function<void(const std::shared_ptr<ngraph::Node>&, Eltwise& node)>;
     static const std::map<const ngraph::DiscreteTypeInfo, Initializer> initializers;
 
-    static EltwiseAttrs::BroadcastingPolicy determineBroadcastingPolicy(const std::shared_ptr<ngraph::Node>& op);
+    static BroadcastingPolicy determineBroadcastingPolicy(const std::shared_ptr<ngraph::Node>& op);
 
     size_t getOpInputsNum() const;
 
