@@ -31,11 +31,8 @@ public:
 private:
     EltwiseAttrs aclEltwiseAttrs{};
     impl_desc_type implType = impl_desc_type::acl;
-    arm_compute::Tensor src1Tensor;
-    arm_compute::Tensor src2Tensor;
-    arm_compute::Tensor dstTensor;
+    std::vector<arm_compute::Tensor> srcTensors, dstTensors;
     std::function<void()> exec_func;
-    bool is_unary_op = false;
 };
 
 class AclEltwiseExecutorBuilder : public EltwiseExecutorBuilder {
@@ -43,26 +40,19 @@ public:
     bool isSupported(const EltwiseAttrs& eltwiseAttrs,
                      const std::vector<MemoryDescPtr>& srcDescs,
                      const std::vector<MemoryDescPtr>& dstDescs) const override {
-        for (const auto &desc : srcDescs) {
-            if (desc->hasLayoutType(LayoutType::nCsp8c) ||
-                desc->hasLayoutType(LayoutType::nCsp16c)) {
-                return false;
-            }
-            if (!one_of(desc->getPrecision(),
-                        InferenceEngine::Precision::FP16,
-                        InferenceEngine::Precision::FP32))
-                return false;
-        }
+        for (const auto &srcD : srcDescs) {
+            for (const auto &dstD : dstDescs) {
+                if ((srcD->getPrecision() != InferenceEngine::Precision::FP32 &&
+                     srcD->getPrecision() != InferenceEngine::Precision::FP16) ||
+                    srcD->getPrecision() != dstD->getPrecision())
+                    return false;
 
-        for (const auto &desc : dstDescs) {
-            if (desc->hasLayoutType(LayoutType::nCsp8c) ||
-                desc->hasLayoutType(LayoutType::nCsp16c)) {
-                return false;
+                if (!(srcD->hasLayoutType(LayoutType::ncsp) &&
+                      dstD->hasLayoutType(LayoutType::ncsp)) &&
+                    !(srcD->hasLayoutType(LayoutType::nspc) &&
+                      dstD->hasLayoutType(LayoutType::nspc)))
+                    return false;
             }
-            if (!one_of(desc->getPrecision(),
-                        InferenceEngine::Precision::FP16,
-                        InferenceEngine::Precision::FP32))
-                return false;
         }
 
         switch (eltwiseAttrs.algorithm) {
