@@ -20,6 +20,8 @@ public:
     impl_desc_type getImplType() const override { return implType; }
 private:
     impl_desc_type implType = impl_desc_type::acl;
+    arm_compute::Tensor srcTensor, dstTensor;
+    std::unique_ptr<arm_compute::NEPermute> acl_permute;
 };
 
 class ACLTransposeExecutorBuilder : public TransposeExecutorBuilder {
@@ -27,6 +29,15 @@ public:
     bool isSupported(const TransposeParams& transposeParams,
                      const std::vector<MemoryDescPtr>& srcDescs,
                      const std::vector<MemoryDescPtr>& dstDescs) const override {
+        for (const auto &srcD : srcDescs) {
+            for (const auto &dstD : dstDescs) {
+                if (!(srcD->hasLayoutType(LayoutType::ncsp) &&
+                      dstD->hasLayoutType(LayoutType::ncsp)) &&
+                    !(srcD->hasLayoutType(LayoutType::nspc) &&
+                      dstD->hasLayoutType(LayoutType::nspc)))
+                    return false;
+            }
+        }
         return true;
     }
 
