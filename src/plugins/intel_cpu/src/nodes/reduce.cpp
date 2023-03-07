@@ -1952,7 +1952,7 @@ void Reduce::prepareParams() {
             compile_post_kernel = false;
         }
     }
-#endif
+#else
     std::vector<MemoryDescPtr> srcMemoryDescs;
     for (int i = 0; i < getOriginalInputsNumber(); i++) {
         srcMemoryDescs.push_back(getParentEdgeAt(i)->getMemoryPtr()->getDescPtr());
@@ -1967,6 +1967,7 @@ void Reduce::prepareParams() {
 
     execPtr = selectedPD->getExecutorFactoryAs<ReduceExecutorFactory>()->makeExecutor(reduceAttrs, srcMemoryDescs, dstMemoryDescs, attr);
     selectedPD->setImplementationType(execPtr->getImplType());
+#endif
 }
 
 void Reduce::createPrimitive() {
