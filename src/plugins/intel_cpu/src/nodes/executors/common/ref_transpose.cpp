@@ -101,3 +101,11 @@ void ov::intel_cpu::RefTransposeExecutor::exec(const std::vector<MemoryCPtr>& sr
 }
 
 ov::intel_cpu::RefTransposeExecutor::RefTransposeExecutor(const ExecutorContext::CPtr context) : TransposeExecutor(context) {}
+
+bool ov::intel_cpu::RefTransposeExecutor::init(const ov::intel_cpu::TransposeParams &transposeParams,
+                                               const std::vector<MemoryDescPtr> &srcDescs,
+                                               const std::vector<MemoryDescPtr> &dstDescs,
+                                               const dnnl::primitive_attr &attr) {
+    if (transposeParams.transposeExecution != TransposeParams::REF) { return false; }
+    return true;
+}

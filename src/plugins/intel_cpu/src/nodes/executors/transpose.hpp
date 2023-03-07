@@ -12,10 +12,15 @@
 namespace ov {
 namespace intel_cpu {
 
+struct TransposeParams {
+    PermuteParams permuteParams;
+    enum TransposeExecution {REF, NOT_REF} transposeExecution = NOT_REF;
+};
+
 class TransposeExecutor {
 public:
     explicit TransposeExecutor(const ExecutorContext::CPtr context);
-    virtual bool init(const PermuteParams& permuteParams,
+    virtual bool init(const TransposeParams& transposeParams,
                       const std::vector<MemoryDescPtr>& srcDescs,
                       const std::vector<MemoryDescPtr>& dstDescs,
                       const dnnl::primitive_attr &attr) = 0;
@@ -32,7 +37,7 @@ using TransposeExecutorCPtr = std::shared_ptr<const TransposeExecutor>;
 class TransposeExecutorBuilder {
 public:
     ~TransposeExecutorBuilder() = default;
-    virtual bool isSupported(const PermuteParams& permuteParams,
+    virtual bool isSupported(const TransposeParams& transposeParams,
                              const std::vector<MemoryDescPtr>& srcDescs,
                              const std::vector<MemoryDescPtr>& dstDescs) const = 0;
     virtual TransposeExecutorPtr makeExecutor(const ExecutorContext::CPtr context) const = 0;

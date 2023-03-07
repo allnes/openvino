@@ -44,10 +44,10 @@ struct TransposeOptimizedEmitter {
 class RefTransposeExecutor : public TransposeExecutor {
 public:
     explicit RefTransposeExecutor(const ExecutorContext::CPtr context);
-    bool init(const PermuteParams &permuteParams,
+    bool init(const TransposeParams &transposeParams,
               const std::vector<MemoryDescPtr> &srcDescs,
               const std::vector<MemoryDescPtr> &dstDescs,
-              const dnnl::primitive_attr &attr) override { return true; }
+              const dnnl::primitive_attr &attr) override;
     void exec(const std::vector<MemoryCPtr> &src, const std::vector<MemoryPtr> &dst, const int MB) override;
     impl_desc_type getImplType() const override { return implType; }
 private:
@@ -56,7 +56,7 @@ private:
 
 class RefTransposeExecutorBuilder : public TransposeExecutorBuilder {
 public:
-    bool isSupported(const PermuteParams& permuteParams,
+    bool isSupported(const TransposeParams& transposeParams,
                      const std::vector<MemoryDescPtr>& srcDescs,
                      const std::vector<MemoryDescPtr>& dstDescs) const override {
         return true;

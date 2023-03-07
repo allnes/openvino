@@ -8,10 +8,11 @@
 
 #include "transpose.hpp"
 #if defined(OV_CPU_WITH_ACL)
-//#include "acl/acl_transpose.hpp"
+#include "acl/acl_transpose.hpp"
 #endif
 
 #include "common/ref_transpose.hpp"
+#include "dnnl/dnnl_transpose.hpp"
 
 #include "onednn/iml_type_mapper.h"
 #include "common/primitive_cache.hpp"
@@ -28,19 +29,19 @@ const std::vector<TransposeExecutorDesc>& getTransposeExecutorsList();
 
 class TransposeExecutorFactory : public ExecutorFactory {
 public:
-    TransposeExecutorFactory(const PermuteParams& permuteParams,
+    TransposeExecutorFactory(const TransposeParams& transposeParams,
                              const std::vector<MemoryDescPtr>& srcDescs,
                              const std::vector<MemoryDescPtr>& dstDescs,
                              const ExecutorContext::CPtr context) : ExecutorFactory(context) {
         for (auto& desc : getTransposeExecutorsList()) {
-            if (desc.builder->isSupported(permuteParams, srcDescs, dstDescs)) {
+            if (desc.builder->isSupported(transposeParams, srcDescs, dstDescs)) {
                 supportedDescs.push_back(desc);
             }
         }
     }
 
     ~TransposeExecutorFactory() = default;
-    virtual TransposeExecutorPtr makeExecutor(const PermuteParams& permuteParams,
+    virtual TransposeExecutorPtr makeExecutor(const TransposeParams& transposeParams,
                                               const std::vector<MemoryDescPtr>& srcDescs,
                                               const std::vector<MemoryDescPtr>& dstDescs,
                                               const dnnl::primitive_attr &attr) {
@@ -48,7 +49,7 @@ public:
             switch (desc->executorType) {
                 default: {
                     auto executor = desc->builder->makeExecutor(context);
-                    if (executor->init(permuteParams, srcDescs, dstDescs, attr)) {
+                    if (executor->init(transposeParams, srcDescs, dstDescs, attr)) {
                         return executor;
                     }
                 } break;

@@ -16,9 +16,10 @@ void ov::intel_cpu::DNNLTransposeExecutor::exec(const std::vector<MemoryCPtr>& s
 
 ov::intel_cpu::DNNLTransposeExecutor::DNNLTransposeExecutor(const ExecutorContext::CPtr context) : TransposeExecutor(context) {}
 
-bool ov::intel_cpu::DNNLTransposeExecutor::init(const PermuteParams &permuteParams,
+bool ov::intel_cpu::DNNLTransposeExecutor::init(const TransposeParams &transposeParams,
                                                 const std::vector<MemoryDescPtr> &srcDescs,
                                                 const std::vector<MemoryDescPtr> &dstDescs, const dnnl::primitive_attr &attr) {
-    pKernel = std::make_shared<PermuteKernel>(permuteParams);
+    if (transposeParams.transposeExecution != TransposeParams::NOT_REF) { return false; }
+    pKernel = std::make_shared<PermuteKernel>(transposeParams.permuteParams);
     return true;
 }

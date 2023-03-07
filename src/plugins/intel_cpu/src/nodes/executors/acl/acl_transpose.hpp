@@ -9,9 +9,9 @@
 namespace ov {
 namespace intel_cpu {
 
-class DNNLTransposeExecutor : public TransposeExecutor {
+class ACLTransposeExecutor : public TransposeExecutor {
 public:
-    explicit DNNLTransposeExecutor(const ExecutorContext::CPtr context);
+    explicit ACLTransposeExecutor(const ExecutorContext::CPtr context);
     bool init(const TransposeParams& transposeParams,
               const std::vector<MemoryDescPtr>& srcDescs,
               const std::vector<MemoryDescPtr>& dstDescs,
@@ -19,11 +19,10 @@ public:
     void exec(const std::vector<MemoryCPtr>& src, const std::vector<MemoryPtr>& dst, const int MB) override;
     impl_desc_type getImplType() const override { return implType; }
 private:
-    std::shared_ptr<PermuteKernel> pKernel;
-    impl_desc_type implType = impl_desc_type::jit;
+    impl_desc_type implType = impl_desc_type::acl;
 };
 
-class DNNLTransposeExecutorBuilder : public TransposeExecutorBuilder {
+class ACLTransposeExecutorBuilder : public TransposeExecutorBuilder {
 public:
     bool isSupported(const TransposeParams& transposeParams,
                      const std::vector<MemoryDescPtr>& srcDescs,
@@ -32,7 +31,7 @@ public:
     }
 
     TransposeExecutorPtr makeExecutor(const ExecutorContext::CPtr context) const override {
-        return std::make_shared<DNNLTransposeExecutor>(context);
+        return std::make_shared<ACLTransposeExecutor>(context);
     }
 };
 

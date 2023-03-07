@@ -6,7 +6,6 @@
 
 #include "common/permute_kernel.h"
 #include "executors/transpose_list.hpp"
-#include "executors/dnnl/dnnl_transpose.hpp"
 #include <memory>
 #include <string>
 #include <utility>
@@ -54,7 +53,7 @@ private:
             std::vector<size_t>{0, 5, 1, 2, 3, 4},
     };
 
-    PermuteParams params;
+    TransposeParams transposeParams;
 
     bool isInputOrderConst = false;
 
