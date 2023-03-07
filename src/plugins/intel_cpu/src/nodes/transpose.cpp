@@ -85,7 +85,6 @@ void Transpose::getSupportedDescriptors() {
 }
 
 void Transpose::initSupportedPrimitiveDescriptors() {
-    std::cout << "Transpose::initSupportedPrimitiveDescriptors" << std::endl;
     if (!supportedPrimitiveDescriptors.empty())
         return;
 
@@ -161,7 +160,6 @@ bool Transpose::needPrepareParams() const {
 }
 
 void Transpose::prepareParams() {
-    std::cout << "Transpose::prepareParams" << std::endl;
     if (performAsReorder) {
         dnnl::primitive_attr attr;
         const auto engine = getEngine();
@@ -240,7 +238,6 @@ void Transpose::prepareParams() {
 }
 
 void Transpose::createPrimitive() {
-    std::cout << "Transpose::createPrimitive" << std::endl;
     auto& dstMemPtr = getChildEdgeAt(0)->getMemoryPtr();
     auto& srcMemPtr = getParentEdgeAt(INPUT_DATA_IDX)->getMemoryPtr();
     if (!dstMemPtr || !dstMemPtr->isAllocated())
