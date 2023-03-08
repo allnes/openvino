@@ -8,7 +8,7 @@
 
 #include "convert.hpp"
 #if defined(OV_CPU_WITH_ACL)
-//#include "acl/acl_transpose.hpp"
+#include "acl/acl_convert.hpp"
 #endif
 
 #include "common/ref_convert.hpp"

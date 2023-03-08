@@ -155,12 +155,6 @@ void Convert::execute(dnnl::stream strm) {
     convertParams.dstPrc = childMem.getDesc().getPrecision();
     convertParams.size = parentPaddElemCount;
 
-
-    convertParams.srcPrc = parentMem.getDesc().getPrecision();
-    convertParams.dstPrc = childMem.getDesc().getPrecision();
-    convertParams.size = parentPaddElemCount;
-
-
     std::vector<MemoryCPtr> srcMemory;
     for (int i = 0; i < getOriginalInputsNumber(); i++) {
         srcMemory.push_back(getParentEdgeAt(i)->getMemoryPtr());
@@ -172,9 +166,11 @@ void Convert::execute(dnnl::stream strm) {
 
     dnnl::primitive_attr attr;
     auto selectedPD = getSelectedPrimitiveDescriptor();
+    std::vector<MemoryDescPtr> srcDescs = {parentMem.getDescPtr()};
+    std::vector<MemoryDescPtr> dstDescs = {childMem.getDescPtr()};
     execPtr = selectedPD->getExecutorFactoryAs<ConvertExecutorFactory>()->makeExecutor(convertParams,
-                                                                                       {srcMemory[0]->getDescPtr()},
-                                                                                       {dstMemory[0]->getDescPtr()},
+                                                                                       srcDescs,
+                                                                                       dstDescs,
                                                                                        attr);
     selectedPD->setImplementationType(execPtr->getImplType());
     execPtr->exec(srcMemory, dstMemory);

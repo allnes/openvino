@@ -5,37 +5,40 @@
 #pragma once
 
 #include "nodes/executors/convert.hpp"
+#include "arm_compute/runtime/NEON/NEFunctions.h"
 
 namespace ov {
 namespace intel_cpu {
 
-class CommonConvertExecutor : public ConvertExecutor {
+class ACLConvertExecutor : public ConvertExecutor {
 public:
-    explicit CommonConvertExecutor(const ExecutorContext::CPtr context);
+    explicit ACLConvertExecutor(const ExecutorContext::CPtr context);
     bool init(const ConvertParams& convertParams,
               const std::vector<MemoryDescPtr>& srcDescs,
               const std::vector<MemoryDescPtr>& dstDescs,
               const dnnl::primitive_attr &attr) override;
     void exec(const std::vector<MemoryCPtr>& src, const std::vector<MemoryPtr>& dst) override;
     impl_desc_type getImplType() const override { return implDescType; };
-    ~CommonConvertExecutor() override = default;
+    ~ACLConvertExecutor() override = default;
 protected:
-    ConvertParams commonConvertParams;
-    impl_desc_type implDescType = impl_desc_type::unknown;
-    const ExecutorContext::CPtr convertContext;
+    ConvertParams aclConvertParams;
+    impl_desc_type implDescType = impl_desc_type::acl;
+    arm_compute::Tensor srcTensor, dstTensor;
+    std::unique_ptr<arm_compute::NECopy> acl_copy;
+    std::unique_ptr<arm_compute::NECast> acl_cast;
 };
 
 
-class CommonConvertExecutorBuilder : public ConvertExecutorBuilder {
+class ACLConvertExecutorBuilder : public ConvertExecutorBuilder {
 public:
-    ~CommonConvertExecutorBuilder() = default;
+    ~ACLConvertExecutorBuilder() = default;
     bool isSupported(const ConvertParams& convertParams,
                      const std::vector<MemoryDescPtr>& srcDescs,
                      const std::vector<MemoryDescPtr>& dstDescs) const override {
         return true;
     }
     ConvertExecutorPtr makeExecutor(const ExecutorContext::CPtr context) const override {
-        return std::make_shared<CommonConvertExecutor>(context);
+        return std::make_shared<ACLConvertExecutor>(context);
     }
 };
 
