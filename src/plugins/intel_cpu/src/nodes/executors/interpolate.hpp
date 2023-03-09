@@ -63,6 +63,7 @@ struct InterpolateAttrs {
     InferenceEngine::Precision outPrc;
     InterpolateLayoutType layout;
     std::vector<float> dataScales;
+    bool hasPad = false;
 };
 
 inline SizeVector getPaddedInputShape(const VectorDims &srcDims,
@@ -137,11 +138,11 @@ public:
                       const std::vector<MemoryDescPtr>& dstDescs,
                       const dnnl::primitive_attr &attr);
     virtual void exec(const std::vector<MemoryCPtr>& src, const std::vector<MemoryPtr>& dst, const void *post_ops_data_) = 0;
-
     virtual impl_desc_type getImplType() const = 0;
 
     virtual ~InterpolateExecutor() = default;
     VectorDims getSrcDimPad5d() const { return srcDimPad5d; }
+    const uint8_t* padPreprocess(const std::vector<MemoryCPtr>& src, const std::vector<MemoryPtr>& dst);
 
 private:
     void buildTblNN(const SizeVector& srcDimPad5d, const SizeVector& dstDim5d, const std::vector<float>& dataScales,

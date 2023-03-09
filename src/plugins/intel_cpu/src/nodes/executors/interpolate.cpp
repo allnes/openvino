@@ -3,6 +3,9 @@
 //
 
 #include "interpolate.hpp"
+#include "ie_parallel.hpp"
+#include "nodes/common/cpu_memcpy.h"
+#include "emitters/x64/jit_load_store_emitters.hpp"
 
 bool ov::intel_cpu::InterpolateExecutor::init(const InterpolateAttrs& interpolateAttrs,
                                          const std::vector<MemoryDescPtr>& srcDescs,
@@ -433,4 +436,93 @@ void ov::intel_cpu::InterpolateExecutor::buildTblCubic(const SizeVector& srcDimP
             }
         }
     }
+}
+
+// shapeND: n     c     d     h    w
+// blockND: ncdhw cdhw  dhw   hw   w    1
+// index  : 0      1    2     3    4    5
+inline SizeVector getBlockND(const SizeVector& shape) {
+    int shapeRank = shape.size();
+    SizeVector blockND(shapeRank + 1, 1);
+    for (int i = shapeRank - 1; i >= 0; i--) {
+        blockND[i] = shape[i] * blockND[i+1];
+    }
+    return blockND;
+}
+
+const uint8_t* ov::intel_cpu::InterpolateExecutor::padPreprocess(const std::vector<MemoryCPtr>& src, const std::vector<MemoryPtr>& dst) {
+    const uint8_t *src_data_origin = reinterpret_cast<uint8_t*>(src[0]->GetData());
+
+    const auto &srcDim = src[0]->getStaticDims();
+    const auto &dstDim = dst[0]->getStaticDims();
+    size_t dimSize = srcDim.size();
+    auto srcDimPad = getSrcDimPad5d();
+
+    const auto srcDim5d = to5Dim(srcDim);
+    const auto srcDimPad5d = to5Dim(srcDimPad);
+    const auto dstDim5d = to5Dim(dstDim);
+    const auto srcDataSize = src[0]->getDesc().getPrecision().size();
+
+    const uint8_t *src_data = nullptr;
+    std::vector<uint8_t> srcPadded;
+    if (interpAttrs.hasPad) {
+        int padB0 = (dimSize > 2) ? interpAttrs.padBegin[0] : 0;
+        int padB1 = (dimSize > 2) ? interpAttrs.padBegin[1] : 0;
+        int padB2 = (dimSize == 5) ? interpAttrs.padBegin[dimSize - 3] : 0;
+        int padB3 = interpAttrs.padBegin[dimSize - 2];
+        int padB4 = interpAttrs.padBegin[dimSize - 1];
+
+        SizeVector inShapeBlock = getBlockND(srcDim5d);
+        SizeVector inShapePadBlock = getBlockND(srcDimPad5d);
+
+        if (interpAttrs.layout == InterpolateLayoutType::planar) {
+            srcPadded.resize(inShapePadBlock[0] * srcDataSize, 0);
+            uint8_t *src_data_pad = static_cast<uint8_t *>(&srcPadded[0]);
+            parallel_for4d(srcDim5d[0], srcDim5d[1], srcDim5d[2], srcDim5d[3], [&](int n, int c, int d, int h) {
+                const uint8_t *src = src_data_origin + (inShapeBlock[1] * n + inShapeBlock[2] * c + inShapeBlock[3] * d + inShapeBlock[4] * h) * srcDataSize;
+                uint8_t *srcPad = src_data_pad + (inShapePadBlock[1] * (n + padB0) + inShapePadBlock[2] * (c + padB1) +
+                                                  inShapePadBlock[3] * (d + padB2) + inShapePadBlock[4] * (h + padB3) + padB4) * srcDataSize;
+                cpu_memcpy(srcPad, src, srcDim5d[4] * srcDataSize);
+            });
+            src_data = src_data_pad;
+        } else if (interpAttrs.layout == InterpolateLayoutType::by_channel) {
+            srcPadded.resize(inShapePadBlock[0] * srcDataSize, 0);
+            uint8_t *src_data_pad = static_cast<uint8_t *>(&srcPadded[0]);
+            parallel_for4d(srcDim5d[0], srcDim5d[2], srcDim5d[3], srcDim5d[4], [&](int n, int d, int h, int w) {
+                const uint8_t *src = src_data_origin + (inShapeBlock[1] * n +
+                                                        (inShapeBlock[3] * d + inShapeBlock[4] * h + inShapeBlock[5] * w) * srcDim5d[1]) * srcDataSize;
+                uint8_t *srcPad = src_data_pad + (inShapePadBlock[1] * (n + padB0) + (inShapePadBlock[3] * (d + padB2) +
+                                                                                      inShapePadBlock[4] * (h + padB3) +
+                                                                                      inShapePadBlock[5] * (w + padB4)) * srcDimPad5d[1] + padB1) * srcDataSize;
+                cpu_memcpy(srcPad, src, srcDim5d[1] * srcDataSize);
+            });
+            src_data = src_data_pad;
+        } else if (interpAttrs.layout == InterpolateLayoutType::block) {
+            size_t blkSize = mayiuse(cpu::x64::avx512_core) ? 16 : 8;
+            size_t CB = div_up(srcDimPad5d[1], blkSize);
+            size_t eltsTotal = srcDimPad5d[0] * CB * srcDimPad5d[2] * srcDimPad5d[3] * srcDimPad5d[4] * blkSize;
+            srcPadded.resize(eltsTotal * srcDataSize, 0x0);
+            uint8_t *src_data_pad = static_cast<uint8_t *>(&srcPadded[0]);
+            if ((srcDim5d[0] != srcDimPad5d[0]) || (srcDim5d[1] != srcDimPad5d[1])) {
+                IE_THROW() << "Interpolate layer with name does not support padding on batch and channel dimensions";
+            }
+            parallel_for5d(srcDim5d[0], CB, srcDim5d[2], srcDim5d[3], srcDim5d[4], [&](int n, int cb, int d, int h, int w) {
+                const uint8_t *src = src_data_origin + (n * CB * srcDim5d[2] * srcDim5d[3] * srcDim5d[4] * blkSize) * srcDataSize
+                                     + (cb * srcDim5d[2] * srcDim5d[3] * srcDim5d[4] * blkSize) * srcDataSize
+                                     + (d * srcDim5d[3] * srcDim5d[4] * blkSize) * srcDataSize
+                                     + (h * srcDim5d[4] * blkSize) * srcDataSize
+                                     + (w * blkSize) * srcDataSize;
+                uint8_t *srcPad = src_data_pad + (n * CB * srcDimPad5d[2] * srcDimPad5d[3] * srcDimPad5d[4] * blkSize) * srcDataSize
+                                  + (cb * srcDimPad5d[2] * srcDimPad5d[3] * srcDimPad5d[4] * blkSize) * srcDataSize
+                                  + ((d + padB2) * srcDimPad5d[3] * srcDimPad5d[4] * blkSize) * srcDataSize
+                                  + ((h + padB3) * srcDimPad5d[4] * blkSize) * srcDataSize
+                                  + ((w + padB4) * blkSize) * srcDataSize;
+                cpu_memcpy(srcPad, src, blkSize * srcDataSize);
+            });
+            src_data = src_data_pad;
+        }
+    } else {
+        src_data = src_data_origin;
+    }
+    return src_data;
 }

@@ -53,8 +53,6 @@ private:
     void setPostOps(dnnl::primitive_attr &attr, const VectorDims &dims);
 
     std::vector<float> getScales(const VectorDims &srcDimPad, const VectorDims &dstDim);
-
-    bool hasPad = false;
     InterpolateShapeCalcMode shapeCalcMode;
 
     bool isAxesSpecified = false;
