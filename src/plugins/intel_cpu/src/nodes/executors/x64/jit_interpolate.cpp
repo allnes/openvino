@@ -1640,21 +1640,25 @@ bool ov::intel_cpu::JITInterpolateExecutor::init(const InterpolateAttrs &interpo
     if (jcp.layout != InterpolateLayoutType::planar) {
         if (mayiuse(cpu::x64::avx512_core)) {
             interpolateKernel.reset(new jit_uni_interpolate_kernel_f32<cpu::x64::avx512_core>(jcp, *attr.get()));
+            implType = impl_desc_type::jit_avx512;
         } else if (mayiuse(cpu::x64::avx2)) {
             interpolateKernel.reset(new jit_uni_interpolate_kernel_f32<cpu::x64::avx2>(jcp, *attr.get()));
+            implType = impl_desc_type::jit_avx2;
         } else if (mayiuse(cpu::x64::sse41)) {
             interpolateKernel.reset(new jit_uni_interpolate_kernel_f32<cpu::x64::sse41>(jcp, *attr.get()));
+            implType = impl_desc_type::jit_sse42;
         }
     } else if (mayiuse(cpu::x64::avx2) && interpAttrs.inPrc == InferenceEngine::Precision::FP32) {
         // gather ISA(for planar JIT kernel) for avx2 and fp32
         interpolateKernel.reset(new jit_uni_interpolate_kernel_f32<cpu::x64::avx2>(jcp, *attr.get()));
+        implType = impl_desc_type::jit_avx2;
     } else {
-        IE_THROW() << "Can't create InterpolateJitExecutor";
+        IE_THROW() << "Can't create JitInterpolateExecutor";
     }
     if (interpolateKernel) {
         interpolateKernel->create_ker();
     } else {
-        IE_THROW() << "Can't compile InterpolateJitExecutor";
+        IE_THROW() << "Can't compile JitInterpolateExecutor";
     }
     return true;
 }
