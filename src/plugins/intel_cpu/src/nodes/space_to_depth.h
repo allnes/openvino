@@ -47,16 +47,23 @@ protected:
 private:
     SpaceToDepthAttrs attrs;
 
-    struct SpaceToDepthExecutor final {
-        SpaceToDepthExecutor(const SpaceToDepthAttrs& attrs);
-        void exec(const uint8_t* srcData, uint8_t* dstData, const int MB);
-        ~SpaceToDepthExecutor() = default;
-
+    class JITSpaceToDepthExecutor {
+    public:
+        explicit JITSpaceToDepthExecutor(const ExecutorContext::CPtr context);
+        bool init(const SpaceToDepthAttrs& spaceToDepthAttrs,
+                  const std::vector<MemoryDescPtr>& srcDescs,
+                  const std::vector<MemoryDescPtr>& dstDescs,
+                  const dnnl::primitive_attr &attr);
+        void exec(const std::vector<MemoryCPtr> &src, const std::vector<MemoryPtr> &dst, const int MB);
+        ~JITSpaceToDepthExecutor() = default;
+    protected:
+        const ExecutorContext::CPtr spaceToDepthContext;
     private:
         std::unique_ptr<PermuteKernel> permuteKernel;
     };
-    using executorPtr = std::shared_ptr<SpaceToDepthExecutor>;
-    executorPtr execPtr = nullptr;
+    using SpaceToDepthExecutorPtr = std::shared_ptr<JITSpaceToDepthExecutor>;
+    using SpaceToDepthExecutorCPtr = std::shared_ptr<const JITSpaceToDepthExecutor>;
+    SpaceToDepthExecutorPtr execPtr = nullptr;
 };
 
 }   // namespace node
