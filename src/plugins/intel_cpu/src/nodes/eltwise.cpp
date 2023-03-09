@@ -837,7 +837,7 @@ void Eltwise::selectOptimalPrimitiveDescriptor() {
 
 void Eltwise::execute(dnnl::stream strm) {
     if (!execPtr) {
-        IE_THROW() << "Can't execute MVN node. Executor is not created";
+        IE_THROW() << "Can't execute Eltwise node. Executor is not created";
     }
 
     std::vector<MemoryCPtr> srcMemory;
