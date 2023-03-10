@@ -8,7 +8,7 @@
 #include "space_to_depth.hpp"
 
 #if defined(OV_CPU_WITH_ACL)
-//#include "acl/acl_space_to_depth.hpp"
+#include "acl/acl_space_to_depth.hpp"
 #endif
 
 #include "common/ref_space_to_depth.hpp"
