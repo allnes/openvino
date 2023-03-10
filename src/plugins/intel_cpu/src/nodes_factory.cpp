@@ -173,6 +173,7 @@ Node::NodesFactory::NodesFactory()
     INTEL_CPU_NODE(Eye, Type::Eye);
     INTEL_CPU_NODE(Unique, Type::Unique);
     INTEL_CPU_NODE(Reduce, Type::Reduce);
+    INTEL_CPU_NODE(SpaceToDepth, Type::SpaceToDepth);
 #if defined(OPENVINO_ARCH_X86_64)
     INTEL_CPU_NODE(Gather, Type::Gather);
     INTEL_CPU_NODE(GridSample, Type::GridSample);
@@ -195,7 +196,6 @@ Node::NodesFactory::NodesFactory()
     INTEL_CPU_NODE(FakeQuantize, Type::FakeQuantize);
     INTEL_CPU_NODE(Proposal, Type::Proposal);
     INTEL_CPU_NODE(ShuffleChannels, Type::ShuffleChannels);
-    INTEL_CPU_NODE(SpaceToDepth, Type::SpaceToDepth);
     INTEL_CPU_NODE(Snippet, Type::Subgraph);
 #endif
 }

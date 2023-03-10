@@ -24,6 +24,11 @@ bool ACLSpaceToDepthExecutor::init(const SpaceToDepthAttrs &spaceToDepthAttrs,
     auto srcDataLayout = getAclDataLayoutByMemoryDesc(srcDescs[0]);
     auto dstDataLayout = getAclDataLayoutByMemoryDesc(dstDescs[0]);
 
+    if (srcDataLayout == arm_compute::DataLayout::UNKNOWN ||
+        dstDataLayout == arm_compute::DataLayout::UNKNOWN) {
+        return false;
+    }
+
     auto srcPrecision = precisionToAclDataType(srcDescs[0]->getPrecision());
     auto dstPrecision = precisionToAclDataType(dstDescs[0]->getPrecision());
 
@@ -36,7 +41,6 @@ bool ACLSpaceToDepthExecutor::init(const SpaceToDepthAttrs &spaceToDepthAttrs,
 
     srcTensor.allocator()->init(srcTensorInfo);
     dstTensor.allocator()->init(dstTensorInfo);
-
     acl_space_to_depth = std::make_unique<arm_compute::NESpaceToDepthLayer>();
     acl_space_to_depth->configure(&srcTensor, &dstTensor, aclSpaceToDepthAttrs.blockSize);
     return true;
