@@ -32,6 +32,15 @@ bool ACLSpaceToDepthExecutor::init(const SpaceToDepthAttrs &spaceToDepthAttrs,
     auto srcPrecision = precisionToAclDataType(srcDescs[0]->getPrecision());
     auto dstPrecision = precisionToAclDataType(dstDescs[0]->getPrecision());
 
+    if ((srcPrecision == arm_compute::DataType::F32 || srcPrecision == arm_compute::DataType::S8) &&
+         (aclSpaceToDepthAttrs.blockSize == 2)) {
+        return false;
+    }
+    if ((srcPrecision == arm_compute::DataType::F32 || srcPrecision == arm_compute::DataType::S8) &&
+        aclSpaceToDepthAttrs.blockSize == 3 && srcDataLayout == arm_compute::DataLayout::NCHW) {
+        return false;
+    }
+
     auto srcTensorInfo = arm_compute::TensorInfo(shapeCast(srcDims), 1, srcPrecision, srcDataLayout);
     auto dstTensorInfo = arm_compute::TensorInfo(shapeCast(dstDims), 1, dstPrecision, dstDataLayout);
 
