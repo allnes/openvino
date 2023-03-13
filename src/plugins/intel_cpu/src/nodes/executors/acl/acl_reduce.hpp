@@ -7,6 +7,7 @@
 // TODO: remove relative path
 #include "../reduce.hpp"
 #include "arm_compute/runtime/NEON/NEFunctions.h"
+#include "utils/debug_capabilities.h"
 
 namespace ov {
 namespace intel_cpu {
@@ -42,12 +43,26 @@ public:
     bool isSupported(const ReduceAttrs& reduceAttrs,
                      const std::vector<MemoryDescPtr>& srcDescs,
                      const std::vector<MemoryDescPtr>& dstDescs) const override {
-        if (srcDescs[0]->getPrecision() != dstDescs[0]->getPrecision() ||
-           (srcDescs[0]->getPrecision() != InferenceEngine::Precision::FP32 &&
-            dstDescs[0]->getPrecision() != InferenceEngine::Precision::FP16 &&
-            dstDescs[0]->getPrecision() != InferenceEngine::Precision::I32))
-            return false;
-
+        if (reduceAttrs.operation == Algorithm::ReduceMean) {
+            if (srcDescs[0]->getPrecision() != dstDescs[0]->getPrecision() ||
+               (srcDescs[0]->getPrecision() != InferenceEngine::Precision::FP32 &&
+                srcDescs[0]->getPrecision() != InferenceEngine::Precision::FP16)) {
+                DEBUG_LOG("NEReduceMean does not support precisions:",
+                        " src[0]=", srcDescs[0]->getPrecision(),
+                        " dst[0]=", dstDescs[0]->getPrecision());
+                return false;
+            }
+        } else {
+            if (srcDescs[0]->getPrecision() != dstDescs[0]->getPrecision() ||
+               (srcDescs[0]->getPrecision() != InferenceEngine::Precision::FP32 &&
+                srcDescs[0]->getPrecision() != InferenceEngine::Precision::FP16 &&
+                srcDescs[0]->getPrecision() != InferenceEngine::Precision::I32)) {
+                DEBUG_LOG("NEReductionOperation does not support precisions:",
+                        " src[0]=", srcDescs[0]->getPrecision(),
+                        " dst[0]=", dstDescs[0]->getPrecision());
+                return false;
+            }
+        }
         return true;
     }
 

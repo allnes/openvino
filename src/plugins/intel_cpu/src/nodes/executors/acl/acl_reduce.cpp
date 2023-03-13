@@ -31,6 +31,7 @@ bool AclReduceExecutor::init(const ReduceAttrs& reduceAttrs,
         reduceAttrs.operation != Algorithm::ReduceSum &&
         reduceAttrs.operation != Algorithm::ReduceProd &&
         reduceAttrs.operation != Algorithm::ReduceMean) {
+            DEBUG_LOG("Unknown reduce algorithm passed into AclReduceExecutor: ", static_cast<int>(reduceAttrs.operation));
             return false;
         }
 
@@ -48,12 +49,15 @@ bool AclReduceExecutor::init(const ReduceAttrs& reduceAttrs,
     dstTensor.allocator()->init(dstTensorInfo);
 
     switch (reduceAttrs.operation) {
-        case Algorithm::ReduceMean:
+        case Algorithm::ReduceMean: {
             for (size_t i = 0; i < reduceAttrs.axes.size(); ++i) {
+                auto axe = axisCast(reduceAttrs.axes[i], srcDims.size());
                 auto pos = axisCast(i, reduceAttrs.axes.size());
-                axesMean.set(pos, reduceAttrs.axes[i]);
+                axesMean.set(pos, axe);
             }
-            if (!arm_compute::NEReduceMean::validate(&srcTensorInfo, axesMean, reduceAttrs.keepDims, &dstTensorInfo)) {
+            Status reduceMeanStatus = NEReduceMean::validate(&srcTensorInfo, axesMean, reduceAttrs.keepDims, &dstTensorInfo);
+            if (!reduceMeanStatus) {
+                DEBUG_LOG("NEReduceMean validation failed: ", reduceMeanStatus.error_description());
                 return false;
             }
             exec_func = [this]{
@@ -62,15 +66,18 @@ bool AclReduceExecutor::init(const ReduceAttrs& reduceAttrs,
                 acl_op->run();
             };
             break;
+        }
         case Algorithm::ReduceMax:
         case Algorithm::ReduceMin:
         case Algorithm::ReduceSum:
-        case Algorithm::ReduceProd:
+        case Algorithm::ReduceProd: {
             if (reduceAttrs.axes.size() != 1) {
                 return false;
             }
-            if (!arm_compute::NEReductionOperation::validate(&srcTensorInfo, &dstTensorInfo, axisCast(reduceAttrs.axes[0], srcDims.size()),
-                                                            getAclReductionOperationByAlgorithm(reduceAttrs.operation), reduceAttrs.keepDims)) {
+            Status reductionOperationStatus = NEReductionOperation::validate(&srcTensorInfo, &dstTensorInfo, axisCast(reduceAttrs.axes[0], srcDims.size()),
+                                                                             getAclReductionOperationByAlgorithm(reduceAttrs.operation), reduceAttrs.keepDims);
+            if (!reductionOperationStatus) {
+                DEBUG_LOG("NEReductionOperation validation with indices failed: ", reductionOperationStatus.error_description());
                 return false;
             }
             exec_func = [this, srcDims]{
@@ -80,6 +87,7 @@ bool AclReduceExecutor::init(const ReduceAttrs& reduceAttrs,
                 acl_op->run();
             };
             break;
+        }
         default:
             IE_THROW() << "Unsupported operation type for ACL Reduce executor: " << static_cast<int>(reduceAttrs.operation);
     }
