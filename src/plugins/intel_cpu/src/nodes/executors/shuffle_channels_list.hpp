@@ -8,7 +8,7 @@
 #include "shuffle_channels.hpp"
 
 #if defined(OV_CPU_WITH_ACL)
-//#include "acl/acl_space_to_depth.hpp"
+#include "acl/acl_shuffle_channels.hpp"
 #endif
 
 #include "common/ref_shuffle_channels.hpp"
