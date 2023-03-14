@@ -10,8 +10,6 @@
 namespace ov {
 namespace intel_cpu {
 
-arm_compute::TensorShape eltwiseShapeCast(const VectorDims& dims);
-
 class AclEltwiseExecutor : public EltwiseExecutor {
 public:
     AclEltwiseExecutor(const ExecutorContext::CPtr context);

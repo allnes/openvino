@@ -10,18 +10,6 @@ namespace intel_cpu {
 
 using namespace arm_compute;
 
-TensorShape eltwiseShapeCast(const VectorDims &dims) {
-    arm_compute::TensorShape tensorShape;
-    for (std::size_t i = 0; i < dims.size(); ++i) {
-        tensorShape.set(dims.size() - i - 1, dims[i], false);
-    }
-    if (tensorShape.num_dimensions() == 0) {
-        tensorShape.set(0, 1, false);
-        tensorShape.set_num_dimensions(1);
-    }
-    return tensorShape;
-}
-
 VectorDims reshape_sizes(VectorDims dims) {
     const size_t MAX_NUM_SHAPE = arm_compute::MAX_DIMS;
     VectorDims result_dims(MAX_NUM_SHAPE - 1);
@@ -58,7 +46,7 @@ bool AclEltwiseExecutor::init(const EltwiseAttrs &eltwiseAttrs, const std::vecto
 
     for (int i = 0; i < srcVecDims.size(); i++) {
         srcVecDims[i] = reshape_sizes(srcDescs[i]->getShape().getDims());
-        srcTensorsInfo[i] = TensorInfo(eltwiseShapeCast(srcVecDims[i]), 1,
+        srcTensorsInfo[i] = TensorInfo(shapeCast(srcVecDims[i]), 1,
                                        precisionToAclDataType(srcDescs[i]->getPrecision()),
                                        getAclDataLayoutByMemoryDesc(srcDescs[i]));
         srcTensors[i].allocator()->init(srcTensorsInfo[i]);
@@ -66,7 +54,7 @@ bool AclEltwiseExecutor::init(const EltwiseAttrs &eltwiseAttrs, const std::vecto
 
     for (int i = 0; i < dstVecDims.size(); i++) {
         dstVecDims[i] = reshape_sizes(dstDescs[i]->getShape().getDims());
-        dstTensorsInfo[i] = TensorInfo(eltwiseShapeCast(dstVecDims[i]), 1,
+        dstTensorsInfo[i] = TensorInfo(shapeCast(dstVecDims[i]), 1,
                                        precisionToAclDataType(dstDescs[i]->getPrecision()),
                                        getAclDataLayoutByMemoryDesc(dstDescs[i]));
         dstTensors[i].allocator()->init(dstTensorsInfo[i]);
