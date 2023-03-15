@@ -10,7 +10,7 @@ namespace intel_cpu {
 
 using namespace arm_compute;
 
-VectorDims reshape_sizes(VectorDims dims) {
+inline VectorDims reshape_sizes(VectorDims dims) {
     const size_t MAX_NUM_SHAPE = arm_compute::MAX_DIMS;
     VectorDims result_dims(MAX_NUM_SHAPE - 1);
     if (dims.size() >= MAX_NUM_SHAPE) {
@@ -33,28 +33,60 @@ bool AclEltwiseExecutor::init(const EltwiseAttrs &eltwiseAttrs, const std::vecto
                               const std::vector<EltwisePostOp> &postOps) {
     if (!postOps.empty()) { return false; }
     aclEltwiseAttrs = eltwiseAttrs;
+//    auto finalShape = shapeCast(srcVecDims[0]);
+//    for (int i = 0; i < srcVecDims.size(); i++) {
+//        finalShape = TensorShape::broadcast_shape(finalShape, shapeCast(srcVecDims[i]));
+//    }
 
-    if (srcDescs.size() == 2 &&
-        srcDescs[0]->getShape().getDims() != srcDescs[1]->getShape().getDims()) {
-        return false;
-    }
-
-    std::vector<VectorDims> srcVecDims(srcDescs.size()), dstVecDims(dstDescs.size());
+    std::vector<arm_compute::TensorShape> srcVecDims(srcDescs.size()), dstVecDims(dstDescs.size());
     std::vector<TensorInfo> srcTensorsInfo(srcDescs.size()), dstTensorsInfo(dstDescs.size());
     srcTensors = std::vector<arm_compute::Tensor>(srcDescs.size());
     dstTensors = std::vector<arm_compute::Tensor>(dstDescs.size());
 
     for (int i = 0; i < srcVecDims.size(); i++) {
-        srcVecDims[i] = reshape_sizes(srcDescs[i]->getShape().getDims());
-        srcTensorsInfo[i] = TensorInfo(shapeCast(srcVecDims[i]), 1,
+        srcVecDims[i] = shapeCast(reshape_sizes(srcDescs[i]->getShape().getDims()));
+    }
+
+//    if (srcDescs.size() == 2) {
+//        for (int i = 0; i < srcVecDims.size(); i++) {
+//            srcVecDims[i] = TensorShape::broadcast_shape(srcVecDims[0], srcVecDims[1]);
+//        }
+//    }
+    for (auto i : srcDescs[0]->getShape().getDims()) {
+        std::cout << i << " ";
+    }
+    std::cout << std::endl;
+    for (auto i : srcDescs[1]->getShape().getDims()) {
+        std::cout << i << " ";
+    }
+    std::cout << std::endl;
+    if (srcDescs.size() == 2 &&
+        one_of(aclEltwiseAttrs.algorithm, Algorithm::EltwiseAdd, Algorithm::EltwiseMultiply,
+               Algorithm::EltwiseSquaredDifference, Algorithm::EltwisePowerDynamic) &&
+        srcDescs[0]->hasLayoutType(LayoutType::nspc) && srcDescs[1]->hasLayoutType(LayoutType::nspc) &&
+        srcDescs[0]->getShape().getDims() != srcDescs[1]->getShape().getDims()) {
+//        std::swap(srcVecDims[0][1], srcVecDims[0][2]);
+//        std::swap(srcVecDims[0][2], srcVecDims[0][3]);
+//        std::swap(srcVecDims[1][1], srcVecDims[1][2]);
+//        std::swap(srcVecDims[1][2], srcVecDims[1][3]);
+//        auto final_shape = TensorShape::broadcast_shape(srcVecDims[0], srcVecDims[1]);
+//        std::cout << final_shape[0] << std::endl;
+//        std::cout << final_shape[1] << std::endl;
+//        std::cout << final_shape[2] << std::endl;
+//        std::cout << final_shape[3] << std::endl;
+//        return false;
+    }
+
+    for (int i = 0; i < srcVecDims.size(); i++) {
+        srcTensorsInfo[i] = TensorInfo(srcVecDims[i], 1,
                                        precisionToAclDataType(srcDescs[i]->getPrecision()),
                                        getAclDataLayoutByMemoryDesc(srcDescs[i]));
         srcTensors[i].allocator()->init(srcTensorsInfo[i]);
     }
 
     for (int i = 0; i < dstVecDims.size(); i++) {
-        dstVecDims[i] = reshape_sizes(dstDescs[i]->getShape().getDims());
-        dstTensorsInfo[i] = TensorInfo(shapeCast(dstVecDims[i]), 1,
+        dstVecDims[i] = shapeCast(reshape_sizes(dstDescs[i]->getShape().getDims()));
+        dstTensorsInfo[i] = TensorInfo(dstVecDims[i], 1,
                                        precisionToAclDataType(dstDescs[i]->getPrecision()),
                                        getAclDataLayoutByMemoryDesc(dstDescs[i]));
         dstTensors[i].allocator()->init(dstTensorsInfo[i]);
