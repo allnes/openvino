@@ -116,12 +116,16 @@ std::vector<fusingSpecificParams> fusingParamsSetDynamic {
     emptyFusingSpec,
     fusingMultiplyPerTensor,
     fusingRelu,
+#if defined(OPENVINO_ARCH_X86) || defined(OPENVINO_ARCH_X86_64)
     fusingFakeQuantizePerTensor
+#endif
 };
 
 std::vector<fusingSpecificParams> fusingParamsSetPerChannel {
     fusingPReluPerChannel,
+#if defined(OPENVINO_ARCH_X86) || defined(OPENVINO_ARCH_X86_64)
     fusingFakeQuantizePerChannel
+#endif
 };
 
 const float epsilon = 1e-4f;

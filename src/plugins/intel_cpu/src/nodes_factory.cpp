@@ -173,6 +173,7 @@ Node::NodesFactory::NodesFactory()
     INTEL_CPU_NODE(Eye, Type::Eye);
     INTEL_CPU_NODE(Unique, Type::Unique);
     INTEL_CPU_NODE(Reduce, Type::Reduce);
+    INTEL_CPU_NODE(NormalizeL2, Type::NormalizeL2);
 #if defined(OPENVINO_ARCH_X86_64)
     INTEL_CPU_NODE(Gather, Type::Gather);
     INTEL_CPU_NODE(GridSample, Type::GridSample);
@@ -181,7 +182,6 @@ Node::NodesFactory::NodesFactory()
     INTEL_CPU_NODE(DFT, Type::DFT);
     INTEL_CPU_NODE(RDFT, Type::RDFT);
     INTEL_CPU_NODE(ColorConvert, Type::ColorConvert);
-    INTEL_CPU_NODE(NormalizeL2, Type::NormalizeL2);
     INTEL_CPU_NODE(BinaryConvolution, Type::BinaryConvolution);
     INTEL_CPU_NODE(NonMaxSuppression, Type::NonMaxSuppression);
     INTEL_CPU_NODE(Interpolate, Type::Interpolate);
