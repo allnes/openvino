@@ -30,7 +30,7 @@ bool RefReduceExecutor::init(const ReduceAttrs& reduceAttrs,
     return true;
 }
 
-void RefReduceExecutor::exec(const std::vector<MemoryCPtr>& src, const std::vector<MemoryPtr>& dst, std::unordered_map<int, MemoryPtr> postOpsArgs) {
+void RefReduceExecutor::exec(const std::vector<MemoryCPtr>& src, const std::vector<MemoryPtr>& dst, const void *post_ops_data_) {
     switch (reduceAttrs.operation) {
         case Algorithm::ReduceAnd:
             reduce_ref_process(src, dst, 1, [](float x, float y)->float { return x && y; });

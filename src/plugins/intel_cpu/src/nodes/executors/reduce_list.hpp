@@ -10,6 +10,7 @@
 #if defined(OV_CPU_WITH_ACL)
 #include "acl/acl_reduce.hpp"
 #endif
+#include "x64/jit_reduce.hpp"
 #include "common/ref_reduce.hpp"
 
 #include "onednn/iml_type_mapper.h"
@@ -44,6 +45,7 @@ public:
                                         const std::vector<MemoryDescPtr>& dstDescs,
                                         const dnnl::primitive_attr &attr) {
         auto build = [&](const ReduceExecutorDesc* desc) {
+            //TODO: enable exeuctor cache for JIT executor
             switch (desc->executorType) {
                 default: {
                     auto executor = desc->builder->makeExecutor(context);
