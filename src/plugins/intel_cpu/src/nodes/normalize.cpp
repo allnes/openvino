@@ -915,7 +915,7 @@ void NormalizeL2::prepareParams() {
 
     auto engine = getEngine();
     auto builder = [&engine](const NormalizeKey& key) -> std::shared_ptr<NormalizeL2::NormalizeL2Executor> {
-        return NormalizeL2Executor::getNormalizeL2Executor(key.attrs, key.kernel_attrs, key.dims);
+        return NormalizeL2Executor::makeExecutor(key.attrs, key.kernel_attrs, key.dims);
     };
 
     auto cache = context->getParamsCache();
@@ -1452,10 +1452,10 @@ private:
     }
 
     static inline void apply_post_ops_scalar(float &dst_value, int index_c, const void **post_ops_data_,
-                                                primitive_attr kernel_attrs,
-                                                std::vector<std::shared_ptr<dnnl::impl::cpu::ref_eltwise_scalar_fwd_t>> eltwise_injectors_ref,
-                                                std::vector<std::shared_ptr<dnnl::impl::cpu::ref_depthwise_scalar_fwd_t>> depthwise_injectors_ref,
-                                                NormalizeL2Attrs normalizeL2Attrs) {
+                                            primitive_attr kernel_attrs,
+                                            std::vector<std::shared_ptr<dnnl::impl::cpu::ref_eltwise_scalar_fwd_t>> eltwise_injectors_ref,
+                                            std::vector<std::shared_ptr<dnnl::impl::cpu::ref_depthwise_scalar_fwd_t>> depthwise_injectors_ref,
+                                            NormalizeL2Attrs normalizeL2Attrs) {
         const auto &p = (*kernel_attrs.get()).post_ops_;
         int eltwise_inj_idx = 0;
         int depthwise_inj_idx = 0;
@@ -1543,26 +1543,6 @@ private:
     };
 };
 
-// *=================* *======* *=================*
-
-std::shared_ptr<NormalizeL2::NormalizeL2Executor> NormalizeL2::NormalizeL2Executor::getNormalizeL2Executor(
-        const NormalizeL2Attrs& attrs, const dnnl::primitive_attr& kernel_attrs, const VectorDims& dims) {
-    NormalizeContext ctx = { nullptr, attrs, kernel_attrs, dims };
-    OV_SWITCH(intel_cpu, NormalizeExecutorCreation, ctx, std::tie(attrs.input_prec, attrs.output_prec),
-              OV_CASE2(Precision::U8, Precision::U8, uint8_t, uint8_t),
-              OV_CASE2(Precision::I8, Precision::U8, int8_t, uint8_t),
-              OV_CASE2(Precision::FP32, Precision::U8, float, uint8_t),
-              OV_CASE2(Precision::U8, Precision::I8, uint8_t, int8_t),
-              OV_CASE2(Precision::I8, Precision::I8, int8_t, int8_t),
-              OV_CASE2(Precision::FP32, Precision::I8, float, int8_t),
-              OV_CASE2(Precision::U8, Precision::FP32, uint8_t, float),
-              OV_CASE2(Precision::I8, Precision::FP32, int8_t, float),
-              OV_CASE2(Precision::FP32, Precision::FP32, float, float),
-              OV_CASE2(Precision::BF16, Precision::BF16, bfloat16_t, bfloat16_t));
-    return ctx.executor;
-}
-
-template <typename in_data_t, typename out_data_t>
 std::shared_ptr<NormalizeL2::NormalizeL2Executor> NormalizeL2::NormalizeL2Executor::makeExecutor(
         const NormalizeL2Attrs& attrs, const dnnl::primitive_attr& kernel_attrs, const VectorDims& dims) {
     if (attrs.cornerCase)

@@ -123,38 +123,13 @@ private:
         NormalizeL2Executor() = default;
         virtual void exec(const uint8_t *src_ptr, uint8_t *dst_ptr, const void **post_ops_data) = 0;
         virtual ~NormalizeL2Executor() = default;
-
-        static std::shared_ptr<NormalizeL2Executor> getNormalizeL2Executor(const NormalizeL2Attrs& attrs,
-                                                                           const dnnl::primitive_attr& kernel_attr,
-                                                                           const VectorDims& dims);
-
+        static std::shared_ptr<NormalizeL2Executor> makeExecutor(const NormalizeL2Attrs& attrs,
+                                                                 const dnnl::primitive_attr& kernel_attrs,
+                                                                 const VectorDims& dims);
     protected:
         static inline float epsApply(const float &modulo, const NormEpsMode mode, const float eps) {
             return mode == NormEpsMode::ADD ? modulo + eps : std::max(modulo, eps);
         }
-
-    private:
-        template <typename in_data_t, typename out_data_t>
-        static std::shared_ptr<NormalizeL2Executor> makeExecutor(const NormalizeL2Attrs& attrs,
-                                                                 const dnnl::primitive_attr& kernel_attrs,
-                                                                 const VectorDims& dims);
-
-        struct NormalizeContext {
-            std::shared_ptr<NormalizeL2Executor> executor;
-            NormalizeL2Attrs attrs;
-            dnnl::primitive_attr kernel_attrs;
-            VectorDims dims;
-        };
-
-        template<typename T>
-        struct NormalizeExecutorCreation {
-            using src_t = typename std::tuple_element<0, T>::type;
-            using dst_t = typename std::tuple_element<1, T>::type;
-
-            void operator()(NormalizeContext& ctx) {
-                ctx.executor = NormalizeL2Executor::makeExecutor<src_t, dst_t>(ctx.attrs, ctx.kernel_attrs, ctx.dims);
-            }
-        };
     };
 
     class NormalizeL2JitExecutor;
