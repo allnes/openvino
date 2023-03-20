@@ -14,6 +14,8 @@
 #include "utils/cpu_utils.hpp"
 #include "ie_parallel.hpp"
 
+#include "executors/normalize.hpp"
+
 namespace ov {
 namespace intel_cpu {
 namespace node {
@@ -96,51 +98,18 @@ public:
 
     bool isExecutable() const override;
 
-    enum class NormEpsMode {
-        ADD,
-        MAX
-    };
-
-    struct NormalizeL2Attrs {
-        LayoutType layout = LayoutType::ncsp;
-        NormEpsMode epsMode = NormEpsMode::ADD;
-        bool across_spatial = true;
-        bool cornerCase = false;
-        float eps = 1e-10f;
-
-        InferenceEngine::Precision input_prec = InferenceEngine::Precision::UNSPECIFIED;
-        InferenceEngine::Precision output_prec = InferenceEngine::Precision::UNSPECIFIED;
-        size_t src_data_size = 0lu;
-        size_t dst_data_size = 0lu;
-        VectorDims vectorDims;
-    };
-
 private:
     NormalizeL2Attrs attrs;
 
-    class NormalizeL2Executor {
-    public:
-        NormalizeL2Executor() = default;
-        virtual bool init(const NormalizeL2Attrs& normalizeL2Attrs,
-                          const std::vector<MemoryDescPtr>& srcDescs,
-                          const std::vector<MemoryDescPtr>& dstDescs,
-                          const dnnl::primitive_attr &attr) = 0;
-        virtual void exec(const std::vector<MemoryCPtr>& src, const std::vector<MemoryPtr>& dst, const void **post_ops_data_) = 0;
-        virtual ~NormalizeL2Executor() = default;
-    protected:
-        static inline float epsApply(const float &modulo, const NormEpsMode mode, const float eps) {
-            return mode == NormEpsMode::ADD ? modulo + eps : std::max(modulo, eps);
-        }
-    };
-    using executorPtr = std::shared_ptr<NormalizeL2Executor>;
-
     class NormalizeL2ReferenceExecutor : public NormalizeL2Executor {
     public:
+        explicit NormalizeL2ReferenceExecutor(const ExecutorContext::CPtr context);
         bool init(const NormalizeL2Attrs& normalizeL2Attrs,
                   const std::vector<MemoryDescPtr>& srcDescs,
                   const std::vector<MemoryDescPtr>& dstDescs,
                   const dnnl::primitive_attr &attr) override;
         void exec(const std::vector<MemoryCPtr>& src, const std::vector<MemoryPtr>& dst, const void **post_ops_data_) override;
+        impl_desc_type getImplType() const override { return normalizeL2Attrs.implDescType; }
 
     private:
         template <typename in_data_t, typename out_data_t>
@@ -192,11 +161,13 @@ private:
 
     class NormalizeL2JitExecutor : public NormalizeL2Executor {
     public:
+        explicit NormalizeL2JitExecutor(const ExecutorContext::CPtr context);
         bool init(const NormalizeL2Attrs& normalizeL2Attrs,
                   const std::vector<MemoryDescPtr>& srcDescs,
                   const std::vector<MemoryDescPtr>& dstDescs,
                   const dnnl::primitive_attr &attr) override;
         void exec(const std::vector<MemoryCPtr>& src, const std::vector<MemoryPtr>& dst, const void **post_ops_data_) override;
+        impl_desc_type getImplType() const override { return normalizeL2Attrs.implDescType; }
 
     private:
         template <typename in_data_t, typename out_data_t>
@@ -259,7 +230,7 @@ private:
     static constexpr size_t DATA = 0;
     static constexpr size_t AXES = 1;
 
-    executorPtr execPtr = nullptr;
+    NormalizeL2ExecutorPtr execPtr = nullptr;
 };
 
 }   // namespace node

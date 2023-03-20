@@ -22,7 +22,6 @@
 #include <ngraph/opsets/opset1.hpp>
 #include "memory_desc/dnnl_blocked_memory_desc.h"
 #include "utils/cpu_utils.hpp"
-#include <common/primitive_hashing_utils.hpp>
 #include <utils/shape_inference/shape_inference_pass_through.hpp>
 
 using namespace dnnl;
@@ -39,43 +38,6 @@ using namespace Xbyak;
 namespace ov {
 namespace intel_cpu {
 namespace node {
-namespace {
-
-struct NormalizeKey {
-    NormalizeL2::NormalizeL2Attrs attrs;
-    dnnl::primitive_attr kernel_attrs;
-
-    size_t hash() const;
-    bool operator==(const NormalizeKey& rhs) const;
-};
-
-size_t NormalizeKey::hash() const {
-    using namespace dnnl::impl;
-    using namespace dnnl::impl::primitive_hashing;
-
-    size_t seed = 0;
-    seed = hash_combine(seed, attrs.epsMode);
-    seed = hash_combine(seed, attrs.across_spatial);
-    seed = hash_combine(seed, attrs.cornerCase);
-    seed = hash_combine(seed, attrs.eps);
-    seed = hash_combine(seed, attrs.layout);
-    seed = hash_combine(seed, attrs.input_prec.getPrecVal());
-    seed = hash_combine(seed, attrs.output_prec.getPrecVal());
-
-    seed = hash_combine(seed, get_attr_hash(*kernel_attrs.get()));
-    seed = get_vector_hash(seed, attrs.vectorDims);
-    return seed;
-}
-
-bool NormalizeKey::operator==(const NormalizeKey& rhs) const {
-    return (attrs.epsMode == rhs.attrs.epsMode) && (attrs.across_spatial == rhs.attrs.across_spatial) &&
-           (attrs.cornerCase == rhs.attrs.cornerCase) && (attrs.eps == rhs.attrs.eps) &&
-           (attrs.layout == rhs.attrs.layout) && (attrs.input_prec == rhs.attrs.input_prec) &&
-           (attrs.output_prec == rhs.attrs.output_prec) && (*kernel_attrs.get() == *(rhs.kernel_attrs.get())) &&
-           (attrs.vectorDims == rhs.attrs.vectorDims);
-}
-
-}  // namespace
 
 static inline bool isFloatCompatible(memory::data_type type) {
     return memory::data_type::f32 == type || memory::data_type::bf16 == type;
@@ -825,22 +787,22 @@ void NormalizeL2::initSupportedPrimitiveDescriptors() {
         supportedPrimitiveDescriptors.push_back({config, impl_type});
     };
 
-    impl_desc_type impl_type = impl_desc_type::unknown;
+    attrs.implDescType = impl_desc_type::unknown;
 
     // only plain layout support when w/o sse42
     if (getInputShapeAtPort(DATA).getRank() == 4 && !attrs.cornerCase) {
         if (mayiuse(cpu::x64::sse41)) {
-            pushDesc(LayoutType::nspc, impl_type);
+            pushDesc(LayoutType::nspc, attrs.implDescType);
             if (mayiuse(cpu::x64::avx512_core)) {
-                pushDesc(LayoutType::nCsp16c, impl_type);
+                pushDesc(LayoutType::nCsp16c, attrs.implDescType);
             } else {
-                pushDesc(LayoutType::nCsp8c, impl_type);
+                pushDesc(LayoutType::nCsp8c, attrs.implDescType);
             }
         }
     }
     if (canBeInplace)
         config.inConfs[0].inPlace(0);
-    pushDesc(LayoutType::ncsp, impl_type);
+    pushDesc(LayoutType::ncsp, attrs.implDescType);
 }
 
 bool NormalizeL2::canFuse(const NodePtr& node) const {
@@ -913,24 +875,24 @@ void NormalizeL2::prepareParams() {
     NormalizeKey key = {attrs, kernel_attrs};
 
     auto engine = getEngine();
-    auto builder = [&engine, this](const NormalizeKey& key) -> std::shared_ptr<NormalizeL2::NormalizeL2Executor> {
+    auto builder = [&engine, this](const NormalizeKey& key) -> std::shared_ptr<NormalizeL2Executor> {
         std::vector<MemoryDescPtr> srcMemoryDescs;
         srcMemoryDescs.push_back(getParentEdgeAt(DATA)->getMemoryPtr()->getDescPtr());
         std::vector<MemoryDescPtr> dstMemoryDescs;
         dstMemoryDescs.push_back(getChildEdgeAt(DATA)->getMemoryPtr()->getDescPtr());
 
         if (attrs.cornerCase) {
-            auto refExec = std::make_shared<NormalizeL2ReferenceExecutor>();
+            auto refExec = std::make_shared<NormalizeL2ReferenceExecutor>(std::make_shared<ExecutorContext>(context, getPrimitivesPriority()));
             refExec->init(attrs, srcMemoryDescs, dstMemoryDescs, kernel_attrs);
             return refExec;
         } else if (mayiuse(cpu::x64::sse41)) {
 #if defined(OPENVINO_ARCH_X86) || defined(OPENVINO_ARCH_X86_64)
-            auto jitExec = std::make_shared<NormalizeL2JitExecutor>();
+            auto jitExec = std::make_shared<NormalizeL2JitExecutor>(std::make_shared<ExecutorContext>(context, getPrimitivesPriority()));
             jitExec->init(attrs, srcMemoryDescs, dstMemoryDescs, kernel_attrs);
             return jitExec;
 #endif
         } else if (attrs.layout == LayoutType::ncsp) {
-            auto refExec = std::make_shared<NormalizeL2ReferenceExecutor>();
+            auto refExec = std::make_shared<NormalizeL2ReferenceExecutor>(std::make_shared<ExecutorContext>(context, getPrimitivesPriority()));
             refExec->init(attrs, srcMemoryDescs, dstMemoryDescs, kernel_attrs);
             return refExec;
         } else {
@@ -962,6 +924,7 @@ void NormalizeL2::execute(dnnl::stream strm) {
 // *=================* *======* *=================*
 
 // *=================* JIT case *=================*
+NormalizeL2::NormalizeL2JitExecutor::NormalizeL2JitExecutor(const ExecutorContext::CPtr context) : NormalizeL2Executor(context) {}
 
 bool NormalizeL2::NormalizeL2JitExecutor::init(const NormalizeL2Attrs& normalizeL2Attrs,
           const std::vector<MemoryDescPtr>& srcDescs,
@@ -1306,6 +1269,7 @@ void NormalizeL2::NormalizeL2JitExecutor::normalize_blk(const in_data_t* src_dat
 // *=================* *======* *=================*
 
 // *=============* Reference case *===============*
+NormalizeL2::NormalizeL2ReferenceExecutor::NormalizeL2ReferenceExecutor(const ExecutorContext::CPtr context) : NormalizeL2Executor(context) {}
 
 bool NormalizeL2::NormalizeL2ReferenceExecutor::init(const NormalizeL2Attrs& normalizeL2Attrs,
           const std::vector<MemoryDescPtr>& srcDescs,
