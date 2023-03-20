@@ -112,6 +112,7 @@ public:
         InferenceEngine::Precision output_prec = InferenceEngine::Precision::UNSPECIFIED;
         size_t src_data_size = 0lu;
         size_t dst_data_size = 0lu;
+        VectorDims vectorDims;
     };
 
 private:
@@ -128,7 +129,7 @@ private:
                                                                            const VectorDims& dims);
 
     protected:
-        inline float epsApply(const float &modulo, const NormEpsMode mode, const float eps) const {
+        static inline float epsApply(const float &modulo, const NormEpsMode mode, const float eps) {
             return mode == NormEpsMode::ADD ? modulo + eps : std::max(modulo, eps);
         }
 
@@ -156,9 +157,8 @@ private:
         };
     };
 
-    template <typename in_data_t, typename out_data_t> class NormalizeL2CornerCaseExecutor;
     template <typename in_data_t, typename out_data_t> class NormalizeL2JitExecutor;
-    template <typename in_data_t, typename out_data_t> class NormalizeL2ReferenceExecutor;
+    class NormalizeL2ReferenceExecutor;
 
     dnnl::primitive_attr kernel_attrs;
 

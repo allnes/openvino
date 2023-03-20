@@ -941,28 +941,6 @@ void NormalizeL2::execute(dnnl::stream strm) {
     execPtr->exec(src_ptr, dst_ptr, postOpsDataPtrs.data());
 }
 
-// *====================* CornerCase *===================*
-
-template <typename in_data_t, typename out_data_t>
-class NormalizeL2::NormalizeL2CornerCaseExecutor : public NormalizeL2::NormalizeL2Executor {
-public:
-    NormalizeL2CornerCaseExecutor(const VectorDims& dims) {
-        workAmount = std::accumulate(dims.begin(), dims.end(), 1, std::multiplies<size_t>());
-    }
-
-    void exec(const uint8_t *src_ptr, uint8_t *dst_ptr, const void **post_ops_data) override {
-        normalize(reinterpret_cast<const in_data_t*>(src_ptr), reinterpret_cast<out_data_t*>(dst_ptr));
-    }
-private:
-    void normalize(const in_data_t* src_data, out_data_t* dst_data) {
-        parallel_for(workAmount, [&](size_t i) {
-            dst_data[i] = src_data[i] == 0 ? 0 : 1;
-        });
-    }
-
-    size_t workAmount = 0lu;
-};
-
 // *=================* *======* *=================*
 
 // *=================* JIT case *=================*
@@ -1301,11 +1279,14 @@ private:
 
 // *=============* Reference case *===============*
 
-template <typename in_data_t, typename out_data_t>
 class NormalizeL2::NormalizeL2ReferenceExecutor : public NormalizeL2::NormalizeL2Executor {
 public:
-    NormalizeL2ReferenceExecutor(const NormalizeL2Attrs& attrs, const dnnl::primitive_attr& kernel_attrs, const VectorDims& dims) :
-        attrs(attrs), kernel_attrs(kernel_attrs), dims(dims) {
+    NormalizeL2ReferenceExecutor(const NormalizeL2Attrs& attrs, const dnnl::primitive_attr& kernel_attrs, const VectorDims& dims) {
+        executionContext.workAmount = std::accumulate(dims.begin(), dims.end(), 1, std::multiplies<size_t>());
+        executionContext.normalizeL2Attrs = attrs;
+        executionContext.kernel_attrs = kernel_attrs;
+        executionContext.normalizeL2Attrs.vectorDims = dims;
+
         if (attrs.layout != LayoutType::ncsp) {
             IE_THROW() << "Reference Executor of 'NormalizeL2' supports only ncsp layout!";
         }
@@ -1314,20 +1295,50 @@ public:
         for (int i = 0; i < p.len(); i++) {
             auto &post_op = p.entry_[i];
             if (post_op.is_eltwise()) {
-                eltwise_injectors_ref.push_back(std::make_shared<cpu::ref_eltwise_scalar_fwd_t>(
+                executionContext.eltwise_injectors_ref.push_back(std::make_shared<cpu::ref_eltwise_scalar_fwd_t>(
                         post_op.eltwise.alg, post_op.eltwise.alpha, post_op.eltwise.beta, post_op.eltwise.scale));
             } else if (post_op.is_depthwise()) {
-                depthwise_injectors_ref.push_back(std::make_shared<cpu::ref_depthwise_scalar_fwd_t>(post_op.depthwise.alg));
+                executionContext.depthwise_injectors_ref.push_back(std::make_shared<cpu::ref_depthwise_scalar_fwd_t>(post_op.depthwise.alg));
             }
         }
     }
 
+
     void exec(const uint8_t *src_ptr, uint8_t *dst_ptr, const void **post_ops_data) override {
-        normalize_nchw_ref(reinterpret_cast<const in_data_t*>(src_ptr), reinterpret_cast<out_data_t*>(dst_ptr), post_ops_data);
+        executionContext.src_ptr = src_ptr;
+        executionContext.dst_ptr = dst_ptr;
+        executionContext.post_ops_data = post_ops_data;
+        OV_SWITCH(intel_cpu, FunctionExecutorCreation, executionContext, std::tie(executionContext.normalizeL2Attrs.input_prec,
+                                                                                  executionContext.normalizeL2Attrs.output_prec),
+                  OV_CASE2(Precision::U8, Precision::U8, uint8_t, uint8_t),
+                  OV_CASE2(Precision::I8, Precision::U8, int8_t, uint8_t),
+                  OV_CASE2(Precision::FP32, Precision::U8, float, uint8_t),
+                  OV_CASE2(Precision::U8, Precision::I8, uint8_t, int8_t),
+                  OV_CASE2(Precision::I8, Precision::I8, int8_t, int8_t),
+                  OV_CASE2(Precision::FP32, Precision::I8, float, int8_t),
+                  OV_CASE2(Precision::U8, Precision::FP32, uint8_t, float),
+                  OV_CASE2(Precision::I8, Precision::FP32, int8_t, float),
+                  OV_CASE2(Precision::FP32, Precision::FP32, float, float),
+                  OV_CASE2(Precision::BF16, Precision::BF16, bfloat16_t, bfloat16_t));
+//        normalize_nchw_ref(reinterpret_cast<const in_data_t*>(src_ptr), reinterpret_cast<out_data_t*>(dst_ptr), post_ops_data);
     }
 
 private:
-    void normalize_nchw_ref(const in_data_t* src_data, out_data_t* dst_data, const void **post_ops_data) {
+    template <typename in_data_t, typename out_data_t>
+    static void normalize(const in_data_t* src_data, out_data_t* dst_data, size_t workAmount) {
+        parallel_for(workAmount, [&](size_t i) {
+            dst_data[i] = src_data[i] == 0 ? 0 : 1;
+        });
+    }
+
+
+
+    template <typename in_data_t, typename out_data_t>
+    static void normalize_nchw_ref(const in_data_t* src_data, out_data_t* dst_data, const void **post_ops_data, NormalizeL2Attrs attrs,
+                                   primitive_attr kernel_attrs,
+                                   std::vector<std::shared_ptr<dnnl::impl::cpu::ref_eltwise_scalar_fwd_t>> eltwise_injectors_ref,
+                                   std::vector<std::shared_ptr<dnnl::impl::cpu::ref_depthwise_scalar_fwd_t>> depthwise_injectors_ref) {
+        auto dims = attrs.vectorDims;
         size_t dims_size = dims.size();
         const size_t N = dims[0];
         const size_t C = dims[1];
@@ -1358,7 +1369,7 @@ private:
                     out_data_t *dst_data_bc = dst_data_b + ic * spatial_dims;
                     for (size_t m = 0; m < spatial_dims; m++) {
                         float dst_value = src_data_bc[m] * modulo_inv;
-                        apply_post_ops_scalar(dst_value, ic, post_ops_data);
+                        apply_post_ops_scalar(dst_value, ic, post_ops_data, kernel_attrs, eltwise_injectors_ref, depthwise_injectors_ref, attrs);
                         if (attrs.output_prec == Precision::U8) {
                             dst_data_bc[m] = (dst_value >= 0) ? dst_value : 0;
                         } else {
@@ -1390,7 +1401,7 @@ private:
                     out_data_t *dst_data_bc = dst_data_b + ic * spatial_dims;
                     for (size_t m = 0; m < spatial_dims; m++) {
                         float dst_value = src_data_bc[m] * moduloM[m];
-                        apply_post_ops_scalar(dst_value, ic, post_ops_data);
+                        apply_post_ops_scalar(dst_value, ic, post_ops_data, kernel_attrs, eltwise_injectors_ref, depthwise_injectors_ref, attrs);
                         if (attrs.output_prec == Precision::U8) {
                             dst_data_bc[m] = (dst_value >= 0) ? dst_value : 0;
                         } else {
@@ -1402,7 +1413,11 @@ private:
         }
     }
 
-    inline void apply_post_ops_scalar(float &dst_value, int index_c, const void **post_ops_data_) {
+    static inline void apply_post_ops_scalar(float &dst_value, int index_c, const void **post_ops_data_,
+                                                primitive_attr kernel_attrs,
+                                                std::vector<std::shared_ptr<dnnl::impl::cpu::ref_eltwise_scalar_fwd_t>> eltwise_injectors_ref,
+                                                std::vector<std::shared_ptr<dnnl::impl::cpu::ref_depthwise_scalar_fwd_t>> depthwise_injectors_ref,
+                                                NormalizeL2Attrs normalizeL2Attrs) {
         const auto &p = (*kernel_attrs.get()).post_ops_;
         int eltwise_inj_idx = 0;
         int depthwise_inj_idx = 0;
@@ -1424,7 +1439,7 @@ private:
                 post_ops_data++;
             } else if (post_op.is_quantization()) {
                 bool do_dequantization = post_op.quantization.alg == alg_kind::quantization_quantize_dequantize;
-                bool do_rounding = do_dequantization || attrs.output_prec == Precision::FP32 || i != p.len() - 1;
+                bool do_rounding = do_dequantization || normalizeL2Attrs.output_prec == Precision::FP32 || i != p.len() - 1;
 
                 auto quant = post_op.quantization;
 
@@ -1458,12 +1473,36 @@ private:
         }
     }
 
-    VectorDims dims;
-    dnnl::primitive_attr kernel_attrs;
-    NormalizeL2Attrs attrs;
+    struct ExecutionContext {
+        const uint8_t *src_ptr = nullptr;
+        uint8_t *dst_ptr = nullptr;
+        const void **post_ops_data = nullptr;
+        NormalizeL2Attrs normalizeL2Attrs;
+        dnnl::primitive_attr kernel_attrs;
+        std::vector<std::shared_ptr<dnnl::impl::cpu::ref_eltwise_scalar_fwd_t>> eltwise_injectors_ref;
+        std::vector<std::shared_ptr<dnnl::impl::cpu::ref_depthwise_scalar_fwd_t>> depthwise_injectors_ref;
+        size_t workAmount = 0lu;
+    } executionContext;
 
-    std::vector<std::shared_ptr<dnnl::impl::cpu::ref_eltwise_scalar_fwd_t>> eltwise_injectors_ref;
-    std::vector<std::shared_ptr<dnnl::impl::cpu::ref_depthwise_scalar_fwd_t>> depthwise_injectors_ref;
+    template<typename T>
+    struct FunctionExecutorCreation {
+        using src_t = typename std::tuple_element<0, T>::type;
+        using dst_t = typename std::tuple_element<1, T>::type;
+
+        void operator()(ExecutionContext& ctx) {
+            if (ctx.normalizeL2Attrs.cornerCase) {
+                normalize(reinterpret_cast<const src_t *>(ctx.src_ptr),
+                          reinterpret_cast<dst_t *>(ctx.dst_ptr),
+                          ctx.workAmount);
+            } else {
+                normalize_nchw_ref(reinterpret_cast<const src_t *>(ctx.src_ptr),
+                                   reinterpret_cast<dst_t *>(ctx.dst_ptr),
+                                   ctx.post_ops_data,
+                                   ctx.normalizeL2Attrs, ctx.kernel_attrs,
+                                   ctx.eltwise_injectors_ref, ctx.depthwise_injectors_ref);
+            }
+        }
+    };
 };
 
 // *=================* *======* *=================*
@@ -1471,7 +1510,6 @@ private:
 std::shared_ptr<NormalizeL2::NormalizeL2Executor> NormalizeL2::NormalizeL2Executor::getNormalizeL2Executor(
         const NormalizeL2Attrs& attrs, const dnnl::primitive_attr& kernel_attrs, const VectorDims& dims) {
     NormalizeContext ctx = { nullptr, attrs, kernel_attrs, dims };
-
     OV_SWITCH(intel_cpu, NormalizeExecutorCreation, ctx, std::tie(attrs.input_prec, attrs.output_prec),
               OV_CASE2(Precision::U8, Precision::U8, uint8_t, uint8_t),
               OV_CASE2(Precision::I8, Precision::U8, int8_t, uint8_t),
@@ -1483,7 +1521,6 @@ std::shared_ptr<NormalizeL2::NormalizeL2Executor> NormalizeL2::NormalizeL2Execut
               OV_CASE2(Precision::I8, Precision::FP32, int8_t, float),
               OV_CASE2(Precision::FP32, Precision::FP32, float, float),
               OV_CASE2(Precision::BF16, Precision::BF16, bfloat16_t, bfloat16_t));
-
     return ctx.executor;
 }
 
@@ -1491,13 +1528,13 @@ template <typename in_data_t, typename out_data_t>
 std::shared_ptr<NormalizeL2::NormalizeL2Executor> NormalizeL2::NormalizeL2Executor::makeExecutor(
         const NormalizeL2Attrs& attrs, const dnnl::primitive_attr& kernel_attrs, const VectorDims& dims) {
     if (attrs.cornerCase)
-        return std::make_shared<NormalizeL2CornerCaseExecutor<in_data_t, out_data_t>>(dims);
+        return std::make_shared<NormalizeL2ReferenceExecutor>(attrs, kernel_attrs, dims);
 #if defined(OPENVINO_ARCH_X86) || defined(OPENVINO_ARCH_X86_64)
     else if (mayiuse(cpu::x64::sse41))
         return std::make_shared<NormalizeL2JitExecutor<in_data_t, out_data_t>>(attrs, kernel_attrs, dims);
 #endif
     else if (attrs.layout == LayoutType::ncsp)
-        return std::make_shared<NormalizeL2ReferenceExecutor<in_data_t, out_data_t>>(attrs, kernel_attrs, dims);
+        return std::make_shared<NormalizeL2ReferenceExecutor>(attrs, kernel_attrs, dims);
     else
         IE_THROW() << "'NormalizeL2' cannot create Executor";
 }
