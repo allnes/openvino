@@ -19,7 +19,7 @@ public:
               const dnnl::primitive_attr &attr) override;
     void exec(const std::vector<MemoryCPtr>& src,
               const std::vector<MemoryPtr>& dst,
-              std::unordered_map<int, MemoryPtr> postOpsArgs) override;
+              const void *post_ops_data_) override;
 
     impl_desc_type getImplType() const override {
         return implType;

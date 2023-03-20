@@ -26,7 +26,7 @@ public:
                       const std::vector<MemoryDescPtr>& dstDescs,
                       const dnnl::primitive_attr &attr) = 0;
 
-    virtual void exec(const std::vector<MemoryCPtr>& src, const std::vector<MemoryPtr>& dst, std::unordered_map<int, MemoryPtr> postOpsArgs) = 0;
+    virtual void exec(const std::vector<MemoryCPtr>& src, const std::vector<MemoryPtr>& dst, const void *post_ops_data_) = 0;
     virtual ~ReduceExecutor() = default;
 
     virtual impl_desc_type getImplType() const = 0;

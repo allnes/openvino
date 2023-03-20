@@ -4,6 +4,7 @@
 
 #include "acl_utils.hpp"
 #include "acl_matmul.hpp"
+#include "acl_utils.hpp"
 
 namespace ov {
 namespace intel_cpu {

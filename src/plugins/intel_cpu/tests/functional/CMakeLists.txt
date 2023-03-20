@@ -10,6 +10,7 @@ set(TARGET_NAME ov_cpu_func_tests)
 set(DEBUG_TARGET_NAME cpuDebugFuncTests)
 
 set(DEBUG_SRC_PATH
+#        ${CMAKE_CURRENT_SOURCE_DIR}/single_layer_tests/pooling.cpp
 #        ${CMAKE_CURRENT_SOURCE_DIR}/single_layer_tests/matmul.cpp
 #        ${CMAKE_CURRENT_SOURCE_DIR}/single_layer_tests/eltwise.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/single_layer_tests/normalize.cpp
