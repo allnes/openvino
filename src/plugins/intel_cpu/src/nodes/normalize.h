@@ -157,7 +157,7 @@ private:
         };
     };
 
-    template <typename in_data_t, typename out_data_t> class NormalizeL2JitExecutor;
+    class NormalizeL2JitExecutor;
     class NormalizeL2ReferenceExecutor;
 
     dnnl::primitive_attr kernel_attrs;

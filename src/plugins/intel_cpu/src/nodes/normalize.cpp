@@ -945,72 +945,82 @@ void NormalizeL2::execute(dnnl::stream strm) {
 
 // *=================* JIT case *=================*
 
-template <typename in_data_t, typename out_data_t>
 class NormalizeL2::NormalizeL2JitExecutor : public NormalizeL2::NormalizeL2Executor {
 public:
     NormalizeL2JitExecutor(const NormalizeL2Attrs& attrs_,
                            const dnnl::primitive_attr& kernel_attrs,
-                           const VectorDims& dims)
-        : attrs(attrs_) {
-        if (attrs.layout != LayoutType::ncsp && attrs.layout != LayoutType::nspc &&
-            attrs.layout != LayoutType::nCsp8c && attrs.layout != LayoutType::nCsp16c) {
+                           const VectorDims& dims) {
+        execCtx.normalizeL2Attrs = attrs_;
+        if (execCtx.normalizeL2Attrs.layout != LayoutType::ncsp && execCtx.normalizeL2Attrs.layout != LayoutType::nspc &&
+            execCtx.normalizeL2Attrs.layout != LayoutType::nCsp8c && execCtx.normalizeL2Attrs.layout != LayoutType::nCsp16c) {
             IE_THROW() << "Normalaize2L executor has selected layout which is not supported";
         }
 
-        jcp.src_dt = DnnlExtensionUtils::IEPrecisionToDataType(attrs.input_prec);
-        jcp.dst_dt = DnnlExtensionUtils::IEPrecisionToDataType(attrs.output_prec);
-        jcp.src_data_size = attrs.input_prec.size();
-        jcp.dst_data_size = attrs.output_prec.size();
-        jcp.across_spatial = attrs.across_spatial;
+        execCtx.jcp.src_dt = DnnlExtensionUtils::IEPrecisionToDataType(execCtx.normalizeL2Attrs.input_prec);
+        execCtx.jcp.dst_dt = DnnlExtensionUtils::IEPrecisionToDataType(execCtx.normalizeL2Attrs.output_prec);
+        execCtx.jcp.src_data_size = execCtx.normalizeL2Attrs.input_prec.size();
+        execCtx.jcp.dst_data_size = execCtx.normalizeL2Attrs.output_prec.size();
+        execCtx.jcp.across_spatial = execCtx.normalizeL2Attrs.across_spatial;
 
-        jcp.is_nchw = (attrs.layout == LayoutType::ncsp);
-        jcp.is_nhwc = (attrs.layout == LayoutType::nspc);
-        jcp.is_blk = (attrs.layout == LayoutType::nCsp8c || attrs.layout == LayoutType::nCsp16c);
+        execCtx.jcp.is_nchw = (execCtx.normalizeL2Attrs.layout == LayoutType::ncsp);
+        execCtx.jcp.is_nhwc = (execCtx.normalizeL2Attrs.layout == LayoutType::nspc);
+        execCtx.jcp.is_blk = (execCtx.normalizeL2Attrs.layout == LayoutType::nCsp8c || execCtx.normalizeL2Attrs.layout == LayoutType::nCsp16c);
 
         size_t dims_size = dims.size();
-        jcp.n = dims[0];
-        jcp.c = dims[1];
-        jcp.h = (dims_size > 2) ? dims[2] : 1lu;
-        jcp.w = (dims_size > 3) ? dims[3] : 1lu;
+        execCtx.jcp.n = dims[0];
+        execCtx.jcp.c = dims[1];
+        execCtx.jcp.h = (dims_size > 2) ? dims[2] : 1lu;
+        execCtx.jcp.w = (dims_size > 3) ? dims[3] : 1lu;
 
         if (mayiuse(cpu::x64::avx512_core)) {
-            blk_size = 16;
-            normalize_modulo_kernel.reset(new jit_uni_normalize_modulo_kernel_f32<cpu::x64::avx512_core>(jcp));
-            normalize_kernel.reset(
-                    new jit_uni_normalize_kernel_f32<cpu::x64::avx512_core>(jcp, *kernel_attrs.get()));
+            execCtx.blk_size = 16;
+            execCtx.normalize_modulo_kernel.reset(new jit_uni_normalize_modulo_kernel_f32<cpu::x64::avx512_core>(execCtx.jcp));
+            execCtx.normalize_kernel.reset(
+                    new jit_uni_normalize_kernel_f32<cpu::x64::avx512_core>(execCtx.jcp, *kernel_attrs.get()));
         } else if (mayiuse(cpu::x64::avx2)) {
-            blk_size = 8;
-            normalize_modulo_kernel.reset(new jit_uni_normalize_modulo_kernel_f32<cpu::x64::avx2>(jcp));
-            normalize_kernel.reset(
-                    new jit_uni_normalize_kernel_f32<cpu::x64::avx2>(jcp, *kernel_attrs.get()));
+            execCtx.blk_size = 8;
+            execCtx.normalize_modulo_kernel.reset(new jit_uni_normalize_modulo_kernel_f32<cpu::x64::avx2>(execCtx.jcp));
+            execCtx.normalize_kernel.reset(
+                    new jit_uni_normalize_kernel_f32<cpu::x64::avx2>(execCtx.jcp, *kernel_attrs.get()));
         } else if (mayiuse(cpu::x64::sse41)) {
-            blk_size = jcp.is_blk ? 8 : 4;
-            normalize_modulo_kernel.reset(new jit_uni_normalize_modulo_kernel_f32<cpu::x64::sse41>(jcp));
-            normalize_kernel.reset(
-                    new jit_uni_normalize_kernel_f32<cpu::x64::sse41>(jcp, *kernel_attrs.get()));
+            execCtx.blk_size = execCtx.jcp.is_blk ? 8 : 4;
+            execCtx.normalize_modulo_kernel.reset(new jit_uni_normalize_modulo_kernel_f32<cpu::x64::sse41>(execCtx.jcp));
+            execCtx.normalize_kernel.reset(
+                    new jit_uni_normalize_kernel_f32<cpu::x64::sse41>(execCtx.jcp, *kernel_attrs.get()));
         } else {
             IE_THROW() << "Jit Executor for NormalizeL2 cannot create kernels!";
         }
 
-        if (normalize_kernel)
-            normalize_kernel->create_ker();
+        if (execCtx.normalize_kernel)
+            execCtx.normalize_kernel->create_ker();
 
-        if (normalize_modulo_kernel)
-            normalize_modulo_kernel->create_ker();
+        if (execCtx.normalize_modulo_kernel)
+            execCtx.normalize_modulo_kernel->create_ker();
     }
 
     void exec(const uint8_t *src_ptr, uint8_t *dst_ptr, const void **post_ops_data) override {
-        if (jcp.is_nchw) {
-            normalize_nchw(reinterpret_cast<const in_data_t*>(src_ptr), reinterpret_cast<out_data_t*>(dst_ptr), post_ops_data);
-        } else if (jcp.is_nhwc) {
-            normalize_nhwc(reinterpret_cast<const in_data_t*>(src_ptr), reinterpret_cast<out_data_t*>(dst_ptr), post_ops_data);
-        } else if (jcp.is_blk) {
-            normalize_blk(reinterpret_cast<const in_data_t*>(src_ptr), reinterpret_cast<out_data_t*>(dst_ptr), post_ops_data);
-        }
+        execCtx.src_ptr = src_ptr;
+        execCtx.dst_ptr = dst_ptr;
+        execCtx.post_ops_data = post_ops_data;
+        OV_SWITCH(intel_cpu, FunctionExecutorCreation, execCtx, std::tie(execCtx.normalizeL2Attrs.input_prec, execCtx.normalizeL2Attrs.output_prec),
+                  OV_CASE2(Precision::U8, Precision::U8, uint8_t, uint8_t),
+                  OV_CASE2(Precision::I8, Precision::U8, int8_t, uint8_t),
+                  OV_CASE2(Precision::FP32, Precision::U8, float, uint8_t),
+                  OV_CASE2(Precision::U8, Precision::I8, uint8_t, int8_t),
+                  OV_CASE2(Precision::I8, Precision::I8, int8_t, int8_t),
+                  OV_CASE2(Precision::FP32, Precision::I8, float, int8_t),
+                  OV_CASE2(Precision::U8, Precision::FP32, uint8_t, float),
+                  OV_CASE2(Precision::I8, Precision::FP32, int8_t, float),
+                  OV_CASE2(Precision::FP32, Precision::FP32, float, float),
+                  OV_CASE2(Precision::BF16, Precision::BF16, bfloat16_t, bfloat16_t));
     }
 
 private:
-    void normalize_nchw(const in_data_t* src_data, out_data_t* dst_data, const void **post_ops_data) {
+    template <typename in_data_t, typename out_data_t>
+    static void normalize_nchw(const in_data_t* src_data, out_data_t* dst_data, const void **post_ops_data, NormalizeL2Attrs attrs,
+                        jit_normalize_config_params jcp, size_t blk_size,
+                        std::shared_ptr<jit_uni_normalize_modulo_kernel> normalize_modulo_kernel,
+                        std::shared_ptr<jit_uni_normalize_kernel> normalize_kernel) {
         const size_t spatial_dims = jcp.h * jcp.w;
         for (size_t b = 0lu; b < jcp.n; b++) {
             const in_data_t *src_data_b = src_data + b * jcp.c * spatial_dims;
@@ -1101,7 +1111,11 @@ private:
         }
     }
 
-    void normalize_nhwc(const in_data_t* src_data, out_data_t* dst_data, const void **post_ops_data) {
+    template <typename in_data_t, typename out_data_t>
+    static void normalize_nhwc(const in_data_t* src_data, out_data_t* dst_data, const void **post_ops_data, NormalizeL2Attrs attrs,
+                        jit_normalize_config_params jcp, size_t blk_size,
+                        std::shared_ptr<jit_uni_normalize_modulo_kernel> normalize_modulo_kernel,
+                        std::shared_ptr<jit_uni_normalize_kernel> normalize_kernel) {
         const size_t spatial_dims = jcp.h * jcp.w;
         const size_t c_w_dims = jcp.c * jcp.w;
         for (size_t b = 0lu; b < jcp.n; b++) {
@@ -1182,7 +1196,11 @@ private:
         }
     }
 
-    void normalize_blk(const in_data_t* src_data, out_data_t* dst_data, const void **post_ops_data) {
+    template <typename in_data_t, typename out_data_t>
+    static void normalize_blk(const in_data_t* src_data, out_data_t* dst_data, const void **post_ops_data, NormalizeL2Attrs attrs,
+                       jit_normalize_config_params jcp, size_t blk_size,
+                       std::shared_ptr<jit_uni_normalize_modulo_kernel> normalize_modulo_kernel,
+                       std::shared_ptr<jit_uni_normalize_kernel> normalize_kernel) {
         const size_t CB = div_up(jcp.c, blk_size);
         const size_t spatial_dims = jcp.h * jcp.w;
         const size_t w_blk_dims = jcp.w * blk_size;
@@ -1267,12 +1285,37 @@ private:
         }
     }
 
-    size_t blk_size = 1lu;
-    jit_normalize_config_params jcp = {};
-    NormalizeL2Attrs attrs;
+    struct ExecutionContext {
+        const uint8_t *src_ptr = nullptr;
+        uint8_t *dst_ptr = nullptr;
+        const void **post_ops_data = nullptr;
+        NormalizeL2Attrs normalizeL2Attrs;
+        size_t blk_size = 1lu;
+        jit_normalize_config_params jcp = {};
+        NormalizeL2Attrs attrs;
 
-    std::shared_ptr<jit_uni_normalize_modulo_kernel> normalize_modulo_kernel;
-    std::shared_ptr<jit_uni_normalize_kernel> normalize_kernel;
+        std::shared_ptr<jit_uni_normalize_modulo_kernel> normalize_modulo_kernel;
+        std::shared_ptr<jit_uni_normalize_kernel> normalize_kernel;
+    } execCtx;
+
+    template<typename T>
+    struct FunctionExecutorCreation {
+        using src_t = typename std::tuple_element<0, T>::type;
+        using dst_t = typename std::tuple_element<1, T>::type;
+
+        void operator()(ExecutionContext& ctx) {
+            if (ctx.jcp.is_nchw) {
+                normalize_nchw(reinterpret_cast<const src_t*>(ctx.src_ptr), reinterpret_cast<dst_t*>(ctx.dst_ptr), ctx.post_ops_data,
+                               ctx.normalizeL2Attrs, ctx.jcp, ctx.blk_size, ctx.normalize_modulo_kernel, ctx.normalize_kernel);
+            } else if (ctx.jcp.is_nhwc) {
+                normalize_nhwc(reinterpret_cast<const src_t*>(ctx.src_ptr), reinterpret_cast<dst_t*>(ctx.dst_ptr), ctx.post_ops_data,
+                               ctx.normalizeL2Attrs, ctx.jcp, ctx.blk_size, ctx.normalize_modulo_kernel, ctx.normalize_kernel);
+            } else if (ctx.jcp.is_blk) {
+                normalize_blk(reinterpret_cast<const src_t*>(ctx.src_ptr), reinterpret_cast<dst_t*>(ctx.dst_ptr), ctx.post_ops_data,
+                              ctx.normalizeL2Attrs, ctx.jcp, ctx.blk_size, ctx.normalize_modulo_kernel, ctx.normalize_kernel);
+            }
+        }
+    };
 };
 
 // *=================* *======* *=================*
@@ -1282,10 +1325,10 @@ private:
 class NormalizeL2::NormalizeL2ReferenceExecutor : public NormalizeL2::NormalizeL2Executor {
 public:
     NormalizeL2ReferenceExecutor(const NormalizeL2Attrs& attrs, const dnnl::primitive_attr& kernel_attrs, const VectorDims& dims) {
-        executionContext.workAmount = std::accumulate(dims.begin(), dims.end(), 1, std::multiplies<size_t>());
-        executionContext.normalizeL2Attrs = attrs;
-        executionContext.kernel_attrs = kernel_attrs;
-        executionContext.normalizeL2Attrs.vectorDims = dims;
+        execCtx.workAmount = std::accumulate(dims.begin(), dims.end(), 1, std::multiplies<size_t>());
+        execCtx.normalizeL2Attrs = attrs;
+        execCtx.kernel_attrs = kernel_attrs;
+        execCtx.normalizeL2Attrs.vectorDims = dims;
 
         if (attrs.layout != LayoutType::ncsp) {
             IE_THROW() << "Reference Executor of 'NormalizeL2' supports only ncsp layout!";
@@ -1295,21 +1338,19 @@ public:
         for (int i = 0; i < p.len(); i++) {
             auto &post_op = p.entry_[i];
             if (post_op.is_eltwise()) {
-                executionContext.eltwise_injectors_ref.push_back(std::make_shared<cpu::ref_eltwise_scalar_fwd_t>(
+                execCtx.eltwise_injectors_ref.push_back(std::make_shared<cpu::ref_eltwise_scalar_fwd_t>(
                         post_op.eltwise.alg, post_op.eltwise.alpha, post_op.eltwise.beta, post_op.eltwise.scale));
             } else if (post_op.is_depthwise()) {
-                executionContext.depthwise_injectors_ref.push_back(std::make_shared<cpu::ref_depthwise_scalar_fwd_t>(post_op.depthwise.alg));
+                execCtx.depthwise_injectors_ref.push_back(std::make_shared<cpu::ref_depthwise_scalar_fwd_t>(post_op.depthwise.alg));
             }
         }
     }
 
-
     void exec(const uint8_t *src_ptr, uint8_t *dst_ptr, const void **post_ops_data) override {
-        executionContext.src_ptr = src_ptr;
-        executionContext.dst_ptr = dst_ptr;
-        executionContext.post_ops_data = post_ops_data;
-        OV_SWITCH(intel_cpu, FunctionExecutorCreation, executionContext, std::tie(executionContext.normalizeL2Attrs.input_prec,
-                                                                                  executionContext.normalizeL2Attrs.output_prec),
+        execCtx.src_ptr = src_ptr;
+        execCtx.dst_ptr = dst_ptr;
+        execCtx.post_ops_data = post_ops_data;
+        OV_SWITCH(intel_cpu, FunctionExecutorCreation, execCtx, std::tie(execCtx.normalizeL2Attrs.input_prec, execCtx.normalizeL2Attrs.output_prec),
                   OV_CASE2(Precision::U8, Precision::U8, uint8_t, uint8_t),
                   OV_CASE2(Precision::I8, Precision::U8, int8_t, uint8_t),
                   OV_CASE2(Precision::FP32, Precision::U8, float, uint8_t),
@@ -1320,7 +1361,6 @@ public:
                   OV_CASE2(Precision::I8, Precision::FP32, int8_t, float),
                   OV_CASE2(Precision::FP32, Precision::FP32, float, float),
                   OV_CASE2(Precision::BF16, Precision::BF16, bfloat16_t, bfloat16_t));
-//        normalize_nchw_ref(reinterpret_cast<const in_data_t*>(src_ptr), reinterpret_cast<out_data_t*>(dst_ptr), post_ops_data);
     }
 
 private:
@@ -1330,8 +1370,6 @@ private:
             dst_data[i] = src_data[i] == 0 ? 0 : 1;
         });
     }
-
-
 
     template <typename in_data_t, typename out_data_t>
     static void normalize_nchw_ref(const in_data_t* src_data, out_data_t* dst_data, const void **post_ops_data, NormalizeL2Attrs attrs,
@@ -1482,7 +1520,7 @@ private:
         std::vector<std::shared_ptr<dnnl::impl::cpu::ref_eltwise_scalar_fwd_t>> eltwise_injectors_ref;
         std::vector<std::shared_ptr<dnnl::impl::cpu::ref_depthwise_scalar_fwd_t>> depthwise_injectors_ref;
         size_t workAmount = 0lu;
-    } executionContext;
+    } execCtx;
 
     template<typename T>
     struct FunctionExecutorCreation {
@@ -1531,7 +1569,7 @@ std::shared_ptr<NormalizeL2::NormalizeL2Executor> NormalizeL2::NormalizeL2Execut
         return std::make_shared<NormalizeL2ReferenceExecutor>(attrs, kernel_attrs, dims);
 #if defined(OPENVINO_ARCH_X86) || defined(OPENVINO_ARCH_X86_64)
     else if (mayiuse(cpu::x64::sse41))
-        return std::make_shared<NormalizeL2JitExecutor<in_data_t, out_data_t>>(attrs, kernel_attrs, dims);
+        return std::make_shared<NormalizeL2JitExecutor>(attrs, kernel_attrs, dims);
 #endif
     else if (attrs.layout == LayoutType::ncsp)
         return std::make_shared<NormalizeL2ReferenceExecutor>(attrs, kernel_attrs, dims);
