@@ -14,9 +14,7 @@
 #include "utils/cpu_utils.hpp"
 #include "ie_parallel.hpp"
 
-#include "executors/normalize.hpp"
-#include "executors/common/ref_normalize.hpp"
-#include "executors/x64/jit_normalize.hpp"
+#include "executors/normalize_list.hpp"
 
 namespace ov {
 namespace intel_cpu {

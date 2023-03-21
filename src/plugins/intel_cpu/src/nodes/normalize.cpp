@@ -157,7 +157,18 @@ void NormalizeL2::initSupportedPrimitiveDescriptors() {
         config.inConfs[1].setMemDesc(std::move(a));
         a = creatorsMap.at(format)->createSharedDesc(outputPrecision, getOutputShapeAtPort(DATA));
         config.outConfs[0].setMemDesc(std::move(a));
-        supportedPrimitiveDescriptors.push_back({config, impl_type});
+
+        std::vector<MemoryDescPtr> srcMemoryDescs;
+        for (int i = 0; i < config.inConfs.size(); i++) {
+            srcMemoryDescs.push_back(config.inConfs[i].getMemDesc());
+        }
+        std::vector<MemoryDescPtr> dstMemoryDescs;
+        for (int i = 0; i < config.outConfs.size(); i++) {
+            dstMemoryDescs.push_back(config.outConfs[i].getMemDesc());
+        }
+        auto factory = std::make_shared<NormalizeL2ExecutorFactory>(attrs, srcMemoryDescs, dstMemoryDescs,
+                                                               std::make_shared<ExecutorContext>(context, getPrimitivesPriority()));
+        supportedPrimitiveDescriptors.push_back({config, impl_type, factory});
     };
 
     attrs.implDescType = impl_desc_type::unknown;
@@ -250,28 +261,18 @@ void NormalizeL2::prepareParams() {
     auto engine = getEngine();
     auto builder = [&engine, this](const NormalizeKey& key) -> std::shared_ptr<NormalizeL2Executor> {
         std::vector<MemoryDescPtr> srcMemoryDescs;
-        srcMemoryDescs.push_back(getParentEdgeAt(DATA)->getMemoryPtr()->getDescPtr());
-        std::vector<MemoryDescPtr> dstMemoryDescs;
-        dstMemoryDescs.push_back(getChildEdgeAt(DATA)->getMemoryPtr()->getDescPtr());
-
-        if (attrs.cornerCase) {
-            auto refExec = std::make_shared<RefNormalizeL2Executor>(std::make_shared<ExecutorContext>(context, getPrimitivesPriority()));
-            refExec->init(attrs, srcMemoryDescs, dstMemoryDescs, kernel_attrs);
-            return refExec;
-        } else if (mayiuse(cpu::x64::sse41)) {
-#if defined(OPENVINO_ARCH_X86) || defined(OPENVINO_ARCH_X86_64)
-            auto jitExec = std::make_shared<JitNormalizeL2Executor>(std::make_shared<ExecutorContext>(context, getPrimitivesPriority()));
-            jitExec->init(attrs, srcMemoryDescs, dstMemoryDescs, kernel_attrs);
-            return jitExec;
-#endif
-        } else if (attrs.layout == LayoutType::ncsp) {
-            auto refExec = std::make_shared<RefNormalizeL2Executor>(std::make_shared<ExecutorContext>(context, getPrimitivesPriority()));
-            refExec->init(attrs, srcMemoryDescs, dstMemoryDescs, kernel_attrs);
-            return refExec;
-        } else {
-            IE_THROW() << "'NormalizeL2' cannot create Executor";
+        for (int i = 0; i < getOriginalInputsNumber(); i++) {
+            srcMemoryDescs.push_back(getParentEdgeAt(i)->getMemoryPtr()->getDescPtr());
         }
-        return {};
+        std::vector<MemoryDescPtr> dstMemoryDescs;
+        for (int i = 0; i < getOriginalOutputsNumber(); i++) {
+            dstMemoryDescs.push_back(getChildEdgeAt(i)->getMemoryPtr()->getDescPtr());
+        }
+
+        auto selectedPD = getSelectedPrimitiveDescriptor();
+        auto currExecPtr = selectedPD->getExecutorFactoryAs<NormalizeL2ExecutorFactory>()->makeExecutor(attrs, srcMemoryDescs, dstMemoryDescs, kernel_attrs);
+//        selectedPD->setImplementationType(execPtr->getImplType());
+        return currExecPtr;
     };
 
     auto cache = context->getParamsCache();

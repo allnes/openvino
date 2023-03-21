@@ -77,6 +77,8 @@ public:
     bool isSupported(const NormalizeL2Attrs& normalizeL2Attrs,
                      const std::vector<MemoryDescPtr>& srcDescs,
                      const std::vector<MemoryDescPtr>& dstDescs) const override {
+        if (!normalizeL2Attrs.cornerCase && normalizeL2Attrs.layout != LayoutType::ncsp)
+            return false;
         return true;
     }
 

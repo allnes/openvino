@@ -7,6 +7,7 @@
 #include "nodes/executors/normalize.hpp"
 #include <cpu/ref_eltwise.hpp>
 #include <cpu/ref_depthwise_injector.hpp>
+#include "emitters/x64/jit_bf16_emitters.hpp"
 
 namespace ov {
 namespace intel_cpu {
@@ -139,6 +140,8 @@ public:
     bool isSupported(const NormalizeL2Attrs& normalizeL2Attrs,
                      const std::vector<MemoryDescPtr>& srcDescs,
                      const std::vector<MemoryDescPtr>& dstDescs) const override {
+        if (!dnnl::impl::cpu::x64::mayiuse(dnnl::impl::cpu::x64::sse41))
+            return false;
         return true;
     }
 
