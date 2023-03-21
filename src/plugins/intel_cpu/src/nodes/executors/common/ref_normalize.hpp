@@ -74,8 +74,8 @@ private:
 
 class RefNormalizeL2ExecutorBuilder : public NormalizeL2ExecutorBuilder {
 public:
-    bool isSupported(const NormalizeL2Attrs& normalizeL2Attrs, 
-                     const std::vector<MemoryDescPtr>& srcDescs, 
+    bool isSupported(const NormalizeL2Attrs& normalizeL2Attrs,
+                     const std::vector<MemoryDescPtr>& srcDescs,
                      const std::vector<MemoryDescPtr>& dstDescs) const override {
         return true;
     }
