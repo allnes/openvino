@@ -882,7 +882,7 @@ void NormalizeL2::prepareParams() {
         dstMemoryDescs.push_back(getChildEdgeAt(DATA)->getMemoryPtr()->getDescPtr());
 
         if (attrs.cornerCase) {
-            auto refExec = std::make_shared<NormalizeL2ReferenceExecutor>(std::make_shared<ExecutorContext>(context, getPrimitivesPriority()));
+            auto refExec = std::make_shared<RefNormalizeL2Executor>(std::make_shared<ExecutorContext>(context, getPrimitivesPriority()));
             refExec->init(attrs, srcMemoryDescs, dstMemoryDescs, kernel_attrs);
             return refExec;
         } else if (mayiuse(cpu::x64::sse41)) {
@@ -892,7 +892,7 @@ void NormalizeL2::prepareParams() {
             return jitExec;
 #endif
         } else if (attrs.layout == LayoutType::ncsp) {
-            auto refExec = std::make_shared<NormalizeL2ReferenceExecutor>(std::make_shared<ExecutorContext>(context, getPrimitivesPriority()));
+            auto refExec = std::make_shared<RefNormalizeL2Executor>(std::make_shared<ExecutorContext>(context, getPrimitivesPriority()));
             refExec->init(attrs, srcMemoryDescs, dstMemoryDescs, kernel_attrs);
             return refExec;
         } else {
@@ -1268,199 +1268,7 @@ void NormalizeL2::NormalizeL2JitExecutor::normalize_blk(const in_data_t* src_dat
 
 // *=================* *======* *=================*
 
-// *=============* Reference case *===============*
-NormalizeL2::NormalizeL2ReferenceExecutor::NormalizeL2ReferenceExecutor(const ExecutorContext::CPtr context) : NormalizeL2Executor(context) {}
 
-bool NormalizeL2::NormalizeL2ReferenceExecutor::init(const NormalizeL2Attrs& normalizeL2Attrs,
-          const std::vector<MemoryDescPtr>& srcDescs,
-          const std::vector<MemoryDescPtr>& dstDescs,
-          const dnnl::primitive_attr &attr) {
-    execCtx.normalizeL2Attrs = normalizeL2Attrs;
-    execCtx.workAmount = std::accumulate(normalizeL2Attrs.vectorDims.begin(),
-                                         normalizeL2Attrs.vectorDims.end(), 1, std::multiplies<size_t>());
-    execCtx.kernel_attrs = attr;
-
-    if (execCtx.normalizeL2Attrs.layout != LayoutType::ncsp) {
-        IE_THROW() << "Reference Executor of 'NormalizeL2' supports only ncsp layout!";
-    }
-
-    const auto &p = (*execCtx.kernel_attrs.get()).post_ops_;
-    for (int i = 0; i < p.len(); i++) {
-        auto &post_op = p.entry_[i];
-        if (post_op.is_eltwise()) {
-            execCtx.eltwise_injectors_ref.push_back(std::make_shared<cpu::ref_eltwise_scalar_fwd_t>(
-                    post_op.eltwise.alg, post_op.eltwise.alpha, post_op.eltwise.beta, post_op.eltwise.scale));
-        } else if (post_op.is_depthwise()) {
-            execCtx.depthwise_injectors_ref.push_back(std::make_shared<cpu::ref_depthwise_scalar_fwd_t>(post_op.depthwise.alg));
-        }
-    }
-    return true;
-}
-
-void NormalizeL2::NormalizeL2ReferenceExecutor::exec(const std::vector<MemoryCPtr>& src, const std::vector<MemoryPtr>& dst, const void **post_ops_data_) {
-    execCtx.src_ptr = reinterpret_cast<const uint8_t *>(src[0]->GetPtr());
-    execCtx.dst_ptr = reinterpret_cast<uint8_t *>(dst[0]->GetPtr());
-    execCtx.post_ops_data = post_ops_data_;
-    OV_SWITCH(intel_cpu, FunctionExecutorCreation, execCtx, std::tie(execCtx.normalizeL2Attrs.input_prec, execCtx.normalizeL2Attrs.output_prec),
-              OV_CASE2(Precision::U8, Precision::U8, uint8_t, uint8_t),
-              OV_CASE2(Precision::I8, Precision::U8, int8_t, uint8_t),
-              OV_CASE2(Precision::FP32, Precision::U8, float, uint8_t),
-              OV_CASE2(Precision::U8, Precision::I8, uint8_t, int8_t),
-              OV_CASE2(Precision::I8, Precision::I8, int8_t, int8_t),
-              OV_CASE2(Precision::FP32, Precision::I8, float, int8_t),
-              OV_CASE2(Precision::U8, Precision::FP32, uint8_t, float),
-              OV_CASE2(Precision::I8, Precision::FP32, int8_t, float),
-              OV_CASE2(Precision::FP32, Precision::FP32, float, float),
-              OV_CASE2(Precision::BF16, Precision::BF16, bfloat16_t, bfloat16_t));
-}
-
-template <typename in_data_t, typename out_data_t>
-void NormalizeL2::NormalizeL2ReferenceExecutor::normalize(const in_data_t* src_data, out_data_t* dst_data, size_t workAmount) {
-    parallel_for(workAmount, [&](size_t i) {
-        dst_data[i] = src_data[i] == 0 ? 0 : 1;
-    });
-}
-
-template <typename in_data_t, typename out_data_t>
-void NormalizeL2::NormalizeL2ReferenceExecutor::normalize_nchw_ref(const in_data_t* src_data, out_data_t* dst_data,
-                                                                   const void **post_ops_data, NormalizeL2Attrs attrs,
-                                                                   primitive_attr kernel_attrs,
-                               std::vector<std::shared_ptr<dnnl::impl::cpu::ref_eltwise_scalar_fwd_t>> eltwise_injectors_ref,
-                               std::vector<std::shared_ptr<dnnl::impl::cpu::ref_depthwise_scalar_fwd_t>> depthwise_injectors_ref) {
-    auto dims = attrs.vectorDims;
-    size_t dims_size = dims.size();
-    const size_t N = dims[0];
-    const size_t C = dims[1];
-    const size_t H = (dims_size > 2) ? dims[2] : 1lu;
-    const size_t W = (dims_size > 3) ? dims[3] : 1lu;
-    const size_t spatial_dims = H * W;
-    for (size_t b = 0lu; b < N; b++) {
-        const in_data_t *src_data_b = src_data + b * C * spatial_dims;
-        out_data_t *dst_data_b = dst_data + b * C * spatial_dims;
-        if (attrs.across_spatial) {
-            // modulo
-            float addition_identity = 0.0f;
-            float modulo = 0.0f;
-            modulo = parallel_sum(C, addition_identity, [&](int ic) -> float {
-                const in_data_t *src_data_bc = src_data_b + ic * spatial_dims;
-                float modulo_c = 0.0f;
-                for (size_t m = 0; m < spatial_dims; m++) {
-                    modulo_c += src_data_bc[m] * src_data_bc[m];
-                }
-                return modulo_c;
-            });
-
-            float modulo_inv = 1.0f / (std::sqrt(epsApply(modulo, attrs.epsMode, attrs.eps)));
-
-            // normalize
-            parallel_for(C, [&](size_t ic) {
-                const in_data_t *src_data_bc = src_data_b + ic * spatial_dims;
-                out_data_t *dst_data_bc = dst_data_b + ic * spatial_dims;
-                for (size_t m = 0; m < spatial_dims; m++) {
-                    float dst_value = src_data_bc[m] * modulo_inv;
-                    apply_post_ops_scalar(dst_value, ic, post_ops_data, kernel_attrs, eltwise_injectors_ref, depthwise_injectors_ref, attrs);
-                    if (attrs.output_prec == Precision::U8) {
-                        dst_data_bc[m] = (dst_value >= 0) ? dst_value : 0;
-                    } else {
-                        dst_data_bc[m] = dst_value;
-                    }
-                }
-            });
-        } else {  // across_spatial: false
-            // moduloM
-            std::vector<float> moduloM(spatial_dims, 0.f);
-            parallel_for(H, [&](size_t ih) {
-                size_t offset_h = ih * W;
-                const in_data_t *src_data_b_ih = src_data_b + offset_h;
-                for (size_t c = 0; c < C; c++) {
-                    const in_data_t *src_data_b_ih_c = src_data_b_ih + spatial_dims * c;
-                    for (size_t w = 0; w < W; w++) {
-                        moduloM[offset_h + w] += src_data_b_ih_c[w] * src_data_b_ih_c[w];
-                    }
-                }
-            });
-
-            for (size_t m = 0; m < spatial_dims; m++) {
-                moduloM[m] = 1.0f / (std::sqrt(epsApply(moduloM[m], attrs.epsMode, attrs.eps)));
-            }
-
-            // normalize
-            parallel_for(C, [&](size_t ic) {
-                const in_data_t *src_data_bc = src_data_b + ic * spatial_dims;
-                out_data_t *dst_data_bc = dst_data_b + ic * spatial_dims;
-                for (size_t m = 0; m < spatial_dims; m++) {
-                    float dst_value = src_data_bc[m] * moduloM[m];
-                    apply_post_ops_scalar(dst_value, ic, post_ops_data, kernel_attrs, eltwise_injectors_ref, depthwise_injectors_ref, attrs);
-                    if (attrs.output_prec == Precision::U8) {
-                        dst_data_bc[m] = (dst_value >= 0) ? dst_value : 0;
-                    } else {
-                        dst_data_bc[m] = dst_value;
-                    }
-                }
-            });
-        }
-    }
-}
-
-void NormalizeL2::NormalizeL2ReferenceExecutor::apply_post_ops_scalar(float &dst_value, int index_c, const void **post_ops_data_,
-                                        primitive_attr kernel_attrs,
-                                        std::vector<std::shared_ptr<dnnl::impl::cpu::ref_eltwise_scalar_fwd_t>> eltwise_injectors_ref,
-                                        std::vector<std::shared_ptr<dnnl::impl::cpu::ref_depthwise_scalar_fwd_t>> depthwise_injectors_ref,
-                                        NormalizeL2Attrs normalizeL2Attrs) {
-    const auto &p = (*kernel_attrs.get()).post_ops_;
-    int eltwise_inj_idx = 0;
-    int depthwise_inj_idx = 0;
-    // reinterpret cast from (pointer to const void) to (pointer to const pointer to const float)
-    const float** post_ops_data = reinterpret_cast<const float**>(post_ops_data_);
-    for (int i = 0; i < p.len(); i++) {
-        auto &post_op = p.entry_[i];
-        if (post_op.is_eltwise()) {
-            dst_value = eltwise_injectors_ref[eltwise_inj_idx]->compute_scalar(dst_value);
-            eltwise_inj_idx++;
-        } else if (post_op.is_depthwise()) {
-            auto depthwise_base = *post_ops_data;
-            auto depthwise_weights = depthwise_base + post_op.depthwise.offset[post_op.depthwise.scales] + index_c;
-            auto depthwise_bias = depthwise_base + post_op.depthwise.offset[post_op.depthwise.shifts] + index_c;
-
-            dst_value = depthwise_injectors_ref[depthwise_inj_idx]->compute_scalar(dst_value, depthwise_weights, depthwise_bias);
-
-            depthwise_inj_idx++;
-            post_ops_data++;
-        } else if (post_op.is_quantization()) {
-            bool do_dequantization = post_op.quantization.alg == alg_kind::quantization_quantize_dequantize;
-            bool do_rounding = do_dequantization || normalizeL2Attrs.output_prec == Precision::FP32 || i != p.len() - 1;
-
-            auto quant = post_op.quantization;
-
-            using quantization_fields = post_ops_t::entry_t::quantization_t::quantization_fields;
-            auto dataVal = [&](const quantization_fields& field) -> float {
-                auto dataPtr = *post_ops_data + post_op.quantization.offset[field];
-                const int channelIdx = quant.per_channel[field] ? index_c : 0;
-                return dataPtr[channelIdx];
-            };
-
-            float crop_low = dataVal(quant.crop_low);
-            float crop_high = dataVal(quant.crop_high);
-            float input_scale = dataVal(quant.inp_scale);
-            float input_shift = dataVal(quant.inp_shift);
-
-            dst_value = nstl::min(crop_high, nstl::max(crop_low, dst_value));
-            dst_value = dst_value * input_scale + input_shift;
-
-            if (do_rounding) {
-                dst_value = roundf(dst_value);
-            }
-
-            if (do_dequantization) {
-                float output_scale = dataVal(quant.output_scale);
-                float output_shift = dataVal(quant.output_shift);
-                dst_value = dst_value * output_scale + output_shift;
-            }
-
-            post_ops_data++;
-        }
-    }
-}
 
 
 bool NormalizeL2::created() const {
