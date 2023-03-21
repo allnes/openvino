@@ -30,6 +30,8 @@ struct NormalizeL2Attrs {
     size_t dst_data_size = 0lu;
     VectorDims vectorDims;
     impl_desc_type implDescType;
+    AxisSet axisSet;
+    bool isFusing = false;
 };
 
 struct NormalizeKey {

@@ -101,6 +101,7 @@ NormalizeL2::NormalizeL2(const std::shared_ptr<ngraph::Node>& op, const GraphCon
     }
 
     auto norm = ov::as_type_ptr<const ngraph::op::v0::NormalizeL2>(op);
+    attrs.axisSet = norm->get_reduction_axes();
     attrs.eps = norm->get_eps();
     attrs.epsMode = norm->get_eps_mode() == ngraph::op::EpsMode::MAX ? NormEpsMode::MAX : NormEpsMode::ADD;
     attrs.across_spatial = ngraph::shape_size(op->get_input_shape(AXES)) != 1;
@@ -117,6 +118,7 @@ void NormalizeL2::initSupportedPrimitiveDescriptors() {
     Precision outputPrecision = getOriginalOutputPrecisionAtPort(DATA);
 
     if (!fusedWith.empty()) {
+        attrs.isFusing = true;
         outputPrecision = fusedWith[fusedWith.size() - 1]->getOriginalOutputPrecisionAtPort(0);
     }
 
@@ -271,7 +273,7 @@ void NormalizeL2::prepareParams() {
 
         auto selectedPD = getSelectedPrimitiveDescriptor();
         auto currExecPtr = selectedPD->getExecutorFactoryAs<NormalizeL2ExecutorFactory>()->makeExecutor(attrs, srcMemoryDescs, dstMemoryDescs, kernel_attrs);
-//        selectedPD->setImplementationType(execPtr->getImplType());
+        selectedPD->setImplementationType(currExecPtr->getImplType());
         return currExecPtr;
     };
 

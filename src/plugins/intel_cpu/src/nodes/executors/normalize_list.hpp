@@ -8,7 +8,7 @@
 
 #include "normalize.hpp"
 #if defined(OV_CPU_WITH_ACL)
-//#include "acl/acl_NormalizeL2.hpp"
+#include "acl/acl_normalize.hpp"
 #endif
 #include "x64/jit_normalize.hpp"
 #include "common/ref_normalize.hpp"
