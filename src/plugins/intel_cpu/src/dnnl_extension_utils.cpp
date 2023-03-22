@@ -246,5 +246,36 @@ dnnl::algorithm DnnlExtensionUtils::convertToDnnlAlgorithm(Algorithm alg) {
     }
 }
 
+bool DnnlExtensionUtils::isUnarySupportedAsPostOp(Algorithm alg) {
+#if defined(OV_CPU_WITH_ACL)
+    return one_of(alg, Algorithm::EltwiseRelu,
+                       Algorithm::EltwiseTanh,
+                       Algorithm::EltwiseElu,
+                       Algorithm::EltwiseAbs,
+                       Algorithm::EltwiseSqrt,
+                       Algorithm::EltwiseSoftRelu,
+                       Algorithm::EltwiseSigmoid);
+#elif defined(OPENVINO_ARCH_X86_64)
+    return one_of(alg, Algorithm::EltwiseRelu,
+                       Algorithm::EltwiseGeluErf,
+                       Algorithm::EltwiseGeluTanh,
+                       Algorithm::EltwiseElu,
+                       Algorithm::EltwiseSigmoid,
+                       Algorithm::EltwiseClamp,
+                       Algorithm::EltwiseTanh,
+                       Algorithm::EltwiseSwish,
+                       Algorithm::EltwiseHswish,
+                       Algorithm::EltwiseMish,
+                       Algorithm::EltwiseHsigmoid,
+                       Algorithm::EltwiseRoundHalfToEven,
+                       Algorithm::EltwiseRoundHalfAwayFromZero,
+                       Algorithm::EltwiseAbs,
+                       Algorithm::EltwiseSqrt,
+                       Algorithm::EltwiseSoftRelu);
+#else
+    return false;
+#endif
+}
+
 }   // namespace intel_cpu
 }   // namespace ov

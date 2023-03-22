@@ -33,6 +33,7 @@ namespace ov {
 namespace intel_cpu {
 namespace node {
 
+#if defined(OPENVINO_ARCH_X86_64)
 template <cpu_isa_t isa>
 struct jit_uni_nms_kernel_f32 : public jit_uni_nms_kernel, public jit_generator {
     DECLARE_CPU_JIT_AUX_FUNCTIONS(jit_uni_nms_kernel_f32)
@@ -551,6 +552,7 @@ private:
         dw(0x0001);
     }
 };
+#endif
 
 bool NonMaxSuppression::isSupportedOperation(const std::shared_ptr<const ngraph::Node>& op, std::string& errorMessage) noexcept {
     try {
@@ -701,6 +703,7 @@ bool NonMaxSuppression::isExecutable() const {
 }
 
 void NonMaxSuppression::createJitKernel() {
+#if defined(OPENVINO_ARCH_X86_64)
     auto jcp = jit_nms_config_params();
     jcp.box_encode_type = boxEncodingType;
     jcp.is_soft_suppressed_by_iou = isSoftSuppressedByIOU;
@@ -715,6 +718,7 @@ void NonMaxSuppression::createJitKernel() {
 
     if (nms_kernel)
         nms_kernel->create_ker();
+#endif
 }
 
 void NonMaxSuppression::executeDynamicImpl(dnnl::stream strm) {

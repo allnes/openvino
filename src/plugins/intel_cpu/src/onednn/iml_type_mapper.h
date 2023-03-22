@@ -94,6 +94,7 @@ enum impl_desc_type {
     brgemm_avx512_amx  = brgemm  | avx512 | amx,
     brgemm_sparse_avx512_amx = brgemm | sparse | avx512 | amx,
 
+    dw_acl             = _dw | acl,
     gemm_acl           = gemm | acl,
     winograd_acl       = winograd | acl,
 };

@@ -327,6 +327,7 @@ InferenceEngine::Precision Convolution::fusedEltwisePrecision(const NodePtr& fus
 const std::vector<impl_desc_type>& Convolution::getPrimitivesPriority() {
     std::vector<impl_desc_type> priorities = {
         impl_desc_type::unknown,
+        impl_desc_type::dw_acl,
         impl_desc_type::winograd_acl,
         impl_desc_type::gemm_acl,
         impl_desc_type::brgconv_avx512_amx_1x1,

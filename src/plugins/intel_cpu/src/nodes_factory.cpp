@@ -172,9 +172,14 @@ Node::NodesFactory::NodesFactory()
     INTEL_CPU_NODE(Eye, Type::Eye);
     INTEL_CPU_NODE(Unique, Type::Unique);
     INTEL_CPU_NODE(Ngram, Type::Ngram);
+    INTEL_CPU_NODE(Interpolate, Type::Interpolate);
     INTEL_CPU_NODE(Reduce, Type::Reduce);
-#if defined(OPENVINO_ARCH_X86_64)
     INTEL_CPU_NODE(Gather, Type::Gather);
+    INTEL_CPU_NODE(NonMaxSuppression, Type::NonMaxSuppression);
+    INTEL_CPU_NODE(ROIPooling, Type::ROIPooling);
+    INTEL_CPU_NODE(TopK, Type::TopK);
+    INTEL_CPU_NODE(Proposal, Type::Proposal);
+#if defined(OPENVINO_ARCH_X86_64)
     INTEL_CPU_NODE(GridSample, Type::GridSample);
     INTEL_CPU_NODE(DeformableConvolution, Type::DeformableConvolution);
     INTEL_CPU_NODE(DepthToSpace, Type::DepthToSpace);
@@ -183,17 +188,12 @@ Node::NodesFactory::NodesFactory()
     INTEL_CPU_NODE(ColorConvert, Type::ColorConvert);
     INTEL_CPU_NODE(NormalizeL2, Type::NormalizeL2);
     INTEL_CPU_NODE(BinaryConvolution, Type::BinaryConvolution);
-    INTEL_CPU_NODE(NonMaxSuppression, Type::NonMaxSuppression);
-    INTEL_CPU_NODE(Interpolate, Type::Interpolate);
-    INTEL_CPU_NODE(ROIPooling, Type::ROIPooling);
     INTEL_CPU_NODE(ROIAlign, Type::ROIAlign);
     INTEL_CPU_NODE(RegionYolo, Type::RegionYolo);
-    INTEL_CPU_NODE(TopK, Type::TopK);
     INTEL_CPU_NODE(Interaction, Type::Interaction);
     INTEL_CPU_NODE(MHA, Type::MHA);
     INTEL_CPU_NODE(ExtractImagePatches, Type::ExtractImagePatches);
     INTEL_CPU_NODE(FakeQuantize, Type::FakeQuantize);
-    INTEL_CPU_NODE(Proposal, Type::Proposal);
     INTEL_CPU_NODE(ShuffleChannels, Type::ShuffleChannels);
     INTEL_CPU_NODE(SpaceToDepth, Type::SpaceToDepth);
     INTEL_CPU_NODE(Snippet, Type::Subgraph);

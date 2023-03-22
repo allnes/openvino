@@ -36,6 +36,7 @@ impl_desc_type parse_impl_name(std::string impl_desc_name) {
     SEARCH_WORD(any);
     SEARCH_WORD(_1x1);
     SEARCH_WORD(_dw);
+    SEARCH_WORD_2(dw, _dw);
     SEARCH_WORD(reorder);
     SEARCH_WORD(sparse);
     SEARCH_WORD(acl);
@@ -113,6 +114,7 @@ const char* impl_type_to_string(impl_desc_type type) {
     CASE(brgemm_avx512_amx);
     CASE(brgemm_sparse_avx512_amx);
     CASE(acl);
+    CASE(dw_acl);
     CASE(gemm_acl);
     CASE(winograd_acl);
 
