@@ -28,8 +28,11 @@ public:
 
     void prepareParams() override;
     void executeDynamicImpl(dnnl::stream strm) override;
+    void execute(dnnl::stream strm) override;
 
 private:
+    std::unordered_map<int, dnnl::memory> softMaxPrimArgs;
+    Primitive softMaxPrim;
     size_t axis = 0;
 };
 

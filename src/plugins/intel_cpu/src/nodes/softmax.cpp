@@ -181,18 +181,24 @@ void SoftMax::prepareParams() {
         IE_THROW() << "Primitive descriptor was not found for node " << getName() << ".";
     }
 
-    prim = result.first;
+    softMaxPrim = result.first;
 
-    auto pd = (*prim).get_primitive_desc();
+    auto pd = (*softMaxPrim).get_primitive_desc();
     auto scratchpadMem = getScratchPadMem(pd);
 
     auto src = getParentEdgesAtPort(0)[0]->getMemoryPtr()->GetPrimitive();
     auto dst = getChildEdgesAtPort(0)[0]->getMemoryPtr()->GetPrimitive();
-    primArgs = {{DNNL_ARG_SRC, src}, {DNNL_ARG_DST, dst}, {DNNL_ARG_SCRATCHPAD, scratchpadMem->GetPrimitive()}};
+    softMaxPrimArgs = {{DNNL_ARG_SRC, src}, {DNNL_ARG_DST, dst}, {DNNL_ARG_SCRATCHPAD, scratchpadMem->GetPrimitive()}};
 }
 
 void SoftMax::executeDynamicImpl(dnnl::stream strm) {
     execute(strm);
+}
+
+void SoftMax::execute(dnnl::stream strm) {
+    if (softMaxPrim) {
+        (*softMaxPrim).execute(strm, softMaxPrimArgs);
+    }
 }
 
 }   // namespace node
