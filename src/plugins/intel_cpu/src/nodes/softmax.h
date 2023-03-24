@@ -9,6 +9,7 @@
 #include <string>
 #include <memory>
 #include <vector>
+#include "executors/softmax_list.hpp"
 
 namespace ov {
 namespace intel_cpu {
@@ -33,7 +34,9 @@ public:
 private:
     std::unordered_map<int, dnnl::memory> softMaxPrimArgs;
     Primitive softMaxPrim;
-    size_t axis = 0;
+    SoftMaxAttrs softMaxAttrs;
+    std::shared_ptr<SoftMaxExecutor> execPtr = nullptr;
+    NodeConfig config;
 };
 
 }   // namespace node
