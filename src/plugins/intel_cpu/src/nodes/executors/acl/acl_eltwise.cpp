@@ -49,9 +49,11 @@ bool AclEltwiseExecutor::init(const EltwiseAttrs &eltwiseAttrs, const std::vecto
 
     for (int i = 0; i < srcDescs.size(); i++) {
         srcDataLayout[i] = getAclDataLayoutByMemoryDesc(srcDescs[i]);
+        if (srcDataLayout[i] == arm_compute::DataLayout::UNKNOWN) { return false; }
     }
     for (int i = 0; i < dstDescs.size(); i++) {
         dstDataLayout[i] = getAclDataLayoutByMemoryDesc(dstDescs[i]);
+        if (dstDataLayout[i] == arm_compute::DataLayout::UNKNOWN) { return false; }
     }
 
     if (srcDescs.size() == 2 &&

@@ -44,12 +44,6 @@ public:
                      srcD->getPrecision() != InferenceEngine::Precision::FP16) ||
                      srcD->getPrecision() != dstD->getPrecision())
                     return false;
-
-                if (!(srcD->hasLayoutType(LayoutType::ncsp) &&
-                      dstD->hasLayoutType(LayoutType::ncsp)) &&
-                    !(srcD->hasLayoutType(LayoutType::nspc) &&
-                      dstD->hasLayoutType(LayoutType::nspc)))
-                    return false;
             }
         }
 
@@ -66,7 +60,6 @@ public:
             case Algorithm::EltwiseLogicalXor:
             case Algorithm::EltwiseLogicalNot:
             case Algorithm::EltwiseGeluTanh:
-//            case Algorithm::EltwisePrelu: // TODO: accuracy problem
             case Algorithm::EltwiseMish:
             case Algorithm::EltwiseHsigmoid:
             case Algorithm::EltwiseRoundHalfToEven:
