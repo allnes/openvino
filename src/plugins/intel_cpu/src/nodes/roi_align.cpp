@@ -757,9 +757,9 @@ void ROIAlign::createJitKernel(const InferenceEngine::Precision& dataPrec, const
     } else if (mayiuse(cpu::x64::sse41)) {
         roi_align_kernel.reset(new jit_uni_roi_align_kernel_f32<cpu::x64::sse41>(jcp));
     }
-#endif
     if (roi_align_kernel)
         roi_align_kernel->create_ker();
+#endif
 }
 
 void ROIAlign::initSupportedPrimitiveDescriptors() {
@@ -783,7 +783,6 @@ void ROIAlign::initSupportedPrimitiveDescriptors() {
     config.outConfs.resize(1);
 
     impl_desc_type impl_type;
-#if defined(OPENVINO_ARCH_X86_64)
     if (mayiuse(cpu::x64::avx512_core)) {
         impl_type = impl_desc_type::jit_avx512;
     } else if (mayiuse(cpu::x64::avx2)) {
@@ -793,13 +792,10 @@ void ROIAlign::initSupportedPrimitiveDescriptors() {
     } else {
         impl_type = impl_desc_type::ref;
     }
-#else
-    impl_type = impl_desc_type::ref;
-#endif
     std::vector<std::pair<LayoutType, LayoutType>> supportedFormats {
             {LayoutType::ncsp, LayoutType::ncsp}
     };
-#if defined(OPENVINO_ARCH_X86_64)
+
     if (mayiuse(cpu::x64::sse41)) {
         supportedFormats.push_back(std::make_pair(LayoutType::nspc, LayoutType::nspc));
         if (impl_desc_type::jit_avx512 == impl_type) {
@@ -808,7 +804,7 @@ void ROIAlign::initSupportedPrimitiveDescriptors() {
             supportedFormats.push_back(std::make_pair(LayoutType::nCsp8c, LayoutType::nCsp8c));
         }
     }
-#endif
+
     for (auto fmts : supportedFormats) {
         addSupportedPrimDesc({{fmts.first, inputPrec0},
                               {LayoutType::ncsp, Precision::FP32},

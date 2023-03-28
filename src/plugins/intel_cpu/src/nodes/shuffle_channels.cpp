@@ -95,7 +95,6 @@ void ShuffleChannels::initSupportedPrimitiveDescriptors() {
         THROW_SHCH_ERROR << "has unsupported precision: " << precision.name();
 
     impl_desc_type impl_type;
-#if defined(OPENVINO_ARCH_X86_64)
     if (mayiuse(cpu::x64::avx512_core)) {
         impl_type = impl_desc_type::jit_avx512;
     } else if (mayiuse(cpu::x64::avx2)) {
@@ -105,9 +104,6 @@ void ShuffleChannels::initSupportedPrimitiveDescriptors() {
     } else {
         impl_type = impl_desc_type::ref;
     }
-#else
-    impl_type = impl_desc_type::ref;
-#endif
 
     // use ncsp as default for non-quantized networks and nspc for quantized
     auto firstCreatorType = context->isGraphQuantized() ? LayoutType::nspc : LayoutType::ncsp;

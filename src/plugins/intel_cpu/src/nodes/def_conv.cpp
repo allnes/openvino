@@ -824,7 +824,6 @@ void DeformableConvolution::initSupportedPrimitiveDescriptors() {
     config.outConfs[0].inPlace(-1);
 
     impl_desc_type impl_type;
-#if defined(OPENVINO_ARCH_X86_64)
     const int simd_w = mayiuse(cpu::x64::avx512_core) ? 16 : 8;
 
     auto &weiDims = getInputShapeAtPort(WEI_ID).getDims();
@@ -847,10 +846,7 @@ void DeformableConvolution::initSupportedPrimitiveDescriptors() {
     } else {
         impl_type = impl_desc_type::ref;
     }
-#else
-    impl_type = impl_desc_type::ref;
-#endif
-#if defined(OPENVINO_ARCH_X86_64)
+
     if (!enforceRef && mayiuse(cpu::x64::sse41)) {
         // optimized implementation
         auto dataFormat = memory::format_tag::nhwc;
@@ -872,7 +868,6 @@ void DeformableConvolution::initSupportedPrimitiveDescriptors() {
                                                                               memory::data_type::f32, dataFormat));
         supportedPrimitiveDescriptors.push_back({config, impl_type});
     } else {
-#endif
         // reference implementation
         config.inConfs[DATA_ID].setMemDesc(std::make_shared<DnnlBlockedMemoryDesc>(getInputShapeAtPort(DATA_ID), memory::data_type::f32,
                                                                                    memory::format_tag::nchw));
@@ -887,9 +882,7 @@ void DeformableConvolution::initSupportedPrimitiveDescriptors() {
         config.outConfs[0].setMemDesc(std::make_shared<DnnlBlockedMemoryDesc>(getOutputShapeAtPort(DATA_ID), memory::data_type::f32,
                                                                               memory::format_tag::nchw));
         supportedPrimitiveDescriptors.push_back({config, impl_type});
-#if defined(OPENVINO_ARCH_X86_64)
     }
-#endif
 }
 
 void DeformableConvolution::DefConvExecutor::prepareSamplingWeights(

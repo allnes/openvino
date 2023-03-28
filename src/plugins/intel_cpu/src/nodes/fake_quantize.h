@@ -166,22 +166,18 @@ private:
     };
     using executorPtr = std::shared_ptr<FakeQuantizeExecutor>;
     executorPtr execPtr = nullptr;
-#if defined(OPENVINO_ARCH_X86_64)
     struct FakeQuantizeJitExecutor : public FakeQuantizeExecutor {
         FakeQuantizeJitExecutor(const jit_quantize_params &_jqp);
         void exec(const FakeQuantize& node) override;
         std::unique_ptr<jit_uni_quantize_kernel> pKernel;
     };
-#endif
     void init() override;
     std::vector<LayoutType> getDataFormats() const;
     void initializePostOpData(const VectorDims &postOpDims, const size_t bufferAlignment, bool doRounding);
     void initializePostOpDataLegacy(const VectorDims &dims, const size_t bufferAlignment);
     void executeReference();
-#if defined(OPENVINO_ARCH_X86_64)
     void executeBinarization(const std::unique_ptr<jit_uni_quantize_kernel> &pKernel) const;
     void executeQuantization(const std::unique_ptr<jit_uni_quantize_kernel> &pKernel) const;
-#endif
 
     void appendMemory(const size_t dataSize, const void *data, MemoryPtr &memPtr, std::vector<MemoryPtr>& postOpsMem);
     void appendMemory(const size_t dataSize, const void *data, MemoryPtr &memPtr, std::vector<const void*>& postOpsMem);

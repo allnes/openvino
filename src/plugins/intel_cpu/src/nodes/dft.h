@@ -30,9 +30,7 @@ public:
 
 private:
     std::vector<int32_t> getAxes() const;
-#if defined(OPENVINO_ARCH_X86_64)
     void createJITKernels(bool hasDFT, bool hasFFT);
-#endif
     void dftNd(float* output,
                const VectorDims& outputShape,
                const VectorDims& outputStrides,

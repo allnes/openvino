@@ -990,14 +990,11 @@ void RDFT::createPrimitive() {
 #if defined(OPENVINO_ARCH_X86_64)
         if (mayiuse(cpu::x64::sse41)) {
             executor = std::make_shared<RDFTJitExecutor>(key.isInverse, primDesc);
-        } else {
-#else
-            executor = std::make_shared<RDFTRefExecutor>(key.isInverse);
-            primDesc->setImplementationType(ref_any);
-#endif
-#if defined(OPENVINO_ARCH_X86_64)
+            return executor;
         }
 #endif
+        executor = std::make_shared<RDFTRefExecutor>(key.isInverse);
+        primDesc->setImplementationType(ref_any);
         return executor;
     };
 

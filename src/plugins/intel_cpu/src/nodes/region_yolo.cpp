@@ -282,16 +282,13 @@ void RegionYolo::initSupportedPrimitiveDescriptors() {
         output_prec = Precision::FP32;
     }
 
-#if defined(OPENVINO_ARCH_X86_64)
     if (Precision::BF16 == output_prec) {
         if (!mayiuse(avx512_core)) {
             output_prec = Precision::FP32;
         }
     }
-#endif
 
     impl_desc_type impl_type;
-#if defined(OPENVINO_ARCH_X86_64)
     if (mayiuse(x64::avx512_core)) {
         impl_type = impl_desc_type::jit_avx512;
     } else if (mayiuse(x64::avx2)) {
@@ -301,9 +298,6 @@ void RegionYolo::initSupportedPrimitiveDescriptors() {
     } else {
         impl_type = impl_desc_type::ref;
     }
-#else
-    impl_type = impl_desc_type::ref;
-#endif
 
     addSupportedPrimDesc({{LayoutType::ncsp, input_prec}},
                          {{LayoutType::ncsp, output_prec}},

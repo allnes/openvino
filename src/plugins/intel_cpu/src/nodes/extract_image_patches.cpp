@@ -378,13 +378,8 @@ void ExtractImagePatches::prepareParams() {
     const auto& out_dims = getChildEdgesAtPort(0)[0]->getMemory().getStaticDims();
     const auto prcSize = getOriginalInputPrecisionAtPort(0).size();
     ExtractImagePatchesKey key = {in_dims, out_dims, _ksizes, _strides, _rates, _auto_pad, prcSize};
-#if defined(OPENVINO_ARCH_X86_64)
     const auto isJit = mayiuse(x64::sse41);
-#else
-    const auto isJit = false;
-#endif
     auto buildExecutor = [&isJit](const ExtractImagePatchesKey& key) -> executorPtr {
-#if defined(OPENVINO_ARCH_X86_64)
         if (isJit) {
             return std::make_shared<ExtractImagePatchesJitExecutor>(key.inDims,
                                                                     key.outDims,
@@ -394,7 +389,6 @@ void ExtractImagePatches::prepareParams() {
                                                                     key.padType,
                                                                     key.prcSize);
         } else {
-#else
             return std::make_shared<ExtractImagePatchesRefExecutor>(key.inDims,
                                                                     key.outDims,
                                                                     key.kSizes,
@@ -402,10 +396,7 @@ void ExtractImagePatches::prepareParams() {
                                                                     key.rates,
                                                                     key.padType,
                                                                     key.prcSize);
-#endif
-#if defined(OPENVINO_ARCH_X86_64)
         }
-#endif
     };
     auto cache = context->getParamsCache();
     auto result = cache->getOrCreate(key, buildExecutor);
@@ -487,9 +478,10 @@ void ExtractImagePatches::ExtractImagePatchesRefExecutor::executeReference(
         memset(my_dst_ptr, 0, num_bytes_to_set);
     });
 }
-#if defined(OPENVINO_ARCH_X86_64)
+
 void ExtractImagePatches::ExtractImagePatchesJitExecutor::executeOptimizedGeneric(
     void* src, void* dst, const VectorDims& istrides, const VectorDims& ostrides) const {
+#if defined(OPENVINO_ARCH_X86_64)
     const char* src_data = reinterpret_cast<const char*>(src);
     char* dst_data = reinterpret_cast<char*>(dst);
     const auto& jpp = pKernel->jpp;
@@ -516,8 +508,9 @@ void ExtractImagePatches::ExtractImagePatchesJitExecutor::executeOptimizedGeneri
         args.w_hi_pad = iw_hpad;
         (*pKernel)(&args);
     });
-}
 #endif
+}
+
 jit_extract_image_patches_params ExtractImagePatches::ExtractImagePatchesExecutor::fillJpp(
     const VectorDims& inDims,
     const VectorDims& outDims,
@@ -573,7 +566,6 @@ jit_extract_image_patches_params ExtractImagePatches::ExtractImagePatchesExecuto
     }
 
     jpp.dtype_size = prcSize;
-#if defined(OPENVINO_ARCH_X86_64)
     if (mayiuse(x64::avx512_core)) {
         jpp.block_size = cpu_isa_traits<x64::avx512_core>::vlen / prcSize;
     } else if (mayiuse(x64::avx2)) {
@@ -583,11 +575,9 @@ jit_extract_image_patches_params ExtractImagePatches::ExtractImagePatchesExecuto
     } else {
         jpp.block_size = 1;
     }
-#endif
     jpp.block_size = 1;
     return jpp;
 }
-#if defined(OPENVINO_ARCH_X86_64)
 ExtractImagePatches::ExtractImagePatchesJitExecutor::ExtractImagePatchesJitExecutor(
     const VectorDims& inDims,
     const VectorDims& outDims,
@@ -596,6 +586,7 @@ ExtractImagePatches::ExtractImagePatchesJitExecutor::ExtractImagePatchesJitExecu
     const VectorDims& rates,
     const ExtImgPatcherPadType& padType,
     const size_t prcSize) {
+#if defined(OPENVINO_ARCH_X86_64)
     auto jpp = fillJpp(inDims, outDims, kSizes, strides, rates, padType, prcSize);
     if (mayiuse(x64::avx512_core)) {
         pKernel.reset(new jit_extract_image_patches_kernel<x64::avx512_core>(jpp));
@@ -609,6 +600,7 @@ ExtractImagePatches::ExtractImagePatchesJitExecutor::ExtractImagePatchesJitExecu
 
     if (pKernel)
         pKernel->create_ker();
+#endif
 }
 
 void ExtractImagePatches::ExtractImagePatchesJitExecutor::exec(
@@ -617,7 +609,7 @@ void ExtractImagePatches::ExtractImagePatchesJitExecutor::exec(
         IE_THROW() << "Can't execute, kernel for extract image patches node is not compiled";
     executeOptimizedGeneric(src, dst, istrides, ostrides);
 }
-#endif
+
 ExtractImagePatches::ExtractImagePatchesRefExecutor::ExtractImagePatchesRefExecutor(
     const VectorDims& inDims,
     const VectorDims& outDims,

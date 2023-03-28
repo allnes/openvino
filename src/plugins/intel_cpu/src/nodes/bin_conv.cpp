@@ -913,7 +913,7 @@ BinaryConvolution::BinaryConvolution(const std::shared_ptr<ngraph::Node>& op, co
         }
         paddingL = binConv->get_pads_begin();
         paddingR = binConv->get_pads_end();
-#if defined(OPENVINO_ARCH_X86_64)
+
         if (mayiuse(x64::avx512_core)) {
             implType = impl_desc_type::jit_avx512;
         } else if (mayiuse(x64::avx2)) {
@@ -923,9 +923,6 @@ BinaryConvolution::BinaryConvolution(const std::shared_ptr<ngraph::Node>& op, co
         } else {
             implType = impl_desc_type::ref;
         }
-#else
-    implType = impl_desc_type::ref;
-#endif
     } else {
         IE_THROW(NotImplemented) << errorMessage;
     }
