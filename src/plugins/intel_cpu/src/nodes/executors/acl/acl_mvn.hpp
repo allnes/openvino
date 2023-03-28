@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include "acl_utils.hpp"
 #include "nodes/executors/mvn.hpp"
 #include "arm_compute/runtime/NEON/NEFunctions.h"
 
@@ -54,6 +55,9 @@ public:
             return false;
         }
         if (!mvnAttrs.normalizeVariance_) {
+            return false;
+        }
+        if (!mvnAttrs.initAcrossChannels_ && getAclDataLayoutByMemoryDesc(srcDescs[0]) == arm_compute::DataLayout::NHWC) {
             return false;
         }
 
