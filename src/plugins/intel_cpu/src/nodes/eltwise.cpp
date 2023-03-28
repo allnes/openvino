@@ -307,6 +307,9 @@ const std::map<const ngraph::DiscreteTypeInfo, Eltwise::Initializer> Eltwise::in
     {ngraph::op::v9::SoftSign::get_type_info_static(), [](const std::shared_ptr<ngraph::Node>& op, Eltwise& node) {
         node.algorithm = Algorithm::EltwiseSoftSign;
     }},
+    {ngraph::op::v0::Log::get_type_info_static(), [](const std::shared_ptr<ngraph::Node>& op, Eltwise& node) {
+        node.algorithm = Algorithm::EltwiseLog;
+    }},
 };
 
 
@@ -486,6 +489,7 @@ size_t Eltwise::getOpInputsNum() const {
         case Algorithm::EltwiseRoundHalfToEven:
         case Algorithm::EltwiseRoundHalfAwayFromZero:
         case Algorithm::EltwiseSoftSign:
+        case Algorithm::EltwiseLog:
             return 1;
         case Algorithm::EltwiseAdd:
         case Algorithm::EltwiseSubtract:

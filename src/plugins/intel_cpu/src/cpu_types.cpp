@@ -160,7 +160,7 @@ const InferenceEngine::details::caseless_unordered_map<std::string, Type> type_t
         { "Floor", Type::Math},
         { "HardSigmoid", Type::Math},
         { "If", Type::If},
-        { "Log", Type::Math},
+        { "Log", Type::Eltwise },
         { "Neg", Type::Math},
         { "Reciprocal", Type::Math},
         { "Selu", Type::Math},
@@ -462,6 +462,7 @@ std::string algToString(const Algorithm alg) {
     CASE(EltwiseRoundHalfToEven);
     CASE(EltwiseRoundHalfAwayFromZero);
     CASE(EltwiseErf);
+    CASE(EltwiseLog);
     CASE(FQCommon);
     CASE(FQQuantization);
     CASE(FQBinarization);
@@ -497,7 +498,6 @@ std::string algToString(const Algorithm alg) {
     CASE(MathErf);
     CASE(MathFloor);
     CASE(MathHardSigmoid);
-    CASE(MathLog);
     CASE(MathNegative);
     CASE(MathReciprocal);
     CASE(MathSelu);

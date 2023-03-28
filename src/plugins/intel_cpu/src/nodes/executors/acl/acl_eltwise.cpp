@@ -353,6 +353,15 @@ bool AclEltwiseExecutor::init(const EltwiseAttrs &eltwiseAttrs, const std::vecto
                 acl_op->run();
             };
             break;
+        case Algorithm::EltwiseLog:
+            if (!NELogLayer::validate(&srcTensorsInfo[0], &dstTensorsInfo[0]))
+                return false;
+            exec_func = [this]{
+                auto acl_op = std::make_unique<NELogLayer>();
+                acl_op->configure(&srcTensors[0], &dstTensors[0]);
+                acl_op->run();
+            };
+            break;
         default:
             IE_THROW() << "Unsupported operation type for ACL Eltwise executor: " << static_cast<int>(aclEltwiseAttrs.algorithm);
     }
