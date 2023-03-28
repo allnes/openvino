@@ -95,7 +95,7 @@ private:
 
     using executorPtr = std::shared_ptr<ExtractImagePatchesExecutor>;
     executorPtr execPtr = nullptr;
-
+#if defined(OPENVINO_ARCH_X86_64)
     struct ExtractImagePatchesJitExecutor : public ExtractImagePatchesExecutor {
         ExtractImagePatchesJitExecutor(
             const VectorDims& inDims,
@@ -111,7 +111,7 @@ private:
     private:
         std::unique_ptr<jit_uni_extract_image_patches_kernel> pKernel;
     };
-
+#endif
     struct ExtractImagePatchesRefExecutor : public ExtractImagePatchesExecutor {
         ExtractImagePatchesRefExecutor(
             const VectorDims& inDims,

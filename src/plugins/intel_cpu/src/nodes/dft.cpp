@@ -535,10 +535,11 @@ void DFT::prepareParams() {
             hasFFT = true;
         }
     }
-
+#if defined(OPENVINO_ARCH_X86_64)
     if (mayiuse(cpu::x64::sse41)) {
         createJITKernels(hasDFT, hasFFT);
     }
+#endif
 }
 
 std::vector<int32_t> DFT::getAxes() const {
@@ -553,7 +554,7 @@ std::vector<int32_t> DFT::getAxes() const {
     std::sort(axes.begin(), axes.end());
     return axes;
 }
-
+#if defined(OPENVINO_ARCH_X86_64)
 void DFT::createJITKernels(bool hasDFT, bool hasFFT) {
     if (hasDFT && dftKernel == nullptr) {
         if (mayiuse(cpu::x64::avx512_core)) {
@@ -585,7 +586,7 @@ void DFT::createJITKernels(bool hasDFT, bool hasFFT) {
             fftKernel->create_ker();
     }
 }
-
+#endif
 }   // namespace node
 }   // namespace intel_cpu
 }   // namespace ov

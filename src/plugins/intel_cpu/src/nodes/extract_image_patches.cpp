@@ -25,7 +25,7 @@ using namespace Xbyak;
 namespace ov {
 namespace intel_cpu {
 namespace node {
-
+#if defined(OPENVINO_ARCH_X86_64)
 #define GET_OFF(field) offsetof(jit_extract_image_patches_args, field)
 
 template <cpu_isa_t isa>
@@ -270,7 +270,7 @@ private:
             dd(i * jpp.SW * jpp.dtype_size);
     }
 };
-
+#endif
 bool ExtractImagePatches::isSupportedOperation(const std::shared_ptr<const ngraph::Node>& op, std::string& errorMessage) noexcept {
     try {
         auto extImgPatcher = ngraph::as_type_ptr<const ngraph::opset3::ExtractImagePatches>(op);
@@ -378,8 +378,13 @@ void ExtractImagePatches::prepareParams() {
     const auto& out_dims = getChildEdgesAtPort(0)[0]->getMemory().getStaticDims();
     const auto prcSize = getOriginalInputPrecisionAtPort(0).size();
     ExtractImagePatchesKey key = {in_dims, out_dims, _ksizes, _strides, _rates, _auto_pad, prcSize};
+#if defined(OPENVINO_ARCH_X86_64)
     const auto isJit = mayiuse(x64::sse41);
+#else
+    const auto isJit = false;
+#endif
     auto buildExecutor = [&isJit](const ExtractImagePatchesKey& key) -> executorPtr {
+#if defined(OPENVINO_ARCH_X86_64)
         if (isJit) {
             return std::make_shared<ExtractImagePatchesJitExecutor>(key.inDims,
                                                                     key.outDims,
@@ -389,6 +394,7 @@ void ExtractImagePatches::prepareParams() {
                                                                     key.padType,
                                                                     key.prcSize);
         } else {
+#else
             return std::make_shared<ExtractImagePatchesRefExecutor>(key.inDims,
                                                                     key.outDims,
                                                                     key.kSizes,
@@ -396,7 +402,10 @@ void ExtractImagePatches::prepareParams() {
                                                                     key.rates,
                                                                     key.padType,
                                                                     key.prcSize);
+#endif
+#if defined(OPENVINO_ARCH_X86_64)
         }
+#endif
     };
     auto cache = context->getParamsCache();
     auto result = cache->getOrCreate(key, buildExecutor);
@@ -478,7 +487,7 @@ void ExtractImagePatches::ExtractImagePatchesRefExecutor::executeReference(
         memset(my_dst_ptr, 0, num_bytes_to_set);
     });
 }
-
+#if defined(OPENVINO_ARCH_X86_64)
 void ExtractImagePatches::ExtractImagePatchesJitExecutor::executeOptimizedGeneric(
     void* src, void* dst, const VectorDims& istrides, const VectorDims& ostrides) const {
     const char* src_data = reinterpret_cast<const char*>(src);
@@ -508,7 +517,7 @@ void ExtractImagePatches::ExtractImagePatchesJitExecutor::executeOptimizedGeneri
         (*pKernel)(&args);
     });
 }
-
+#endif
 jit_extract_image_patches_params ExtractImagePatches::ExtractImagePatchesExecutor::fillJpp(
     const VectorDims& inDims,
     const VectorDims& outDims,
@@ -564,6 +573,7 @@ jit_extract_image_patches_params ExtractImagePatches::ExtractImagePatchesExecuto
     }
 
     jpp.dtype_size = prcSize;
+#if defined(OPENVINO_ARCH_X86_64)
     if (mayiuse(x64::avx512_core)) {
         jpp.block_size = cpu_isa_traits<x64::avx512_core>::vlen / prcSize;
     } else if (mayiuse(x64::avx2)) {
@@ -573,10 +583,11 @@ jit_extract_image_patches_params ExtractImagePatches::ExtractImagePatchesExecuto
     } else {
         jpp.block_size = 1;
     }
-
+#endif
+    jpp.block_size = 1;
     return jpp;
 }
-
+#if defined(OPENVINO_ARCH_X86_64)
 ExtractImagePatches::ExtractImagePatchesJitExecutor::ExtractImagePatchesJitExecutor(
     const VectorDims& inDims,
     const VectorDims& outDims,
@@ -606,7 +617,7 @@ void ExtractImagePatches::ExtractImagePatchesJitExecutor::exec(
         IE_THROW() << "Can't execute, kernel for extract image patches node is not compiled";
     executeOptimizedGeneric(src, dst, istrides, ostrides);
 }
-
+#endif
 ExtractImagePatches::ExtractImagePatchesRefExecutor::ExtractImagePatchesRefExecutor(
     const VectorDims& inDims,
     const VectorDims& outDims,

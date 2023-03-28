@@ -45,7 +45,7 @@ using namespace Xbyak;
 namespace ov {
 namespace intel_cpu {
 namespace node {
-
+#if defined(OPENVINO_ARCH_X86_64)
 #define GET_OFF(field) offsetof(jit_quantize_call_args, field)
 
 template <cpu_isa_t isa>
@@ -863,7 +863,7 @@ private:
         }
     }
 };
-
+#endif
 bool FakeQuantize::isSupportedOperation(const std::shared_ptr<const ngraph::Node>& op, std::string& errorMessage) noexcept {
     try {
         const auto fq = std::dynamic_pointer_cast<const ngraph::opset1::FakeQuantize>(op);
@@ -1316,6 +1316,7 @@ void FakeQuantize::initSupportedPrimitiveDescriptors() {
         return;
 
     impl_desc_type impl_type;
+#if defined(OPENVINO_ARCH_X86_64)
     if (mayiuse(cpu::x64::avx512_core)) {
         impl_type = impl_desc_type::jit_avx512;
     } else if (mayiuse(cpu::x64::avx2)) {
@@ -1325,8 +1326,14 @@ void FakeQuantize::initSupportedPrimitiveDescriptors() {
     } else {
         impl_type = impl_desc_type::ref;
     }
-
+#else
+    impl_type = impl_desc_type::ref;
+#endif
+#if defined(OPENVINO_ARCH_X86_64)
     if (!mayiuse(cpu::x64::sse41) || getAxis() != 1) {
+#else
+        if (getAxis() != 1) {
+#endif
         impl_type = impl_desc_type::ref;
 
         if (!isBinarization()) {
@@ -1445,6 +1452,7 @@ void FakeQuantize::createPrimitive() {
     auto selectedPrimitiveDescriptor = getSelectedPrimitiveDescriptor();
     if (!selectedPrimitiveDescriptor)
         IE_THROW() << "CPU quantize node with name '" << getName() << "' doesn't have primitive descriptors.";
+#if defined(OPENVINO_ARCH_X86_64)
     if (selectedPrimitiveDescriptor->getImplementationType() != impl_desc_type::ref) {
         const auto& config = getSelectedPrimitiveDescriptor()->getConfig();
 
@@ -1485,6 +1493,7 @@ void FakeQuantize::createPrimitive() {
         auto result = cache->getOrCreate(key, buildExecutor);
         execPtr = result.first;
     }
+#endif
 }
 
 void FakeQuantize::executeReference() {
@@ -1596,7 +1605,7 @@ void FakeQuantize::executeReference() {
         });
     }
 }
-
+#if defined(OPENVINO_ARCH_X86_64)
 void FakeQuantize::executeBinarization(const std::unique_ptr<jit_uni_quantize_kernel> &pKernel) const {
     const auto &srcMemory = getParentEdgeAt(0)->getMemoryPtr();
     auto &dstMemory = getChildEdgeAt(0)->getMemoryPtr();
@@ -1761,7 +1770,7 @@ void FakeQuantize::executeQuantization(const std::unique_ptr<jit_uni_quantize_ke
         });
     }
 }
-
+#endif
 void FakeQuantize::executeDynamicImpl(dnnl::stream strm) {
     execute(strm);
 }
@@ -2108,7 +2117,7 @@ bool FakeQuantize::appendAttrPostOps(DnnlPostOpsComposer& dnnlpoc,
     dnnlpoc.appendLinear(f.osc, f.osh, isLastPostOp, allowBinary);
     return true;
 }
-
+#if defined(OPENVINO_ARCH_X86_64)
 FakeQuantize::FakeQuantizeJitExecutor::FakeQuantizeJitExecutor(const jit_quantize_params &_jqp) {
     bool isBinarization = _jqp.op_type == Algorithm::FQBinarization;
     if (mayiuse(cpu::x64::avx512_core)) {
@@ -2144,7 +2153,7 @@ void FakeQuantize::FakeQuantizeJitExecutor::exec(const FakeQuantize& node) {
         node.executeQuantization(pKernel);
     }
 }
-
+#endif
 bool FakeQuantize::created() const {
     return getType() == Type::FakeQuantize;
 }

@@ -105,9 +105,12 @@ Node::NodesFactory::NodesFactory()
     INTEL_CPU_NODE(Generic, Type::Generic);
     INTEL_CPU_NODE(CumSum, Type::CumSum);
     INTEL_CPU_NODE(Convolution, Type::Convolution);
+    INTEL_CPU_NODE(BinaryConvolution, Type::BinaryConvolution);
     INTEL_CPU_NODE(SpaceToBatch, Type::SpaceToBatch);
     INTEL_CPU_NODE(Lrn, Type::Lrn);
     INTEL_CPU_NODE(BatchToSpace, Type::BatchToSpace);
+    INTEL_CPU_NODE(DepthToSpace, Type::DepthToSpace);
+    INTEL_CPU_NODE(SpaceToDepth, Type::SpaceToDepth);
     INTEL_CPU_NODE(If, Type::If);
     INTEL_CPU_NODE(Broadcast, Type::Broadcast);
     INTEL_CPU_NODE(ExperimentalDetectronTopKROIs, Type::ExperimentalDetectronTopKROIs);
@@ -125,6 +128,7 @@ Node::NodesFactory::NodesFactory()
     INTEL_CPU_NODE(Tile, Type::Tile);
     INTEL_CPU_NODE(GatherTree, Type::GatherTree);
     INTEL_CPU_NODE(FullyConnected, Type::FullyConnected);
+    INTEL_CPU_NODE(FakeQuantize, Type::FakeQuantize);
     INTEL_CPU_NODE(CTCGreedyDecoder, Type::CTCGreedyDecoder);
     INTEL_CPU_NODE(Transpose, Type::Transpose);
     INTEL_CPU_NODE(ReorgYolo, Type::ReorgYolo);
@@ -149,6 +153,7 @@ Node::NodesFactory::NodesFactory()
     INTEL_CPU_NODE(Math, Type::Math);
     INTEL_CPU_NODE(MultiClassNms, Type::MulticlassNms);
     INTEL_CPU_NODE(Convert, Type::Convert);
+    INTEL_CPU_NODE(ColorConvert, Type::ColorConvert);
     INTEL_CPU_NODE(EmbeddingBagOffsetSum, Type::EmbeddingBagOffsetsSum);
     INTEL_CPU_NODE(Roll, Type::Roll);
     INTEL_CPU_NODE(Pad, Type::Pad);
@@ -158,15 +163,18 @@ Node::NodesFactory::NodesFactory()
     INTEL_CPU_NODE(ScatterUpdate, Type::ScatterUpdate);
     INTEL_CPU_NODE(ScatterUpdate, Type::ScatterElementsUpdate);
     INTEL_CPU_NODE(ScatterUpdate, Type::ScatterNDUpdate);
+    INTEL_CPU_NODE(ShuffleChannels, Type::ShuffleChannels);
     INTEL_CPU_NODE(TensorIterator, Type::TensorIterator);
     INTEL_CPU_NODE(Concat, Type::Concatenation);
     INTEL_CPU_NODE(OneHot, Type::OneHot);
     INTEL_CPU_NODE(ExperimentalDetectronDetectionOutput, Type::ExperimentalDetectronDetectionOutput);
     INTEL_CPU_NODE(Deconvolution, Type::Deconvolution);
+    INTEL_CPU_NODE(DeformableConvolution, Type::DeformableConvolution);
     INTEL_CPU_NODE(Range, Type::Range);
     INTEL_CPU_NODE(StridedSlice, Type::StridedSlice);
     INTEL_CPU_NODE(GRN, Type::GRN);
     INTEL_CPU_NODE(NonZero, Type::NonZero);
+    INTEL_CPU_NODE(NormalizeL2, Type::NormalizeL2);
     INTEL_CPU_NODE(PriorBox, Type::PriorBox);
     INTEL_CPU_NODE(PriorBoxClustered, Type::PriorBoxClustered);
     INTEL_CPU_NODE(Eye, Type::Eye);
@@ -177,25 +185,17 @@ Node::NodesFactory::NodesFactory()
     INTEL_CPU_NODE(Gather, Type::Gather);
     INTEL_CPU_NODE(NonMaxSuppression, Type::NonMaxSuppression);
     INTEL_CPU_NODE(ROIPooling, Type::ROIPooling);
+    INTEL_CPU_NODE(ROIAlign, Type::ROIAlign);
     INTEL_CPU_NODE(TopK, Type::TopK);
     INTEL_CPU_NODE(Proposal, Type::Proposal);
-#if defined(OPENVINO_ARCH_X86_64)
-    INTEL_CPU_NODE(GridSample, Type::GridSample);
-    INTEL_CPU_NODE(DeformableConvolution, Type::DeformableConvolution);
-    INTEL_CPU_NODE(DepthToSpace, Type::DepthToSpace);
+    INTEL_CPU_NODE(RegionYolo, Type::RegionYolo);
     INTEL_CPU_NODE(DFT, Type::DFT);
     INTEL_CPU_NODE(RDFT, Type::RDFT);
-    INTEL_CPU_NODE(ColorConvert, Type::ColorConvert);
-    INTEL_CPU_NODE(NormalizeL2, Type::NormalizeL2);
-    INTEL_CPU_NODE(BinaryConvolution, Type::BinaryConvolution);
-    INTEL_CPU_NODE(ROIAlign, Type::ROIAlign);
-    INTEL_CPU_NODE(RegionYolo, Type::RegionYolo);
+    INTEL_CPU_NODE(ExtractImagePatches, Type::ExtractImagePatches);
+#if defined(OPENVINO_ARCH_X86_64)
+    INTEL_CPU_NODE(GridSample, Type::GridSample);
     INTEL_CPU_NODE(Interaction, Type::Interaction);
     INTEL_CPU_NODE(MHA, Type::MHA);
-    INTEL_CPU_NODE(ExtractImagePatches, Type::ExtractImagePatches);
-    INTEL_CPU_NODE(FakeQuantize, Type::FakeQuantize);
-    INTEL_CPU_NODE(ShuffleChannels, Type::ShuffleChannels);
-    INTEL_CPU_NODE(SpaceToDepth, Type::SpaceToDepth);
     INTEL_CPU_NODE(Snippet, Type::Subgraph);
 #endif
 }

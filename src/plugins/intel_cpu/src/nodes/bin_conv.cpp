@@ -42,7 +42,7 @@ using namespace Xbyak;
 namespace ov {
 namespace intel_cpu {
 namespace node {
-
+#if defined(OPENVINO_ARCH_X86_64)
 #define GET_OFF(field) offsetof(jit_bin_conv_call_args, field)
 
 template <cpu_isa_t isa>
@@ -874,7 +874,7 @@ private:
         }
     }
 };
-
+#endif
 bool BinaryConvolution::isSupportedOperation(const std::shared_ptr<const ngraph::Node>& op, std::string& errorMessage) noexcept {
     try {
         if (isDynamicNgraphNode(op)) {
@@ -913,7 +913,7 @@ BinaryConvolution::BinaryConvolution(const std::shared_ptr<ngraph::Node>& op, co
         }
         paddingL = binConv->get_pads_begin();
         paddingR = binConv->get_pads_end();
-
+#if defined(OPENVINO_ARCH_X86_64)
         if (mayiuse(x64::avx512_core)) {
             implType = impl_desc_type::jit_avx512;
         } else if (mayiuse(x64::avx2)) {
@@ -923,6 +923,9 @@ BinaryConvolution::BinaryConvolution(const std::shared_ptr<ngraph::Node>& op, co
         } else {
             implType = impl_desc_type::ref;
         }
+#else
+    implType = impl_desc_type::ref;
+#endif
     } else {
         IE_THROW(NotImplemented) << errorMessage;
     }
@@ -1092,7 +1095,7 @@ void BinaryConvolution::createPrimitive() {
                    IMPLICATION(jcp.kw > 7, (jcp.t_pad == 0 && jcp.l_pad == 0) || (jcp.stride_w == 1 && jcp.stride_h == 1));
     if (!args_ok)
         IE_THROW() << "BinaryConvolution with name '" << getName() << "' has unsupported parameters";
-
+#if defined(OPENVINO_ARCH_X86_64)
     if (implType == impl_desc_type::jit_avx512) {
         bin_conv_kernel.reset(new jit_uni_bin_conv_kernel_f32<x64::avx512_core>(jcp, jcp_dw_conv, *attr.get()));
     } else if (implType == impl_desc_type::jit_avx2) {
@@ -1102,6 +1105,7 @@ void BinaryConvolution::createPrimitive() {
     }
     if (bin_conv_kernel)
         bin_conv_kernel->create_ker();
+#endif
 }
 
 bool BinaryConvolution::canFuse(const NodePtr& node) const {

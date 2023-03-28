@@ -31,7 +31,7 @@ namespace node {
 
 using ngPoolingMode = ngraph::opset9::ROIAlign::PoolingMode;
 using ngAlignedMode = ngraph::opset9::ROIAlign::AlignedMode;
-
+#if defined(OPENVINO_ARCH_X86_64)
 #define GET_OFF(field) offsetof(jit_roi_align_call_args, field)
 
 template <cpu_isa_t isa>
@@ -648,7 +648,7 @@ private:
         }
     }
 };
-
+#endif
 bool ROIAlign::isSupportedOperation(const std::shared_ptr<const ngraph::Node>& op, std::string& errorMessage) noexcept {
     try {
         auto roiAlign = ngraph::as_type_ptr<const ngraph::opset9::ROIAlign>(op);
@@ -749,7 +749,7 @@ void ROIAlign::createJitKernel(const InferenceEngine::Precision& dataPrec, const
     jcp.layout = selectLayout;
     jcp.pooled_h = pooledH;
     jcp.pooled_w = pooledW;
-
+#if defined(OPENVINO_ARCH_X86_64)
     if (mayiuse(cpu::x64::avx512_core)) {
         roi_align_kernel.reset(new jit_uni_roi_align_kernel_f32<cpu::x64::avx512_core>(jcp));
     } else if (mayiuse(cpu::x64::avx2)) {
@@ -757,7 +757,7 @@ void ROIAlign::createJitKernel(const InferenceEngine::Precision& dataPrec, const
     } else if (mayiuse(cpu::x64::sse41)) {
         roi_align_kernel.reset(new jit_uni_roi_align_kernel_f32<cpu::x64::sse41>(jcp));
     }
-
+#endif
     if (roi_align_kernel)
         roi_align_kernel->create_ker();
 }
@@ -783,6 +783,7 @@ void ROIAlign::initSupportedPrimitiveDescriptors() {
     config.outConfs.resize(1);
 
     impl_desc_type impl_type;
+#if defined(OPENVINO_ARCH_X86_64)
     if (mayiuse(cpu::x64::avx512_core)) {
         impl_type = impl_desc_type::jit_avx512;
     } else if (mayiuse(cpu::x64::avx2)) {
@@ -792,11 +793,13 @@ void ROIAlign::initSupportedPrimitiveDescriptors() {
     } else {
         impl_type = impl_desc_type::ref;
     }
-
+#else
+    impl_type = impl_desc_type::ref;
+#endif
     std::vector<std::pair<LayoutType, LayoutType>> supportedFormats {
             {LayoutType::ncsp, LayoutType::ncsp}
     };
-
+#if defined(OPENVINO_ARCH_X86_64)
     if (mayiuse(cpu::x64::sse41)) {
         supportedFormats.push_back(std::make_pair(LayoutType::nspc, LayoutType::nspc));
         if (impl_desc_type::jit_avx512 == impl_type) {
@@ -805,7 +808,7 @@ void ROIAlign::initSupportedPrimitiveDescriptors() {
             supportedFormats.push_back(std::make_pair(LayoutType::nCsp8c, LayoutType::nCsp8c));
         }
     }
-
+#endif
     for (auto fmts : supportedFormats) {
         addSupportedPrimDesc({{fmts.first, inputPrec0},
                               {LayoutType::ncsp, Precision::FP32},

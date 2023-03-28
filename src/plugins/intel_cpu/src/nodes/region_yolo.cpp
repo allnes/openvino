@@ -21,12 +21,14 @@ using namespace dnnl::impl::cpu;
 using namespace dnnl::impl::cpu::x64;
 using namespace dnnl::impl::utils;
 
+#if defined(OPENVINO_ARCH_X86_64)
 #define GET_OFF(field) offsetof(jit_args_logistic, field)
+#endif
 
 namespace ov {
 namespace intel_cpu {
 namespace node {
-
+#if defined(OPENVINO_ARCH_X86_64)
 template <cpu_isa_t isa>
 struct jit_uni_logistic_kernel_f32 : public jit_uni_logistic_kernel, public jit_generator {
     DECLARE_CPU_JIT_AUX_FUNCTIONS(jit_uni_logistic_kernel_f32)
@@ -226,6 +228,7 @@ private:
         }
     }
 };
+#endif
 
 bool RegionYolo::isSupportedOperation(const std::shared_ptr<const ngraph::Node>& op, std::string& errorMessage) noexcept {
     try {
@@ -279,13 +282,16 @@ void RegionYolo::initSupportedPrimitiveDescriptors() {
         output_prec = Precision::FP32;
     }
 
+#if defined(OPENVINO_ARCH_X86_64)
     if (Precision::BF16 == output_prec) {
         if (!mayiuse(avx512_core)) {
             output_prec = Precision::FP32;
         }
     }
+#endif
 
     impl_desc_type impl_type;
+#if defined(OPENVINO_ARCH_X86_64)
     if (mayiuse(x64::avx512_core)) {
         impl_type = impl_desc_type::jit_avx512;
     } else if (mayiuse(x64::avx2)) {
@@ -295,6 +301,9 @@ void RegionYolo::initSupportedPrimitiveDescriptors() {
     } else {
         impl_type = impl_desc_type::ref;
     }
+#else
+    impl_type = impl_desc_type::ref;
+#endif
 
     addSupportedPrimDesc({{LayoutType::ncsp, input_prec}},
                          {{LayoutType::ncsp, output_prec}},
@@ -306,6 +315,7 @@ void RegionYolo::createPrimitive() {
         updateLastInputDims();
     }
 
+#if defined(OPENVINO_ARCH_X86_64)
     jit_logistic_config_params jcp;
     jcp.src_dt = jcp.dst_dt = output_prec;
     jcp.src_data_size = jcp.dst_data_size = output_prec.size();
@@ -326,6 +336,7 @@ void RegionYolo::createPrimitive() {
 
     if (logistic_kernel)
         logistic_kernel->create_ker();
+#endif
 }
 
 inline float RegionYolo::logistic_scalar(float src) {
