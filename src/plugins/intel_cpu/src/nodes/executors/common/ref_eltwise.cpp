@@ -7,6 +7,7 @@
 #include "utils/general_utils.h"
 #include "dnnl_extension_utils.h"
 #include "cpu/primitive_attr_postops.hpp"
+#include <cmath>
 
 namespace ov {
 namespace intel_cpu {
@@ -122,6 +123,14 @@ void RefEltwiseExecutor::exec(const std::vector<MemoryCPtr>& src, const std::vec
     // auto batchDimIdx = execPtr->getBatchDimIdx();
     VectorDims dims_out = _dims;
 
+    if (eltwiseAttrs.algorithm == Algorithm::EltwiseLog) {
+        auto src_f = src_ptrs[0];
+        parallel_for(_fullWorkAmount, [&](size_t i) {
+            dst_ptr[i] = logf(src_f[i]);
+        });
+        return;
+    }
+
     std::shared_ptr<dnnl::impl::cpu::ref_eltwise_scalar_fwd_t> ref_eltwise_injector = nullptr;
     if (one_of(eltwiseAttrs.algorithm,
             Algorithm::EltwiseRelu, Algorithm::EltwiseGeluErf, Algorithm::EltwiseGeluTanh, Algorithm::EltwiseElu, Algorithm::EltwiseTanh,
@@ -202,7 +211,6 @@ void RefEltwiseExecutor::exec(const std::vector<MemoryCPtr>& src, const std::vec
                                      eltwiseAttrs.beta  && (src_f[0] == std::numeric_limits<float>::infinity());
                         break;
                     case Algorithm::EltwiseIsNaN:             *dst_ptr_f = std::isnan(src_f[0]); break;
-                    case Algorithm::EltwiseLog:               *dst_ptr_f = std::logf(src_f[0]); break;
                     default: IE_THROW() << "Unsupported operation type for Eltwise executor";
                 }
             }
