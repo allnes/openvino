@@ -17,14 +17,6 @@ bool RefMVNExecutor::init(const MVNAttrs& mvnAttrs,
                           const dnnl::primitive_attr &attr) {
     this->mvnAttrs = mvnAttrs;
 
-    if (srcDescs[0]->getPrecision() != InferenceEngine::Precision::FP32 ||
-        dstDescs[0]->getPrecision() != InferenceEngine::Precision::FP32)
-        return false;
-
-    if (!srcDescs[0]->hasLayoutType(LayoutType::ncsp) ||
-        !dstDescs[0]->hasLayoutType(LayoutType::ncsp))
-        return false;
-
     return true;
 }
 

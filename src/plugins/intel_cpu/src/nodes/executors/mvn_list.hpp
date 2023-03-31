@@ -90,6 +90,10 @@ public:
         IE_THROW() << "Supported executor is not found";
     }
 
+    std::vector<MVNExecutorDesc> getSupportedDescs() {
+        return supportedDescs;
+    }
+
 private:
     std::vector<MVNExecutorDesc> supportedDescs;
     const MVNExecutorDesc* chosenDesc = nullptr;

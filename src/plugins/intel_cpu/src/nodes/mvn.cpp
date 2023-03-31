@@ -189,7 +189,9 @@ void MVN::initSupportedPrimitiveDescriptors() {
 
         auto factory = std::make_shared<MVNExecutorFactory>(mvnAttrs, srcMemoryDescs, dstMemoryDescs,
                                                             std::make_shared<ExecutorContext>(context, getPrimitivesPriority()));
-        supportedPrimitiveDescriptors.push_back({config, impl_desc_type::undef, factory});
+        if (factory->getSupportedDescs().size() != 0) {
+            supportedPrimitiveDescriptors.push_back({config, impl_desc_type::undef, factory});
+        }
     };
 
     if (mayiuse(cpu::x64::sse41)) {
