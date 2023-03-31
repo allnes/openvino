@@ -180,6 +180,7 @@ enum class Algorithm {
     EltwiseRoundHalfAwayFromZero,
     EltwiseErf,
     EltwiseSoftSign,
+    EltwiseLog,
 
     // FakeQuantize algorithms
     FQCommon,
@@ -227,7 +228,6 @@ enum class Algorithm {
     MathErf,
     MathFloor,
     MathHardSigmoid,
-    MathLog,
     MathNegative,
     MathReciprocal,
     MathSelu,

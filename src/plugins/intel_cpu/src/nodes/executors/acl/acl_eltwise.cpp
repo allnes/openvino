@@ -49,9 +49,11 @@ bool AclEltwiseExecutor::init(const EltwiseAttrs &eltwiseAttrs, const std::vecto
 
     for (int i = 0; i < srcDescs.size(); i++) {
         srcDataLayout[i] = getAclDataLayoutByMemoryDesc(srcDescs[i]);
+        if (srcDataLayout[i] == arm_compute::DataLayout::UNKNOWN) { return false; }
     }
     for (int i = 0; i < dstDescs.size(); i++) {
         dstDataLayout[i] = getAclDataLayoutByMemoryDesc(dstDescs[i]);
+        if (dstDataLayout[i] == arm_compute::DataLayout::UNKNOWN) { return false; }
     }
 
     if (srcDescs.size() == 2 &&
@@ -348,6 +350,15 @@ bool AclEltwiseExecutor::init(const EltwiseAttrs &eltwiseAttrs, const std::vecto
             exec_func = [this]{
                 auto acl_op = std::make_unique<NEActivationLayer>();
                 acl_op->configure(&srcTensors[0], &dstTensors[0], ActivationLayerInfo::ActivationFunction::HARD_SWISH);
+                acl_op->run();
+            };
+            break;
+        case Algorithm::EltwiseLog:
+            if (!NELogLayer::validate(&srcTensorsInfo[0], &dstTensorsInfo[0]))
+                return false;
+            exec_func = [this]{
+                auto acl_op = std::make_unique<NELogLayer>();
+                acl_op->configure(&srcTensors[0], &dstTensors[0]);
                 acl_op->run();
             };
             break;
