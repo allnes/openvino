@@ -128,7 +128,6 @@ Node::NodesFactory::NodesFactory()
     INTEL_CPU_NODE(Tile, Type::Tile);
     INTEL_CPU_NODE(GatherTree, Type::GatherTree);
     INTEL_CPU_NODE(FullyConnected, Type::FullyConnected);
-    INTEL_CPU_NODE(FakeQuantize, Type::FakeQuantize);
     INTEL_CPU_NODE(CTCGreedyDecoder, Type::CTCGreedyDecoder);
     INTEL_CPU_NODE(Transpose, Type::Transpose);
     INTEL_CPU_NODE(ReorgYolo, Type::ReorgYolo);
@@ -193,6 +192,7 @@ Node::NodesFactory::NodesFactory()
     INTEL_CPU_NODE(RDFT, Type::RDFT);
     INTEL_CPU_NODE(ExtractImagePatches, Type::ExtractImagePatches);
 #if defined(OPENVINO_ARCH_X86_64)
+    INTEL_CPU_NODE(FakeQuantize, Type::FakeQuantize);
     INTEL_CPU_NODE(GridSample, Type::GridSample);
     INTEL_CPU_NODE(Interaction, Type::Interaction);
     INTEL_CPU_NODE(MHA, Type::MHA);
