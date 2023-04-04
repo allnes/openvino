@@ -1929,9 +1929,11 @@ void TopK::initSupportedPrimitiveDescriptors() {
 
     std::vector<std::pair<LayoutType, LayoutType>> dataFomats{
         {LayoutType::ncsp, LayoutType::ncsp},
+#if defined(OPENVINO_ARCH_X86_64)
         {LayoutType::nspc, LayoutType::nspc},
         {LayoutType::nCsp16c, LayoutType::nCsp16c},
         {LayoutType::nCsp8c, LayoutType::nCsp8c}
+#endif
     };
 
     for (const auto &df : dataFomats) {
