@@ -326,11 +326,10 @@ void RegionYolo::createPrimitive() {
         block_size = 4;
     }
 
-    softmax_kernel = std::make_shared<SoftmaxGeneric>(input_prec, output_prec);
-
     if (logistic_kernel)
         logistic_kernel->create_ker();
 #endif
+    softmax_kernel = std::make_shared<SoftmaxGeneric>(input_prec, output_prec);
 }
 
 inline float RegionYolo::logistic_scalar(float src) {
