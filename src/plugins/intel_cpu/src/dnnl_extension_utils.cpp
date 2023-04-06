@@ -211,6 +211,7 @@ dnnl::algorithm DnnlExtensionUtils::convertToDnnlAlgorithm(Algorithm alg) {
         case Algorithm::EltwiseAbs: return dnnl::algorithm::eltwise_abs;
         case Algorithm::EltwiseSqrt: return dnnl::algorithm::eltwise_sqrt;
         case Algorithm::EltwiseSwish: return dnnl::algorithm::eltwise_swish;
+        case Algorithm::EltwiseHswish: return dnnl::algorithm::eltwise_hardswish;
         case Algorithm::EltwiseSoftRelu: return dnnl::algorithm::eltwise_soft_relu;
         case Algorithm::EltwiseMish: return dnnl::algorithm::eltwise_mish;
         case Algorithm::EltwiseExp: return dnnl::algorithm::eltwise_exp;
