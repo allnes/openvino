@@ -7,8 +7,6 @@
 #include "executor.hpp"
 
 #include "eltwise.hpp"
-#include "x64/jit_eltwise.hpp"
-#include "common/ref_eltwise.hpp"
 #if defined(OV_CPU_WITH_ACL)
 #include "acl/acl_eltwise.hpp"
 #endif
@@ -46,20 +44,6 @@ public:
                                         const std::vector<EltwisePostOp>& postOps) {
         auto build = [&](const EltwiseExecutorDesc* desc) {
             switch (desc->executorType) {
-                // case impl_desc_type::x64: {
-                //     auto builder = [&](const JitEltwiseExecutor::Key& key) -> EltwiseExecutorPtr {
-                //         auto executor = desc->builder->makeExecutor();
-                //         if (executor->init(eltwiseAttrs, srcDescs, dstDescs, attr)) {
-                //             return executor;
-                //         } else {
-                //             return nullptr;
-                //         }
-                //     };
-
-                //     auto key = JitEltwiseExecutor::Key(eltwiseAttrs, srcDescs, dstDescs, attr);
-                //     auto res = runtimeCache->getOrCreate(key, builder);
-                //     return res.first;
-                // } break;
                 default: {
                     auto executor = desc->builder->makeExecutor(context);
                     if (executor->init(eltwiseAttrs, srcDescs, dstDescs, postOps)) {
@@ -86,6 +70,10 @@ public:
         }
 
         IE_THROW() << "Supported executor is not found";
+    }
+
+    bool isEmpty() {
+        return supportedDescs.empty();
     }
 
 private:
