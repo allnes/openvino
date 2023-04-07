@@ -207,8 +207,8 @@ void RefEltwiseExecutor::exec(const std::vector<MemoryCPtr>& src, const std::vec
                     case Algorithm::EltwiseSoftSign:          *dst_ptr_f = src_f[0] / (1 + std::fabs(src_f[0])); break;
                     case Algorithm::EltwiseIsFinite:          *dst_ptr_f = std::isfinite(src_f[0]); break;
                     case Algorithm::EltwiseIsInf:
-                        *dst_ptr_f = eltwiseAttrs.alpha && (src_f[0] == -std::numeric_limits<float>::infinity()) ||
-                                     eltwiseAttrs.beta  && (src_f[0] == std::numeric_limits<float>::infinity());
+                        *dst_ptr_f = (eltwiseAttrs.alpha && (src_f[0] == -std::numeric_limits<float>::infinity()) ||
+                                      eltwiseAttrs.beta  && (src_f[0] == std::numeric_limits<float>::infinity()));
                         break;
                     case Algorithm::EltwiseIsNaN:             *dst_ptr_f = std::isnan(src_f[0]); break;
                     default: IE_THROW() << "Unsupported operation type for Eltwise executor";

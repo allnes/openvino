@@ -21,8 +21,10 @@ namespace intel_cpu {
 
 #define GET_OFF(field) offsetof(jit_mvn_call_args, field)
 
-using namespace InferenceEngine;
 using namespace dnnl;
+using namespace InferenceEngine;
+using namespace dnnl::impl;
+using namespace dnnl::impl::cpu::x64;
 using namespace dnnl::impl::utils;
 using namespace Xbyak;
 

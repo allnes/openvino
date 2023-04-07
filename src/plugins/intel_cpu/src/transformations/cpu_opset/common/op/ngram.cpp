@@ -3,7 +3,7 @@
 //
 
 #include "ngram.hpp"
-#include "../itt.hpp"
+#include "transformations/itt.hpp"
 
 ov::intel_cpu::NgramNode::NgramNode(const ov::Output<Node>& embeddings, const ov::Output<Node>& batch_idces, const size_t k)
     : Op({embeddings, batch_idces}), m_k(k) {

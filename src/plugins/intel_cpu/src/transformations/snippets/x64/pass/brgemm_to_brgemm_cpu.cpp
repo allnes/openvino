@@ -7,8 +7,8 @@
 #include "brgemm_to_brgemm_cpu.hpp"
 #include "snippets/snippets_isa.hpp"
 #include "snippets/utils.hpp"
-#include "op/brgemm_copy_b.hpp"
-#include "op/brgemm_cpu.hpp"
+#include "transformations/snippets/x64/op/brgemm_copy_b.hpp"
+#include "transformations/snippets/x64/op/brgemm_cpu.hpp"
 
 #include "ngraph/rt_info.hpp"
 #include "ngraph/pattern/op/wrap_type.hpp"

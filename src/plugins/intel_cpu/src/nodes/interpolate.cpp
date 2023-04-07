@@ -26,11 +26,19 @@
 #include "utils/bfloat16.hpp"
 #include "emitters/x64/jit_load_store_emitters.hpp"
 
+using namespace dnnl;
+using namespace InferenceEngine;
+using namespace dnnl::impl;
+using namespace dnnl::impl::cpu;
+using namespace dnnl::impl::cpu::x64;
+using namespace dnnl::impl::utils;
+using namespace Xbyak;
+
 namespace ov {
 namespace intel_cpu {
 namespace node {
 
-namespace {
+// namespace {
 struct InterpolateKey {
     InterpolateAttrs nodeAttrs;
     VectorDims srcDims;
@@ -41,71 +49,71 @@ struct InterpolateKey {
     bool operator==(const InterpolateKey& rhs) const;
 };
 
-size_t InterpolateKey::hash() const {
-    using namespace dnnl::impl;
-    using namespace dnnl::impl::primitive_hashing;
+// size_t InterpolateKey::hash() const {
+//     using namespace dnnl::impl;
+//     using namespace dnnl::impl::primitive_hashing;
 
-    size_t seed = 0;
+//     size_t seed = 0;
 
-    seed = hash_combine(seed, nodeAttrs.mode);
-    seed = hash_combine(seed, nodeAttrs.coordTransMode);
-    seed = hash_combine(seed, nodeAttrs.nearestMode);
-    seed = hash_combine(seed, nodeAttrs.layout);
+//     seed = hash_combine(seed, nodeAttrs.mode);
+//     seed = hash_combine(seed, nodeAttrs.coordTransMode);
+//     seed = hash_combine(seed, nodeAttrs.nearestMode);
+//     seed = hash_combine(seed, nodeAttrs.layout);
 
-    seed = hash_combine(seed, nodeAttrs.antialias);
-    seed = hash_combine(seed, nodeAttrs.cubeCoeff);
+//     seed = hash_combine(seed, nodeAttrs.antialias);
+//     seed = hash_combine(seed, nodeAttrs.cubeCoeff);
 
-    seed = get_vector_hash(seed, nodeAttrs.padBegin);
-    seed = get_vector_hash(seed, nodeAttrs.padEnd);
+//     seed = get_vector_hash(seed, nodeAttrs.padBegin);
+//     seed = get_vector_hash(seed, nodeAttrs.padEnd);
 
-    seed = hash_combine(seed, nodeAttrs.inPrc.getPrecVal());
-    seed = hash_combine(seed, nodeAttrs.outPrc.getPrecVal());
+//     seed = hash_combine(seed, nodeAttrs.inPrc.getPrecVal());
+//     seed = hash_combine(seed, nodeAttrs.outPrc.getPrecVal());
 
-    seed = get_vector_hash(seed, srcDims);
-    seed = get_vector_hash(seed, dstDims);
-    seed = get_vector_hash(seed, nodeAttrs.dataScales);
+//     seed = get_vector_hash(seed, srcDims);
+//     seed = get_vector_hash(seed, dstDims);
+//     seed = get_vector_hash(seed, nodeAttrs.dataScales);
 
-    seed = hash_combine(seed, get_attr_hash(*attr.get()));
-    return seed;
-}
+//     seed = hash_combine(seed, get_attr_hash(*attr.get()));
+//     return seed;
+// }
 
-bool InterpolateKey::operator==(const InterpolateKey &rhs) const {
-    if (nodeAttrs.mode != rhs.nodeAttrs.mode)
-        return false;
-    if (nodeAttrs.coordTransMode != rhs.nodeAttrs.coordTransMode)
-        return false;
-    if (nodeAttrs.nearestMode != rhs.nodeAttrs.nearestMode)
-        return false;
-    if (nodeAttrs.layout != rhs.nodeAttrs.layout)
-        return false;
-    if (nodeAttrs.antialias != rhs.nodeAttrs.antialias)
-        return false;
-    if (nodeAttrs.cubeCoeff != rhs.nodeAttrs.cubeCoeff)
-        return false;
-    if (nodeAttrs.padBegin != rhs.nodeAttrs.padBegin)
-        return false;
-    if (nodeAttrs.padEnd != rhs.nodeAttrs.padEnd)
-        return false;
-    if (nodeAttrs.inPrc != rhs.nodeAttrs.inPrc)
-        return false;
-    if (nodeAttrs.outPrc != rhs.nodeAttrs.outPrc)
-        return false;
-    if (nodeAttrs.layout != rhs.nodeAttrs.layout)
-        return false;
+// bool InterpolateKey::operator==(const InterpolateKey &rhs) const {
+//     if (nodeAttrs.mode != rhs.nodeAttrs.mode)
+//         return false;
+//     if (nodeAttrs.coordTransMode != rhs.nodeAttrs.coordTransMode)
+//         return false;
+//     if (nodeAttrs.nearestMode != rhs.nodeAttrs.nearestMode)
+//         return false;
+//     if (nodeAttrs.layout != rhs.nodeAttrs.layout)
+//         return false;
+//     if (nodeAttrs.antialias != rhs.nodeAttrs.antialias)
+//         return false;
+//     if (nodeAttrs.cubeCoeff != rhs.nodeAttrs.cubeCoeff)
+//         return false;
+//     if (nodeAttrs.padBegin != rhs.nodeAttrs.padBegin)
+//         return false;
+//     if (nodeAttrs.padEnd != rhs.nodeAttrs.padEnd)
+//         return false;
+//     if (nodeAttrs.inPrc != rhs.nodeAttrs.inPrc)
+//         return false;
+//     if (nodeAttrs.outPrc != rhs.nodeAttrs.outPrc)
+//         return false;
+//     if (nodeAttrs.layout != rhs.nodeAttrs.layout)
+//         return false;
 
-    if (srcDims != rhs.srcDims)
-        return false;
-    if (dstDims != rhs.dstDims)
-        return false;
-    if (nodeAttrs.dataScales != rhs.nodeAttrs.dataScales)
-        return false;
-    if (!(*attr.get() == *rhs.attr.get()))
-        return false;
+//     if (srcDims != rhs.srcDims)
+//         return false;
+//     if (dstDims != rhs.dstDims)
+//         return false;
+//     if (nodeAttrs.dataScales != rhs.nodeAttrs.dataScales)
+//         return false;
+//     if (!(*attr.get() == *rhs.attr.get()))
+//         return false;
 
-    return true;
-}
+//     return true;
+// }
 
-} // namespace
+// } // namespace
 
 using ngInterpMode = ngraph::opset4::Interpolate::InterpolateMode;
 using ngInterpCoordTransf = ngraph::opset4::Interpolate::CoordinateTransformMode;

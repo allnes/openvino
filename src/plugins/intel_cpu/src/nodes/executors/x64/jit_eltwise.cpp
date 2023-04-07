@@ -7,6 +7,7 @@
 #include <dnnl_extension_utils.h>
 #include "utils/bfloat16.hpp"
 #include "ie_parallel.hpp"
+#include "ie_ngraph_utils.hpp"
 
 #include <cpu/x64/injectors/jit_uni_quantization_injector.hpp>
 #include <cpu/x64/jit_generator.hpp>
@@ -237,7 +238,7 @@ struct jit_uni_eltwise_generic : public jit_uni_eltwise_kernel, public jit_gener
     }
 
     void generate() override {
-        auto const exec_prc = eltwise_precision_helper::get_precision(jep_.attrs.algorithm, p_.inputs_number, jep_.src_prc, eltwise_post_ops);
+        auto const exec_prc = eltwise_precision_helper::get_precision(jep_.attrs.algorithm, jep_.inputs_number, jep_.src_prc, eltwise_post_ops_);
 
         eltwise_emitter = create_eltwise_emitter(jep_.attrs, exec_prc);
         for (int i = 0; i < eltwise_post_ops_.size(); ++i) {
@@ -1048,7 +1049,7 @@ bool JitEltwiseExecutor::init(const EltwiseAttrs& eltwiseAttrs,
     };
 
     auto isFusedWith = [&](EltwisePostOpType type_) {
-        auto start_itr = postOps.begin();
+        // auto start_itr = postOps.begin();
         for (const auto& postOp : postOps) {
             if (postOp.type == type_)
                 return true;

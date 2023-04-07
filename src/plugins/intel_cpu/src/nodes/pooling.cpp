@@ -478,7 +478,7 @@ void Pooling::prepareParams() {
 
 #ifdef CPU_DEBUG_CAPS
         if (result.second == CacheEntryBase::LookUpStatus::Miss) {
-            auto pd = execPtr->getPrimitiveDesc();
+            auto pd = dnnlExecPtr->getPrimitiveDesc();
             DEBUG_LOG("verbose##", getName(), "##", DnnlExtensionUtils::query_pd_info(pd), "\n");
         }
 #endif

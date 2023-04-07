@@ -3,7 +3,7 @@
 //
 
 #include "ngram_fusion.hpp"
-#include "op/ngram.hpp"
+#include "transformations/cpu_opset/common/op/ngram.hpp"
 #include <openvino/opsets/opset1.hpp>
 #include <openvino/opsets/opset10.hpp>
 #include <openvino/core/graph_util.hpp>
@@ -11,7 +11,7 @@
 #include <openvino/pass/pattern/op/or.hpp>
 #include <transformations/utils/utils.hpp>
 
-#include "itt.hpp"
+#include "transformations/itt.hpp"
 
 using namespace ov::pass::pattern;
 ov::intel_cpu::NgramFusion::NgramFusion() {

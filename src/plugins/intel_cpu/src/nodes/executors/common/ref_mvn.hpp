@@ -34,13 +34,15 @@ private:
 class RefMVNExecutorBuilder : public MVNExecutorBuilder {
 public:
     bool isSupported(const MVNAttrs& mvnAttrs, const std::vector<MemoryDescCPtr>& srcDescs, const std::vector<MemoryDescCPtr>& dstDescs) const override {
-    if (srcDescs[0]->getPrecision() != InferenceEngine::Precision::FP32 ||
-        dstDescs[0]->getPrecision() != InferenceEngine::Precision::FP32)
-        return false;
+        if (srcDescs[0]->getPrecision() != InferenceEngine::Precision::FP32 ||
+            dstDescs[0]->getPrecision() != InferenceEngine::Precision::FP32) {
+            return false;
+        }
 
-    if (!srcDescs[0]->hasLayoutType(LayoutType::ncsp) ||
-        !dstDescs[0]->hasLayoutType(LayoutType::ncsp))
-        return false;
+        if (!srcDescs[0]->hasLayoutType(LayoutType::ncsp) ||
+            !dstDescs[0]->hasLayoutType(LayoutType::ncsp)) {
+            return false;
+        }
 
         return true;
     }

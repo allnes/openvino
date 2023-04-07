@@ -3,17 +3,6 @@
 //
 
 #include "jit_interpolate.hpp"
-
-using namespace dnnl;
-using namespace InferenceEngine;
-using namespace dnnl::impl;
-using namespace dnnl::impl::cpu;
-using namespace dnnl::impl::cpu::x64;
-using namespace dnnl::impl::utils;
-using namespace Xbyak;
-
-#define GET_OFF(field) offsetof(jit_interpolate_call_args, field)
-
 #include "ie_parallel.hpp"
 
 #include <cpu/x64/jit_generator.hpp>
@@ -24,6 +13,16 @@ using namespace Xbyak;
 #include "utils/bfloat16.hpp"
 #include "emitters/x64/jit_bf16_emitters.hpp"
 #include "emitters/x64/jit_load_store_emitters.hpp"
+
+using namespace dnnl;
+using namespace InferenceEngine;
+using namespace dnnl::impl;
+using namespace dnnl::impl::cpu;
+using namespace dnnl::impl::cpu::x64;
+using namespace dnnl::impl::utils;
+using namespace Xbyak;
+
+#define GET_OFF(field) offsetof(jit_interpolate_call_args, field)
 
 namespace ov {
 namespace intel_cpu {

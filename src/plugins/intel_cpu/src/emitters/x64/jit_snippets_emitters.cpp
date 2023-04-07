@@ -8,8 +8,8 @@
 #include "jit_snippets_emitters.hpp"
 #include "snippets/op/subgraph.hpp"
 #include "snippets/utils.hpp"
-#include "snippets_transformations/op/brgemm_copy_b.hpp"
-#include "snippets_transformations/op/brgemm_cpu.hpp"
+#include "transformations/snippets/x64/op/brgemm_copy_b.hpp"
+#include "transformations/snippets/x64/op//brgemm_cpu.hpp"
 
 using namespace InferenceEngine;
 using ngraph::snippets::op::Subgraph;

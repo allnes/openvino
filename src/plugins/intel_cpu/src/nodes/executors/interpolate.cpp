@@ -498,7 +498,7 @@ const uint8_t* ov::intel_cpu::InterpolateExecutor::padPreprocess(const std::vect
             });
             src_data = src_data_pad;
         } else if (interpAttrs.layout == InterpolateLayoutType::block) {
-            size_t blkSize = mayiuse(cpu::x64::avx512_core) ? 16 : 8;
+            size_t blkSize = dnnl::impl::cpu::x64::mayiuse(dnnl::impl::cpu::x64::avx512_core) ? 16 : 8;
             size_t CB = div_up(srcDimPad5d[1], blkSize);
             size_t eltsTotal = srcDimPad5d[0] * CB * srcDimPad5d[2] * srcDimPad5d[3] * srcDimPad5d[4] * blkSize;
             srcPadded.resize(eltsTotal * srcDataSize, 0x0);

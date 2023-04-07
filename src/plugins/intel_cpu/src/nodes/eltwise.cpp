@@ -1,4 +1,3 @@
-
 // Copyright (C) 2018-2023 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 //
@@ -12,7 +11,6 @@
 
 #include "cpu_types.h"
 #include "utils/bfloat16.hpp"
-#include "ie_ngraph_utils.hpp"
 #include <cpu/x64/injectors/jit_uni_quantization_injector.hpp>
 #include <cpu/ref_eltwise.hpp>
 
