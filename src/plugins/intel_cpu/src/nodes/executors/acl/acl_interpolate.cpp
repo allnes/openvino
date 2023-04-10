@@ -5,7 +5,7 @@
 #include "acl_interpolate.hpp"
 #include "acl_utils.hpp"
 
-arm_compute::TensorShape interpolateShapeCast(const ov::intel_cpu::VectorDims& dims) {
+static arm_compute::TensorShape interpolateShapeCast(const ov::intel_cpu::VectorDims& dims) {
     arm_compute::TensorShape tensorShape;
     for (std::size_t i = 0; i < dims.size(); ++i) {
         tensorShape.set(dims.size() - i - 1, dims[i], false);
@@ -15,22 +15,6 @@ arm_compute::TensorShape interpolateShapeCast(const ov::intel_cpu::VectorDims& d
         tensorShape.set_num_dimensions(1);
     }
     return tensorShape;
-}
-
-std::vector<ov::intel_cpu::Dim> interpolateReshapeSizes(std::vector<ov::intel_cpu::Dim> dims) {
-    const size_t MAX_NUM_SHAPE = 4;
-    std::vector<ov::intel_cpu::Dim> result_dims(MAX_NUM_SHAPE - 1);
-    if (dims.size() >= MAX_NUM_SHAPE) {
-        for (int i = 0; i < MAX_NUM_SHAPE - 1; i++) {
-            result_dims[i] = dims[i];
-        }
-        for (int i = MAX_NUM_SHAPE - 1; i < dims.size(); i++) {
-            result_dims[MAX_NUM_SHAPE - 2] *= dims[i];
-        }
-    } else {
-        result_dims = dims;
-    }
-    return result_dims;
 }
 
 bool ov::intel_cpu::ACLInterpolateExecutor::init(const InterpolateAttrs &interpolateAttrs,

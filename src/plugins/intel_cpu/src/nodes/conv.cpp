@@ -599,6 +599,10 @@ void Convolution::getSupportedDescriptors() {
         createDescriptor({ in_candidate }, { out_candidate });
     }
 #else
+    (void)ncsp;
+    (void)nCsp8c;
+    (void)nCsp16c;
+
     in_candidate = std::make_shared<DnnlBlockedMemoryDesc>(inputShape, inputDataType, nspc);
     out_candidate = std::make_shared<DnnlBlockedMemoryDesc>(outputShape, outputDataType, nspc);
     createDescriptor({ in_candidate }, { out_candidate });

@@ -107,7 +107,7 @@ struct EltwiseEmitter<jit_is_inf_emitter> {
     }
 };
 
-void set_intersection(const std::set<std::vector<element::Type>>& precisions1,
+static void set_intersection(const std::set<std::vector<element::Type>>& precisions1,
                       const std::set<std::vector<element::Type>>& precisions2,
                       std::set<std::vector<element::Type>>& intersection) {
     std::map<element::Type, size_t> intersection_types;

@@ -10,7 +10,7 @@ namespace intel_cpu {
 
 using namespace arm_compute;
 
-arm_compute::ReductionOperation getAclReductionOperationByAlgorithm(Algorithm algorithm) {
+static arm_compute::ReductionOperation getAclReductionOperationByAlgorithm(Algorithm algorithm) {
     switch (algorithm) {
         case Algorithm::ReduceMax:  return arm_compute::ReductionOperation::MAX;
         case Algorithm::ReduceMin:  return arm_compute::ReductionOperation::MIN;
