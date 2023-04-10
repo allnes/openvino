@@ -16,8 +16,8 @@ public:
     AclMVNExecutor(const ExecutorContext::CPtr context);
 
     bool init(const MVNAttrs& mvnAttrs,
-              const std::vector<MemoryDescCPtr>& srcDescs,
-              const std::vector<MemoryDescCPtr>& dstDescs,
+              const std::vector<MemoryDescPtr>& srcDescs,
+              const std::vector<MemoryDescPtr>& dstDescs,
               const dnnl::primitive_attr &attr) override;
     void exec(const std::vector<MemoryCPtr>& src,
               const std::vector<MemoryPtr>& dst,
@@ -38,8 +38,8 @@ private:
 class AclMVNExecutorBuilder : public MVNExecutorBuilder {
 public:
     bool isSupported(const MVNAttrs& mvnAttrs,
-                     const std::vector<MemoryDescCPtr>& srcDescs,
-                     const std::vector<MemoryDescCPtr>& dstDescs) const override {
+                     const std::vector<MemoryDescPtr>& srcDescs,
+                     const std::vector<MemoryDescPtr>& dstDescs) const override {
         if ((srcDescs[0]->getPrecision() != InferenceEngine::Precision::FP32 &&
              srcDescs[0]->getPrecision() != InferenceEngine::Precision::FP16) ||
              srcDescs[0]->getPrecision() != dstDescs[0]->getPrecision())
