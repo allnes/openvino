@@ -9,9 +9,7 @@ namespace intel_cpu {
 
 const std::vector<InterpolateExecutorDesc>& getInterpolateExecutorsList() {
     static std::vector<InterpolateExecutorDesc> descs = {
-            OV_CPU_INSTANCE_X64(ExecutorType::x64, std::make_shared<JITInterpolateExecutorBuilder>())
             OV_CPU_INSTANCE_ACL(ExecutorType::Acl, std::make_shared<ACLInterpolateExecutorBuilder>())
-            OV_CPU_INSTANCE_COMMON(ExecutorType::Common, std::make_shared<RefInterpolateExecutorBuilder>())
     };
 
     return descs;
