@@ -39,8 +39,6 @@ file(GLOB_RECURSE SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp)
 file(GLOB_RECURSE HEADERS ${CMAKE_CURRENT_SOURCE_DIR}/src/*.h
                           ${CMAKE_CURRENT_SOURCE_DIR}/src/*.hpp)
 
-addVersionDefines(${CMAKE_CURRENT_SOURCE_DIR}/src/plugin.cpp CI_BUILD_NUMBER)
-
 add_subdirectory(thirdparty)
 
 if(ENABLE_TESTS)
@@ -89,6 +87,7 @@ list(REMOVE_ITEM HEADERS ${FILES_TO_REMOVE})
 ie_add_plugin(NAME ${TARGET_NAME}
               DEVICE_NAME "CPU"
               AS_EXTENSION
+              VERSION_DEFINES_FOR src/plugin.cpp
               SOURCES ${SOURCES} ${HEADERS})
 
 set_ie_threading_interface_for(${TARGET_NAME})
@@ -124,6 +123,8 @@ ie_add_api_validator_post_build_step(TARGET ${TARGET_NAME})
 if(BUILD_SHARED_LIBS)
     add_library(${TARGET_NAME}_obj OBJECT ${SOURCES} ${HEADERS})
     link_system_libraries(${TARGET_NAME}_obj PUBLIC dnnl openvino::pugixml)
+
+    ov_add_version_defines(src/plugin.cpp ${TARGET_NAME}_obj)
 
     target_include_directories(${TARGET_NAME}_obj
         PRIVATE
