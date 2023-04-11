@@ -43,13 +43,9 @@ public:
                                         const std::vector<MemoryDescPtr>& dstDescs,
                                         const dnnl::primitive_attr &attr) {
         auto build = [&](const MVNExecutorDesc* desc) {
-            switch (desc->executorType) {
-                default: {
-                    auto executor = desc->builder->makeExecutor(context);
-                    if (executor->init(mvnAttrs, srcDescs, dstDescs, attr)) {
-                        return executor;
-                    }
-                } break;
+            auto executor = desc->builder->makeExecutor(context);
+            if (executor->init(mvnAttrs, srcDescs, dstDescs, attr)) {
+                return executor;
             }
 
             MVNExecutorPtr ptr = nullptr;

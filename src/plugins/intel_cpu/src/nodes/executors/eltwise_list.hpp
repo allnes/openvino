@@ -43,13 +43,9 @@ public:
                                         const std::vector<MemoryDescPtr>& dstDescs,
                                         const std::vector<EltwisePostOp>& postOps) {
         auto build = [&](const EltwiseExecutorDesc* desc) {
-            switch (desc->executorType) {
-                default: {
-                    auto executor = desc->builder->makeExecutor(context);
-                    if (executor->init(eltwiseAttrs, srcDescs, dstDescs, postOps)) {
-                        return executor;
-                    }
-                } break;
+            auto executor = desc->builder->makeExecutor(context);
+            if (executor->init(eltwiseAttrs, srcDescs, dstDescs, postOps)) {
+                return executor;
             }
 
             EltwiseExecutorPtr ptr = nullptr;
