@@ -10,6 +10,8 @@
 namespace ov {
 namespace intel_cpu {
 
+using namespace InferenceEngine;
+
 class AclEltwiseExecutor : public EltwiseExecutor {
 public:
     AclEltwiseExecutor(const ExecutorContext::CPtr context);
@@ -46,7 +48,16 @@ public:
                     return false;
             }
         }
-
+        auto checker = [](const std::vector<MemoryDescPtr>& srcDescs,
+                          const std::vector<MemoryDescPtr>& dstDescs,
+                          Precision ref1, Precision ref2, Precision ref3) -> bool {
+            if (srcDescs[0]->getPrecision() == ref1 &&
+                srcDescs[1]->getPrecision() == ref2 &&
+                dstDescs[0]->getPrecision() == ref3) {
+                return true;
+            }
+            return false;
+        };
         switch (eltwiseAttrs.algorithm) {
             case Algorithm::EltwiseIsFinite:
             case Algorithm::EltwiseIsInf:
@@ -67,6 +78,27 @@ public:
             case Algorithm::EltwiseErf:
             case Algorithm::EltwiseSoftSign:
                 return false;
+            case Algorithm::EltwiseAdd:
+                if (!(one_of(srcDescs[0]->getPrecision(),
+                            Precision::U8,
+                            Precision::I16,
+                            Precision::I32,
+                            Precision::FP16,
+                            Precision::FP32) &&
+                    srcDescs[0]->getPrecision() == srcDescs[1]->getPrecision() &&
+                    srcDescs[1]->getPrecision() == dstDescs[0]->getPrecision())) { return false; }
+                break;
+            case Algorithm::EltwiseMultiply:
+                if (!(checker(srcDescs, dstDescs, Precision::U8, Precision::U8, Precision::U8) ||
+                      checker(srcDescs, dstDescs, Precision::U8, Precision::U8, Precision::I16) ||
+                      checker(srcDescs, dstDescs, Precision::U8, Precision::I16, Precision::I16) ||
+                      checker(srcDescs, dstDescs, Precision::I16, Precision::U8, Precision::I16) ||
+                      checker(srcDescs, dstDescs, Precision::I16, Precision::I16, Precision::I16) ||
+                      checker(srcDescs, dstDescs, Precision::FP16, Precision::FP16, Precision::FP16) ||
+                      checker(srcDescs, dstDescs, Precision::FP32, Precision::FP32, Precision::FP32))) {
+                    return false;
+                }
+                break;
             default:
                 return true;
         }
