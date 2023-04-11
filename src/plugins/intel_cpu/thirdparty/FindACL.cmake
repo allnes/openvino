@@ -71,7 +71,6 @@ else()
         # TODO: use CC for ARM compute library to minimize binary size
         # build_config=<file>
         # TODO: use data_type_support to disable useless kernels
-        # TODO: switch to NHWC layout later
         data_layout_support=all
         build_dir=${ARM_COMPUTE_BINARY_DIR}
         install_dir=${ARM_COMPUTE_BINARY_DIR}/install
