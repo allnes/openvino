@@ -2667,6 +2667,9 @@ bool Eltwise::canFuse(const NodePtr& node) const {
     if (!mayiuse(x64::sse41) || getInputShapeAtPort(0).getRank() > MAX_ELTWISE_DIM_RANK)
         return false;
 
+    // TODO: EltwiseLog is supported only via reference executor
+    if (getAlgorithm() == Algorithm::EltwiseLog || node->getAlgorithm() == Algorithm::EltwiseLog)
+        return false;
 
     bool isIntegerNode = isIntegerComputeSupported(this);
     if (isIntegerNode && node->getType() != Type::Eltwise)
