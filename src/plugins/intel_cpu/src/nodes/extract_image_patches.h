@@ -95,6 +95,7 @@ private:
 
     using executorPtr = std::shared_ptr<ExtractImagePatchesExecutor>;
     executorPtr execPtr = nullptr;
+
     struct ExtractImagePatchesJitExecutor : public ExtractImagePatchesExecutor {
         ExtractImagePatchesJitExecutor(
             const VectorDims& inDims,
@@ -110,6 +111,7 @@ private:
     private:
         std::unique_ptr<jit_uni_extract_image_patches_kernel> pKernel;
     };
+
     struct ExtractImagePatchesRefExecutor : public ExtractImagePatchesExecutor {
         ExtractImagePatchesRefExecutor(
             const VectorDims& inDims,

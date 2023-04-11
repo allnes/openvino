@@ -270,7 +270,8 @@ private:
             dd(i * jpp.SW * jpp.dtype_size);
     }
 };
-#endif
+#endif // OPENVINO_ARCH_X86_64
+
 bool ExtractImagePatches::isSupportedOperation(const std::shared_ptr<const ngraph::Node>& op, std::string& errorMessage) noexcept {
     try {
         auto extImgPatcher = ngraph::as_type_ptr<const ngraph::opset3::ExtractImagePatches>(op);
@@ -508,7 +509,7 @@ void ExtractImagePatches::ExtractImagePatchesJitExecutor::executeOptimizedGeneri
         args.w_hi_pad = iw_hpad;
         (*pKernel)(&args);
     });
-#endif
+#endif // OPENVINO_ARCH_X86_64
 }
 
 jit_extract_image_patches_params ExtractImagePatches::ExtractImagePatchesExecutor::fillJpp(
@@ -575,9 +576,10 @@ jit_extract_image_patches_params ExtractImagePatches::ExtractImagePatchesExecuto
     } else {
         jpp.block_size = 1;
     }
-    jpp.block_size = 1;
+
     return jpp;
 }
+
 ExtractImagePatches::ExtractImagePatchesJitExecutor::ExtractImagePatchesJitExecutor(
     const VectorDims& inDims,
     const VectorDims& outDims,
@@ -600,7 +602,7 @@ ExtractImagePatches::ExtractImagePatchesJitExecutor::ExtractImagePatchesJitExecu
 
     if (pKernel)
         pKernel->create_ker();
-#endif
+#endif // OPENVINO_ARCH_X86_64
 }
 
 void ExtractImagePatches::ExtractImagePatchesJitExecutor::exec(
