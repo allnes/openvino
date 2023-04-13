@@ -14,7 +14,7 @@ using namespace InferenceEngine;
 
 class AclEltwiseExecutor : public EltwiseExecutor {
 public:
-    AclEltwiseExecutor(const ExecutorContext::CPtr context);
+    explicit AclEltwiseExecutor(const ExecutorContext::CPtr context);
 
     bool init(const EltwiseAttrs& eltwiseAttrs,
               const std::vector<MemoryDescPtr>& srcDescs,
@@ -40,14 +40,6 @@ public:
     bool isSupported(const EltwiseAttrs& eltwiseAttrs,
                      const std::vector<MemoryDescPtr>& srcDescs,
                      const std::vector<MemoryDescPtr>& dstDescs) const override {
-        for (const auto &srcD : srcDescs) {
-            for (const auto &dstD : dstDescs) {
-                if ((srcD->getPrecision() != InferenceEngine::Precision::FP32 &&
-                     srcD->getPrecision() != InferenceEngine::Precision::FP16) ||
-                     srcD->getPrecision() != dstD->getPrecision())
-                    return false;
-            }
-        }
         auto checker = [](const std::vector<MemoryDescPtr>& srcDescs,
                           const std::vector<MemoryDescPtr>& dstDescs,
                           Precision ref1, Precision ref2, Precision ref3) -> bool {
@@ -77,17 +69,50 @@ public:
             case Algorithm::EltwiseRoundHalfAwayFromZero:
             case Algorithm::EltwiseErf:
             case Algorithm::EltwiseSoftSign:
+            case Algorithm::EltwisePowerDynamic: // TODO: ACL version doesn't work https://github.com/ARM-software/ComputeLibrary/issues/1047
                 return false;
+            case Algorithm::EltwiseDivide:
+            case Algorithm::EltwiseRelu:
+            case Algorithm::EltwiseGeluErf:
+            case Algorithm::EltwiseElu:
+            case Algorithm::EltwiseTanh:
+            case Algorithm::EltwiseSigmoid:
+//            case Algorithm::EltwiseSqrt: TODO: seg. fault in reference
+            case Algorithm::EltwiseSoftRelu:
+            case Algorithm::EltwiseClamp:
+            case Algorithm::EltwiseSwish:
+            case Algorithm::EltwisePrelu:
+            case Algorithm::EltwiseHswish:
+                if (!(checker(srcDescs, dstDescs, Precision::FP16, Precision::FP16, Precision::FP16) ||
+                      checker(srcDescs, dstDescs, Precision::FP32, Precision::FP32, Precision::FP32))) {
+                    return false;
+                } else { return true; }
+            case Algorithm::EltwiseAbs:
+            case Algorithm::EltwiseExp:
+            case Algorithm::EltwiseLog:
+                if (!(checker(srcDescs, dstDescs, Precision::I32, Precision::I32, Precision::I32) ||
+                      checker(srcDescs, dstDescs, Precision::FP16, Precision::FP16, Precision::FP16) ||
+                      checker(srcDescs, dstDescs, Precision::FP32, Precision::FP32, Precision::FP32))) {
+                    return false;
+                } else { return true; }
+            case Algorithm::EltwiseMaximum:
+            case Algorithm::EltwiseMinimum:
+            case Algorithm::EltwiseSquaredDifference:
+                if (!(checker(srcDescs, dstDescs, Precision::I16, Precision::I16, Precision::I16) ||
+                      checker(srcDescs, dstDescs, Precision::I32, Precision::I32, Precision::I32) ||
+                      checker(srcDescs, dstDescs, Precision::FP16, Precision::FP16, Precision::FP16) ||
+                      checker(srcDescs, dstDescs, Precision::FP32, Precision::FP32, Precision::FP32))) {
+                    return false;
+                } else { return true; }
             case Algorithm::EltwiseAdd:
-                if (!(one_of(srcDescs[0]->getPrecision(),
-                            Precision::U8,
-                            Precision::I16,
-                            Precision::I32,
-                            Precision::FP16,
-                            Precision::FP32) &&
-                    srcDescs[0]->getPrecision() == srcDescs[1]->getPrecision() &&
-                    srcDescs[1]->getPrecision() == dstDescs[0]->getPrecision())) { return false; }
-                break;
+            case Algorithm::EltwiseSubtract:
+                if (!(checker(srcDescs, dstDescs, Precision::U8, Precision::U8, Precision::U8) ||
+                      checker(srcDescs, dstDescs, Precision::I16, Precision::I16, Precision::I16) ||
+                      checker(srcDescs, dstDescs, Precision::I32, Precision::I32, Precision::I32) ||
+                      checker(srcDescs, dstDescs, Precision::FP16, Precision::FP16, Precision::FP16) ||
+                      checker(srcDescs, dstDescs, Precision::FP32, Precision::FP32, Precision::FP32))) {
+                    return false;
+                } else { return true; }
             case Algorithm::EltwiseMultiply:
                 if (!(checker(srcDescs, dstDescs, Precision::U8, Precision::U8, Precision::U8) ||
                       checker(srcDescs, dstDescs, Precision::U8, Precision::U8, Precision::I16) ||
@@ -97,8 +122,20 @@ public:
                       checker(srcDescs, dstDescs, Precision::FP16, Precision::FP16, Precision::FP16) ||
                       checker(srcDescs, dstDescs, Precision::FP32, Precision::FP32, Precision::FP32))) {
                     return false;
-                }
-                break;
+                } else { return true; }
+            case Algorithm::EltwiseEqual:
+            case Algorithm::EltwiseNotEqual:
+            case Algorithm::EltwiseGreater:
+            case Algorithm::EltwiseGreaterEqual:
+            case Algorithm::EltwiseLess:
+            case Algorithm::EltwiseLessEqual:
+                if (!(checker(srcDescs, dstDescs, Precision::U8, Precision::U8, Precision::U8) ||
+                      checker(srcDescs, dstDescs, Precision::I16, Precision::I16, Precision::U8) ||
+                      checker(srcDescs, dstDescs, Precision::I32, Precision::I32, Precision::U8) ||
+                      checker(srcDescs, dstDescs, Precision::FP16, Precision::FP16, Precision::U8) ||
+                      checker(srcDescs, dstDescs, Precision::FP32, Precision::FP32, Precision::U8))) {
+                    return false;
+                } else { return true; }
             default:
                 return true;
         }
