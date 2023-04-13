@@ -79,6 +79,8 @@ bool NormalizeKey::operator==(const NormalizeKey& rhs) const {
 
 }  // namespace
 
+#if defined(OPENVINO_ARCH_X86_64)
+
 static inline bool isFloatCompatible(memory::data_type type) {
     return memory::data_type::f32 == type || memory::data_type::bf16 == type;
 }

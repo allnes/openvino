@@ -18,7 +18,7 @@ if (NOT OPENVINO_ARCH_X86_64)
                                           ${CMAKE_CURRENT_SOURCE_DIR}/ngraph_transformations/convert_to_interaction.cpp
                                           ${CMAKE_CURRENT_SOURCE_DIR}/ngraph_transformations/snipptes_mark_skipped.cpp
                                           ${CMAKE_CURRENT_SOURCE_DIR}/ngraph_transformations/mul_add_to_fma.cpp
-                                          ${CMAKE_CURRENT_SOURCE_DIR}/snippets/fake_quantize_tokenization_test.cpp
+                                          ${CMAKE_CURRENT_SOURCE_DIR}/snippets_transformations
                                           ${CMAKE_CURRENT_SOURCE_DIR}/nodes/eltwise_node_test.cpp)
 endif()
 
@@ -29,7 +29,6 @@ addIeTargetTest(
             PUBLIC
                 $<TARGET_PROPERTY:openvino_intel_cpu_plugin,SOURCE_DIR>/src
                 $<TARGET_PROPERTY:openvino_intel_cpu_plugin,SOURCE_DIR>/src/nodes
-                $<TARGET_PROPERTY:openvino_intel_cpu_plugin,SOURCE_DIR>/src/nodes/executors
                 $<TARGET_PROPERTY:openvino_intel_cpu_plugin,SOURCE_DIR>/thirdparty/onednn
                 $<TARGET_PROPERTY:openvino_intel_cpu_plugin,SOURCE_DIR>/thirdparty/onednn/src
                 $<TARGET_PROPERTY:openvino::conditional_compilation,INTERFACE_INCLUDE_DIRECTORIES>

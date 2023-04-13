@@ -4,7 +4,7 @@
 
 #pragma once
 
-#if defined(__x86_64__) || defined(_M_X64)
+#if defined(OPENVINO_ARCH_X86) || defined(OPENVINO_ARCH_X86_64)
 #   include <immintrin.h>
 #endif
 
