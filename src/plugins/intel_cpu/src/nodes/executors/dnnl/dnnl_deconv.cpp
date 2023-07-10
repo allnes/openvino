@@ -8,7 +8,6 @@
 #include <memory_desc/cpu_memory_desc_utils.h>
 #include "memory_desc/dnnl_blocked_memory_desc.h"
 #include <oneapi/dnnl/dnnl.hpp>
-#include "memory_desc/dnnl_blocked_memory_desc.h"
 
 namespace ov {
 namespace intel_cpu {
