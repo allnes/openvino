@@ -6,6 +6,7 @@
 
 #include "nodes/executors/deconv.hpp"
 #include "utils/debug_capabilities.h"
+#include "cpu/x64/cpu_isa_traits.hpp"
 
 namespace ov {
 namespace intel_cpu {
@@ -73,7 +74,9 @@ public:
               const std::vector<MemoryPtr>& dst,
               const void *post_ops_data_,
               const dnnl::stream &strm) override;
-    impl_desc_type getImplType() const override { return dnnlExecPtr->getImplementationType(); }
+    impl_desc_type getImplType() const override {
+        return dnnlExecPtr->getImplementationType();
+    }
 
 private:
     DeconvAttrs dnnlDeconvAttrs;
