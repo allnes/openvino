@@ -39,6 +39,8 @@ if(ENABLE_COVERAGE)
     include(cmake/coverage.cmake)
 endif()
 
+set(IE_EXTRA_MODULES "")
+
 # resolving dependencies for the project
 message (STATUS "CMAKE_VERSION ......................... " ${CMAKE_VERSION})
 message (STATUS "OpenVINO_SOURCE_DIR ................... " ${OpenVINO_SOURCE_DIR})
