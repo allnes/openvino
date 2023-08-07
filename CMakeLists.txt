@@ -40,6 +40,7 @@ if(ENABLE_COVERAGE)
 endif()
 
 set(IE_EXTRA_MODULES "")
+set(ENABLE_SYSTEM_TBB ON)
 
 # resolving dependencies for the project
 message (STATUS "CMAKE_VERSION ......................... " ${CMAKE_VERSION})
