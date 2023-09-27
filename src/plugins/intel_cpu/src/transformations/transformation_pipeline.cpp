@@ -351,12 +351,18 @@ void Transformations::PreLpt(const std::vector<ov::element::Type>& defaultPrecis
         },
         ov::pass::NormalizeL2Decomposition);
 
-    CPU_ENABLE_PASS_X64(manager, ov::pass::SoftmaxDecomposition);
+    CPU_ENABLE_PASS_COMMON(manager, ov::pass::SoftmaxDecomposition);
     CPU_SET_CALLBACK_X64(manager,
             [](const_node_ptr &node) -> bool {
                 return node->input_value(0).get_partial_shape().rank().get_length() <= 5;
             },
         ov::pass::SoftmaxDecomposition);
+    // ACL softmax limitations
+    CPU_SET_CALLBACK_ARM(manager,
+                         [](const_node_ptr &node) -> bool {
+                             return node->input_value(0).get_partial_shape().rank().get_length() <= 4;
+                         },
+                         ov::pass::SoftmaxDecomposition);
 
     // NMS-alike nodes are always transformed to NMSIEInternal node in case of legacy api, for compatibility.
     // And on the other hand in case of api 2.0, keep them internal dynamic for better performance and functionality.

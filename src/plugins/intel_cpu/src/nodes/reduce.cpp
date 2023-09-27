@@ -1987,6 +1987,13 @@ void Reduce::initSupportedPrimitiveDescriptors() {
         // pushDesc(LayoutType::nspc, LayoutType::nspc, input_prec, output_prec, undef, true);
         pushDesc(LayoutType::ncsp, LayoutType::ncsp, input_prec, output_prec, impl_desc_type::undef, true);
         canUseAclExecutor = !supportedPrimitiveDescriptors.empty();
+        // Case for decomposition operation where reduce part of this operation
+        for (auto &axis : reduceAttrs.axes) {
+            if (axisCast(axis, getInputShapeAtPort(REDUCE_DATA).getRank()) > 3) {
+                canUseAclExecutor = false;
+                break;
+            }
+        }
         if (canUseAclExecutor)
             return;
 #endif
