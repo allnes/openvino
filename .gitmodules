@@ -1,6 +1,7 @@
 [submodule "src/plugins/intel_cpu/thirdparty/onednn"]
 	path = src/plugins/intel_cpu/thirdparty/onednn
-	url = https://github.com/openvinotoolkit/oneDNN.git
+	url = https://github.com/allnes/oneDNN
+	branch = an/acl_softmax_check
 	ignore = dirty
 [submodule "thirdparty/xbyak"]
 	path = thirdparty/xbyak
