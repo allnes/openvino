@@ -294,11 +294,6 @@ function(ov_mark_target_as_cc TARGET_NAME)
     add_dependencies(${TARGET_NAME} conditional_compilation_gen)
 endfunction()
 
-function(ie_mark_target_as_cc TARGET_NAME)
-    message(WARNING "This function is deprecated. Please use ov_mark_target_as_cc(TARGET_NAME) instead.")
-    ov_mark_target_as_cc(${TARGET_NAME})
-endfunction()
-
 include(python_requirements)
 
 # Code style utils

@@ -4,16 +4,95 @@
 
 #pragma once
 
-#include "filter_cpu_info.hpp"
-#include <string>
-#include "ie_system_conf.h"
+#include "openvino/runtime/compiled_model.hpp"
+#include "openvino/runtime/exec_model_info.hpp"
+#include "openvino/runtime/system_conf.hpp"
 #include "shared_test_classes/base/layer_test_utils.hpp"
 #include "transformations/rt_info/primitives_priority_attribute.hpp"
-#include <exec_graph_info.hpp>
-#include <openvino/runtime/compiled_model.hpp>
+
+// To be removed
 #include "ie_system_conf.h"
+#include "exec_graph_info.hpp"
 
 namespace CPUTestUtils {
+    typedef enum {
+        undef,
+        a,
+        ab,
+        acb,
+        aBc8b,
+        aBc16b,
+        abcd,
+        acdb,
+        aBcd8b,
+        aBcd16b,
+        abcde,
+        acdeb,
+        aBcde8b,
+        aBcde16b,
+        // RNN layouts
+        abc,
+        bac,
+        abdc,
+        abdec,
+
+        x = a,
+        nc = ab,
+        ncw = abc,
+        nchw = abcd,
+        ncdhw = abcde,
+        nwc = acb,
+        nhwc = acdb,
+        ndhwc = acdeb,
+        nCw8c = aBc8b,
+        nCw16c = aBc16b,
+        nChw8c = aBcd8b,
+        nChw16c = aBcd16b,
+        nCdhw8c = aBcde8b,
+        nCdhw16c = aBcde16b,
+        // RNN layouts
+        tnc = abc,
+        /// 3D RNN data tensor in the format (batch, seq_length, input channels).
+        ntc = bac,
+        /// 4D RNN states tensor in the format (num_layers, num_directions,
+        /// batch, state channels).
+        ldnc = abcd,
+        /// 5D RNN weights tensor in the format (num_layers, num_directions,
+        ///  input_channels, num_gates, output_channels).
+        ///
+        ///  - For LSTM cells, the gates order is input, forget, candidate
+        ///    and output gate.
+        ///  - For GRU cells, the gates order is update, reset and output gate.
+        ldigo = abcde,
+        /// 5D RNN weights tensor in the format (num_layers, num_directions,
+        /// num_gates, output_channels, input_channels).
+        ///
+        ///  - For LSTM cells, the gates order is input, forget, candidate
+        ///    and output gate.
+        ///  - For GRU cells, the gates order is update, reset and output gate.
+        ldgoi = abdec,
+        /// 4D LSTM projection tensor in the format (num_layers, num_directions,
+        /// num_channels_in_hidden_state, num_channels_in_recurrent_projection).
+        ldio = abcd,
+        /// 4D LSTM projection tensor in the format (num_layers, num_directions,
+        /// num_channels_in_recurrent_projection, num_channels_in_hidden_state).
+        ldoi = abdc,
+        /// 4D RNN bias tensor in the format (num_layers, num_directions,
+        /// num_gates, output_channels).
+        ///
+        ///  - For LSTM cells, the gates order is input, forget, candidate
+        ///    and output gate.
+        ///  - For GRU cells, the gates order is update, reset and output gate.
+        ldgo = abcd,
+    } cpu_memory_format_t;
+
+    using CPUSpecificParams =  std::tuple<
+        std::vector<cpu_memory_format_t>, // input memomry format
+        std::vector<cpu_memory_format_t>, // output memory format
+        std::vector<std::string>,         // priority
+        std::string                       // selected primitive type
+    >;
+
     enum class nodeType {
         convolution,
         convolutionBackpropData,
@@ -51,13 +130,13 @@ public:
                                const std::vector<cpu_memory_format_t>& outFmts,
                                const std::vector<std::string>& priority);
    //TODO: change to setter method
-    static std::string makeSelectedTypeStr(std::string implString, ngraph::element::Type_t elType);
+    static std::string makeSelectedTypeStr(std::string implString, ov::element::Type_t elType);
     void updateSelectedType(const std::string& primitiveType, const ov::element::Type netType, const ov::AnyMap& config);
 
     CPUInfo getCPUInfo() const;
-    std::shared_ptr<ngraph::Function> makeNgraphFunction(const ngraph::element::Type &ngPrc,
-                                                         ngraph::ParameterVector &params,
-                                                         const std::shared_ptr<ngraph::Node> &lastNode,
+    std::shared_ptr<ov::Model> makeNgraphFunction(const ov::element::Type &ngPrc,
+                                                         ov::ParameterVector &params,
+                                                         const std::shared_ptr<ov::Node> &lastNode,
                                                          std::string name);
 
     void CheckPluginRelatedResults(InferenceEngine::ExecutableNetwork &execNet, const std::set<std::string>& nodeType) const;
@@ -76,9 +155,9 @@ protected:
      * @param lastNode The last node of the initial graph.
      * @return The last node of the modified graph.
      */
-    virtual std::shared_ptr<ngraph::Node> modifyGraph(const ngraph::element::Type &ngPrc,
-                                                      ngraph::ParameterVector &params,
-                                                      const std::shared_ptr<ngraph::Node> &lastNode);
+    virtual std::shared_ptr<ov::Node> modifyGraph(const ov::element::Type& ngPrc,
+                                                  ov::ParameterVector& params,
+                                                  const std::shared_ptr<ov::Node>& lastNode);
 
     virtual bool primTypeCheck(std::string primType) const;
 
@@ -94,11 +173,9 @@ protected:
 const auto emptyCPUSpec = CPUSpecificParams{{}, {}, {}, {}};
 const std::map<std::string, std::string> cpuEmptyPluginConfig;
 const ov::AnyMap empty_plugin_config{};
-const std::map<std::string, std::string> cpuFP32PluginConfig =
-        { { InferenceEngine::PluginConfigParams::KEY_ENFORCE_BF16, InferenceEngine::PluginConfigParams::NO } };
 const std::map<std::string, std::string> cpuBF16PluginConfig =
         { { InferenceEngine::PluginConfigParams::KEY_ENFORCE_BF16, InferenceEngine::PluginConfigParams::YES } };
-
+const ov::AnyMap cpu_bf16_plugin_config = {{ov::hint::inference_precision(ov::element::bf16)}};
 
 // utility functions
 std::vector<CPUSpecificParams> filterCPUSpecificParams(const std::vector<CPUSpecificParams>& paramsVector);
