@@ -323,6 +323,8 @@ const std::vector<ExecutorImplementation<FCAttrs>>& getImplementations() {
             ShapeTolerance::Agnostic,
             // supports
             [](const FCConfig& config) -> bool {
+                // Temporary disable FC ACL executor untill add repack weights (add has_opt_impl())
+                return false;
                 VERIFY(noSparseDecompression(config), UNSUPPORTED_SPARSE_WEIGHTS);
                 VERIFY(noWeightsDecompression(config), UNSUPPORTED_WEIGHTS_DECOMPRESSION);
                 return ACLFullyConnectedExecutor::supports(config);
