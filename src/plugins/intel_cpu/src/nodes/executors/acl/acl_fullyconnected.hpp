@@ -31,6 +31,7 @@ public:
 private:
     arm_compute::FullyConnectedLayerInfo fullyConnectedLayerInfo;
     arm_compute::WeightsInfo weightsInfo;
+    ACLInfo newWeightsInfo;
 };
 
 using ACLFullyConnectedExecutorPtr = std::shared_ptr<ACLFullyConnectedExecutor>;

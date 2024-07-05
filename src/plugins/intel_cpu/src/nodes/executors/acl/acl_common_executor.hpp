@@ -21,12 +21,23 @@ enum ACLArgs {
     COUNT_OF_ARGS
 };
 
+const std::unordered_map<int, ACLArgs> argConvert = {
+        {ARG_SRC_0, ACL_SRC_0},
+        {ARG_SRC_1, ACL_SRC_1},
+        {ARG_SRC_2, ACL_SRC_2},
+        {ARG_BIAS,  ACL_BIAS},
+        {ARG_WEI,   ACL_WEI},
+        {ARG_DST,   ACL_DST},
+};
+
 using ACLInfo          = std::shared_ptr<arm_compute::TensorInfo>;
 using ACLMemory        = std::shared_ptr<arm_compute::Tensor>;
 using ACLFunction      = std::unique_ptr<arm_compute::IFunction>;
 using ACLMemoryShapes  = std::array<arm_compute::TensorShape, ACLArgs::COUNT_OF_ARGS>;
 using ACLMemoryInfo    = std::array<ACLInfo, ACLArgs::COUNT_OF_ARGS>;
 using ACLMemoryTensors = std::array<ACLMemory, ACLArgs::COUNT_OF_ARGS>;
+using ACLMemoryTypes   = std::array<arm_compute::DataType,   ACLArgs::COUNT_OF_ARGS>;
+using ACLMemoryLayouts = std::array<arm_compute::DataLayout, ACLArgs::COUNT_OF_ARGS>;
 
 struct ACLTensorAttrs {
     bool hasLayoutTypeNHWC = false;
@@ -47,10 +58,20 @@ public:
     }
     void execute(const MemoryArgs& memory) override;
     bool update(const MemoryArgs& memory) override;
-    ~ACLCommonExecutor();
+    static void initACLTensorParams(const MemoryPtr& memoryPtr,
+                                    const ACLTensorAttrs& attrs,
+                                    arm_compute::TensorShape& tensorShape,
+                                    arm_compute::DataType& dataType,
+                                    arm_compute::DataLayout& dataLayout);
+    static ACLInfo initTensorInfo(const arm_compute::TensorShape& tensorShape,
+                                  const arm_compute::DataType& dataType,
+                                  const arm_compute::DataLayout& dataLayout);
+    static ACLMemory initTensor(const ACLInfo& aclMemoryInfo);
+    ~ACLCommonExecutor() override;
 
 protected:
     ACLTensorAttrs aclTensorAttrs;
+    MemoryCPtr packedWeights;
 
 private:
     ACLMemoryTensors aclMemoryTensors;

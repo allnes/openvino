@@ -10,23 +10,11 @@
 namespace ov {
 namespace intel_cpu {
 
-const std::unordered_map<int, ACLArgs> argConvert = {
-    {ARG_SRC_0, ACL_SRC_0},
-    {ARG_SRC_1, ACL_SRC_1},
-    {ARG_SRC_2, ACL_SRC_2},
-    {ARG_BIAS,  ACL_BIAS},
-    {ARG_WEI,   ACL_WEI},
-    {ARG_DST,   ACL_DST},
-};
-
-using ACLMemoryTypes   = std::array<arm_compute::DataType,   ACLArgs::COUNT_OF_ARGS>;
-using ACLMemoryLayouts = std::array<arm_compute::DataLayout, ACLArgs::COUNT_OF_ARGS>;
-
-static void initACLTensorParams(const MemoryPtr& memoryPtr,
-                                const ACLTensorAttrs& attrs,
-                                arm_compute::TensorShape& tensorShape,
-                                arm_compute::DataType& dataType,
-                                arm_compute::DataLayout& dataLayout) {
+void ACLCommonExecutor::initACLTensorParams(const MemoryPtr& memoryPtr,
+                                            const ACLTensorAttrs& attrs,
+                                            arm_compute::TensorShape& tensorShape,
+                                            arm_compute::DataType& dataType,
+                                            arm_compute::DataLayout& dataLayout) {
     dataType = precisionToAclDataType(memoryPtr->getPrecision());
     dataLayout = getAclDataLayoutByMemoryDesc(memoryPtr->getDescPtr());
     if (dataType != arm_compute::DataType::UNKNOWN) {
@@ -38,9 +26,9 @@ static void initACLTensorParams(const MemoryPtr& memoryPtr,
     }
 }
 
-static ACLInfo initTensorInfo(const arm_compute::TensorShape& tensorShape,
-                              const arm_compute::DataType& dataType,
-                              const arm_compute::DataLayout& dataLayout) {
+ACLInfo ACLCommonExecutor::initTensorInfo(const arm_compute::TensorShape& tensorShape,
+                                          const arm_compute::DataType& dataType,
+                                          const arm_compute::DataLayout& dataLayout) {
     ACLInfo aclMemoryInfo = nullptr;
     if (dataType != arm_compute::DataType::UNKNOWN) {
         aclMemoryInfo = std::make_shared<arm_compute::TensorInfo>(
@@ -51,7 +39,7 @@ static ACLInfo initTensorInfo(const arm_compute::TensorShape& tensorShape,
     return aclMemoryInfo;
 }
 
-static ACLMemory initTensor(const ACLInfo& aclMemoryInfo) {
+ACLMemory ACLCommonExecutor::initTensor(const ACLInfo& aclMemoryInfo) {
     ACLMemory aclMemory = nullptr;
     if (aclMemoryInfo) {
         aclMemory = std::make_shared<arm_compute::Tensor>();
@@ -105,10 +93,11 @@ void ACLCommonExecutor::execute(const MemoryArgs &memory) {
     // TODO: Move import_memory() to update() function - CVS-145871
     for (auto& cpu_mem_ptr : memory) {
         const ACLArgs index = argConvert.at(cpu_mem_ptr.first);
-        if (aclMemoryTensors[index]) {
+        if (aclMemoryTensors[index] || index != ACLArgs::ACL_WEI) {
             aclMemoryTensors[index]->allocator()->import_memory(memory.at(cpu_mem_ptr.first)->getData());
         }
     }
+    aclMemoryTensors[ACLArgs::ACL_WEI]->allocator()->import_memory(packedWeights->getData());
     iFunction->run();
 }
 
