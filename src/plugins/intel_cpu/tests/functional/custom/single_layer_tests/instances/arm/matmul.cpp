@@ -15,7 +15,7 @@ namespace MatMul {
 /* ============= MatMul ============= */
 namespace matmul {
 
-const std::vector<CPUSpecificParams>& filterSpecificParamsFC() {
+static const std::vector<CPUSpecificParams>& filterSpecificParamsFC() {
     static const std::vector<CPUSpecificParams> specificParams = {CPUSpecificParams{{}, {}, {"acl"}, "acl"}};
     return specificParams;
 }
