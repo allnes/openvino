@@ -35,13 +35,9 @@ struct ACLTensorAttrs {
 
 class ACLCommonExecutor : public Executor {
 public:
-    virtual void updateTensorsShapes(ACLMemoryShapes& aclMemoryShapes) {}
-    virtual arm_compute::Status validateTensorsInfo(const ACLMemoryInfo & aclMemoryInfos) {
-        OPENVINO_THROW_NOT_IMPLEMENTED("This version of the 'validateTensorsInfo' method is not implemented by executor");
-    }
-    virtual ACLFunction configureFunction(const ACLMemoryTensors& aclMemoryTensors) {
-        OPENVINO_THROW_NOT_IMPLEMENTED("This version of the 'configureFunction' method is not implemented by executor");
-    }
+    virtual void updateTensorsShapes(ACLMemoryShapes& aclMemoryShapes) = 0;
+    virtual arm_compute::Status validateTensorsInfo(const ACLMemoryInfo& aclMemoryInfos) = 0;
+    virtual ACLFunction configureFunction(const ACLMemoryTensors& aclMemoryTensors) = 0;
     impl_desc_type implType() const override {
         return impl_desc_type::acl;
     }

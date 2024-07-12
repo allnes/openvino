@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Intel Corporation
+// Copyright (C) 2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 //
 
@@ -16,8 +16,7 @@ namespace MatMul {
 namespace matmul {
 
 const std::vector<CPUSpecificParams>& filterSpecificParamsFC() {
-static const std::vector<CPUSpecificParams> specificParams = {
-    CPUSpecificParams{{}, {}, {"acl"}, "acl"}};
+    static const std::vector<CPUSpecificParams> specificParams = {CPUSpecificParams{{}, {}, {"acl"}, "acl"}};
     return specificParams;
 }
 

@@ -10,7 +10,7 @@
 namespace ov {
 namespace intel_cpu {
 
-const std::unordered_map<int, ACLArgs> argConvert = {
+static const std::unordered_map<int, ACLArgs> argConvert = {
     {ARG_SRC_0, ACL_SRC_0},
     {ARG_SRC_1, ACL_SRC_1},
     {ARG_SRC_2, ACL_SRC_2},
@@ -85,7 +85,7 @@ bool ACLCommonExecutor::update(const MemoryArgs &memory) {
     // Validate arm_compute::TensorInfo objects for specific ACL function
     auto tensorsInfoValidateStatus = validateTensorsInfo(aclMemoryInfos);
     if (!tensorsInfoValidateStatus) {
-        DEBUG_LOG("ACL operator validation was failed: ", tensorsInfoValidateStatus.error_description());
+        DEBUG_LOG("ACL operator validation failed: ", tensorsInfoValidateStatus.error_description());
         return false;
     }
 
