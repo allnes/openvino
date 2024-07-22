@@ -30,6 +30,10 @@
 #include "nodes/executors/acl/acl_fullyconnected.hpp"
 #endif
 
+#if defined(OV_CPU_WITH_SHL)
+#include "nodes/executors/shl/shl_fullyconnected.hpp"
+#endif
+
 namespace ov {
 namespace intel_cpu {
 
@@ -323,7 +327,7 @@ const std::vector<ExecutorImplementation<FCAttrs>>& getImplementations() {
             ShapeTolerance::Agnostic,
             // supports
             [](const FCConfig& config) -> bool {
-                // Temporary disable FC ACL executor untill add repack weights (add has_opt_impl())
+              // Temporary disable FC ACL executor untill add repack weights (add has_opt_impl())
                 return false;
                 VERIFY(noSparseDecompression(config), UNSUPPORTED_SPARSE_WEIGHTS);
                 VERIFY(noWeightsDecompression(config), UNSUPPORTED_WEIGHTS_DECOMPRESSION);
@@ -348,6 +352,35 @@ const std::vector<ExecutorImplementation<FCAttrs>>& getImplementations() {
                const ExecutorContext::CPtr context) {
                 return std::make_shared<ACLFullyConnectedExecutor>(attrs, postOps, memory, context);
             })
+        OV_CPU_INSTANCE_SHL(
+            "fullyconnected_shl",
+            ExecutorType::Shl,
+            OperationType::FullyConnected,
+            ShapeTolerance::Agnostic,
+            // supports
+            [](const FCConfig& config) -> bool {
+                VERIFY(noPostOps(config), UNSUPPORTED_POST_OPS);
+                VERIFY(noSparseDecompression(config), UNSUPPORTED_SPARSE_WEIGHTS);
+                VERIFY(noWeightsDecompression(config), UNSUPPORTED_WEIGHTS_DECOMPRESSION);
+                VERIFY(everyone_is(f32, srcType(config), weiType(config), dstType(config)), UNSUPPORTED_SRC_PRECISIONS);
+                return ShlFCExecutor::supports(config);
+            },
+            // requiresFallback
+            [](const FCConfig& config) -> ov::optional<executor::Config<FCAttrs>> {
+                return {};
+            },
+            // acceptsShapes
+            [](const MemoryArgs& memory) -> bool {              
+                return true;
+            },
+            // create
+            [](const FCAttrs& attrs,
+               const PostOps& postOps,
+               const MemoryArgs& memory,
+               const ExecutorContext::CPtr context) {
+                return std::make_shared<ShlFCExecutor>(attrs, postOps, memory, context);
+            }
+        )
         OV_CPU_INSTANCE_DNNL(
             "fullyconnected_dnnl",
             ExecutorType::Dnnl,
