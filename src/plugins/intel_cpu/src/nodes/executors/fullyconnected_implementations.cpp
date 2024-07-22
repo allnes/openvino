@@ -31,7 +31,7 @@
 #endif
 
 #if defined(OV_CPU_WITH_SHL)
-#include "nodes/executors/shl/shl_fullyconnected.hpp"
+#    include "nodes/executors/shl/shl_fullyconnected.hpp"
 #endif
 
 namespace ov {
