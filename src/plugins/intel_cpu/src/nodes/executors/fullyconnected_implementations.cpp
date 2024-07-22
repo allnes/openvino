@@ -363,6 +363,7 @@ const std::vector<ExecutorImplementation<FCAttrs>>& getImplementations() {
                 VERIFY(noSparseDecompression(config), UNSUPPORTED_SPARSE_WEIGHTS);
                 VERIFY(noWeightsDecompression(config), UNSUPPORTED_WEIGHTS_DECOMPRESSION);
                 VERIFY(everyone_is(f32, srcType(config), weiType(config), dstType(config)), UNSUPPORTED_SRC_PRECISIONS);
+
                 return ShlFCExecutor::supports(config);
             },
             // requiresFallback
@@ -370,7 +371,7 @@ const std::vector<ExecutorImplementation<FCAttrs>>& getImplementations() {
                 return {};
             },
             // acceptsShapes
-            [](const MemoryArgs& memory) -> bool {              
+            [](const MemoryArgs& memory) -> bool {
                 return true;
             },
             // create
