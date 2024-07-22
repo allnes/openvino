@@ -25,9 +25,6 @@ public:
 
     ACLFunction configureFunction(const ACLMemoryTensors & aclMemoryTensors) override;
 
-    impl_desc_type implType() const override {
-        return impl_desc_type::gemm_acl;
-    }
 private:
     arm_compute::FullyConnectedLayerInfo fullyConnectedLayerInfo;
     arm_compute::WeightsInfo weightsInfo;

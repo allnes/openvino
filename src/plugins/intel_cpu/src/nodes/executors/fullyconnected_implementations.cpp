@@ -321,7 +321,7 @@ const std::vector<ExecutorImplementation<FCAttrs>>& getImplementations() {
                     false);
             })
         // Temporary disable FC ACL ARM64 executor until add repack weights (add has_opt_impl())
-        OV_CPU_INSTANCE_ACL32(
+        OV_CPU_INSTANCE_ACL(
             "fullyconnected_acl",
             ExecutorType::Acl,
             OperationType::FullyConnected,
