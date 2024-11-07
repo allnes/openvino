@@ -94,6 +94,8 @@ static const TypeToNameMap& get_type_to_name_tbl() {
         {"BitwiseNot", Type::Eltwise},
         {"BitwiseOr", Type::Eltwise},
         {"BitwiseXor", Type::Eltwise},
+        {"BitwiseLeftShift", Type::Eltwise},
+        {"BitwiseRightShift", Type::Eltwise},
         {"Reshape", Type::Reshape},
         {"Squeeze", Type::Reshape},
         {"Unsqueeze", Type::Reshape},
@@ -114,6 +116,7 @@ static const TypeToNameMap& get_type_to_name_tbl() {
         {"GroupConvolutionBackpropData", Type::Deconvolution},
         {"StridedSlice", Type::StridedSlice},
         {"Slice", Type::StridedSlice},
+        {"SliceScatter", Type::StridedSlice},
         {"Tile", Type::Tile},
         {"ROIAlign", Type::ROIAlign},
         {"ROIAlignRotated", Type::ROIAlignRotated},
@@ -148,6 +151,8 @@ static const TypeToNameMap& get_type_to_name_tbl() {
         {"ScatterUpdate", Type::ScatterUpdate},
         {"ScatterElementsUpdate", Type::ScatterElementsUpdate},
         {"ScatterNDUpdate", Type::ScatterNDUpdate},
+        {"StringTensorPack", Type::StringTensorPack},
+        {"StringTensorUnpack", Type::StringTensorUnpack},
         {"Interpolate", Type::Interpolate},
         {"RandomUniform", Type::RandomUniform},
         {"ReduceL1", Type::Reduce},
@@ -177,6 +182,7 @@ static const TypeToNameMap& get_type_to_name_tbl() {
         {"IDFT", Type::DFT},
         {"RDFT", Type::RDFT},
         {"IRDFT", Type::RDFT},
+        {"STFT", Type::STFT},
         {"Abs", Type::Math},
         {"Acos", Type::Math},
         {"Acosh", Type::Math},
@@ -231,6 +237,7 @@ static const TypeToNameMap& get_type_to_name_tbl() {
         {"Multinomial", Type::Multinomial},
         {"Reference", Type::Reference},
         {"Subgraph", Type::Subgraph},
+        {"SubModel", Type::SubModel},
         {"PriorBox", Type::PriorBox},
         {"PriorBoxClustered", Type::PriorBoxClustered},
         {"Interaction", Type::Interaction},
@@ -239,6 +246,7 @@ static const TypeToNameMap& get_type_to_name_tbl() {
         {"Ngram", Type::Ngram},
         {"ScaledDotProductAttention", Type::ScaledDotProductAttention},
         {"ScaledDotProductAttentionWithKVCache", Type::ScaledDotProductAttention},
+        {"SDPAWithTransposeReshape", Type::ScaledDotProductAttention},
         {"PagedAttentionExtension", Type::PagedAttention},
         {"RoPE", Type::RoPE},
         {"GatherCompressed", Type::Gather},
@@ -247,6 +255,9 @@ static const TypeToNameMap& get_type_to_name_tbl() {
         {"EmbeddingBagOffsets", Type::EmbeddingBagOffsets},
         {"LLMMLP", Type::LLMMLP},
         {"QKVProjection", Type::QKVProjection},
+        {"RMS", Type::RMS},
+        {"SearchSorted", Type::SearchSorted},
+        {"LoraSubgraph", Type::LoRA}
     };
     return type_to_name_tbl;
 }
@@ -312,6 +323,8 @@ std::string NameFromType(const Type type) {
         CASE(ScatterUpdate);
         CASE(ScatterElementsUpdate);
         CASE(ScatterNDUpdate);
+        CASE(StringTensorPack);
+        CASE(StringTensorUnpack);
         CASE(Interaction);
         CASE(Interpolate);
         CASE(Reduce);
@@ -331,6 +344,7 @@ std::string NameFromType(const Type type) {
         CASE(ShuffleChannels);
         CASE(DFT);
         CASE(RDFT);
+        CASE(STFT);
         CASE(Math);
         CASE(CTCLoss);
         CASE(Bucketize);
@@ -361,6 +375,7 @@ std::string NameFromType(const Type type) {
         CASE(Multinomial);
         CASE(Reference);
         CASE(Subgraph);
+        CASE(SubModel);
         CASE(PriorBox);
         CASE(PriorBoxClustered)
         CASE(MHA);
@@ -373,6 +388,9 @@ std::string NameFromType(const Type type) {
         CASE(CausalMaskPreprocess);
         CASE(LLMMLP);
         CASE(QKVProjection);
+        CASE(RMS);
+        CASE(SearchSorted);
+        CASE(LoRA);
         CASE(Unknown);
     }
 #undef CASE
@@ -445,6 +463,8 @@ std::string algToString(const Algorithm alg) {
         CASE(EltwiseBitwiseNot);
         CASE(EltwiseBitwiseOr);
         CASE(EltwiseBitwiseXor);
+        CASE(EltwiseBitwiseLeftShift);
+        CASE(EltwiseBitwiseRightShift);
         CASE(FQCommon);
         CASE(FQQuantization);
         CASE(FQBinarization);

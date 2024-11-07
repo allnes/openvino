@@ -150,7 +150,7 @@ std::vector<std::string> disabledTestPatterns() {
         R"(.*smoke_Proposal_(Static|Dynamic)_Test_Case1/ProposalLayerCPUTest.*)",
         // Issue: 111418
         R"(.*smoke_Snippets_ConvertStub/ConvertStub\.CompareWithRefImpl/IS.*_OT=\(bf16\)_#N=2_#S=2_targetDevice=CPU.*)",
-        R"(.*smoke_Snippets_Convert/Convert\.CompareWithRefImpl/IS.*_IT=\(f32\)_OT=\(u8\)_#N=1_#S=1_targetDevice=CPU.*)",
+        R"(.*smoke_Snippets_Convert/Convert\.CompareWithRefImpl/IS.*_IT=\((f32|f16)\)_OT=\(u8\)_#N=1_#S=1_targetDevice=CPU.*)",
         R"(.*smoke_Snippets_ConvertManyOnInputs/ConvertManyOnInputs\.CompareWithRefImpl/IS.*_IT=\(f32\.u8\)_OT=\(\)_#N=1_#S=1_targetDevice=CPU.*)",
         // Issue: 106939
         R"(.*ScatterNDUpdateLayerCPUTest.*-1.-1.-1.-2.-2.-2.*)",
@@ -176,7 +176,7 @@ std::vector<std::string> disabledTestPatterns() {
         // Need to generate sequence exactly in the i64 data type. Enable in scope of i64 enabling.
         R"(.*RandomUniformLayerTestCPU.*OutPrc=i64.*)",
         // Issue: 123815 (Tests are sensintive to available thread count on testing machines)
-        R"(.*smoke_Snippets_MHA_.?D_SplitDimensionM.*)",
+        R"(.*smoke_Snippets_MHA_.?D_SplitDimensionM_static.*)",
         // Issue: 122356
         R"(.*NmsRotatedOpTest.*(SortDesc=True|Clockwise=False).*)",
         // Issue: 126095
@@ -237,7 +237,6 @@ std::vector<std::string> disabledTestPatterns() {
         R"(.*smoke_FakeQuantize.*/FakeQuantizeLayerTest.Inference.*TS=.*3.4.2.5.*LEVELS=255.*)",
         R"(.*smoke_FakeQuantizePerChannel.*/FakeQuantizeLayerTest.Inference.*TS=.*11.10.22.19.*LEVELS=(255|256).*netPRC=f32.*)",
         R"(.*smoke_MVN_5D/Mvn6LayerTest.Inference.*TS=.*3.4.2.5.*LEVELS=255.*netPRC=f16.*)",
-        R"(.*smoke_Snippets_MHAINT8MatMul/MHAINT8MatMul.*)",
         R"(.*smoke_static/ConvertFqRnnToQuantizedRnn.*2.1.5.*2.1.1.*2.1.1.*)",
         R"(.*smoke_InterpolateBicubicPillow_Layout_Test/InterpolateLayerCPUTest.CompareWithRefs/ShapeCalcMode=sizes_IS=\[?.2..20.?.?\]_TS.*1.17.4.4.*2.3.10.12.*1.17.4.4.*Sizes.*4.4.*10.20.*10.4.*PARAMETER.*0.0.0.0.*0.0.1.1.*2.3.*)",
         R"(.*smoke_LoopForCommon/LoopLayerCPUTest.CompareWithRefs/.*_netType=bf16.*)",
@@ -308,6 +307,8 @@ std::vector<std::string> disabledTestPatterns() {
         R"(.*smoke_TestsROIAlign.*)",
         // Issue: 148527
         R"(.*Snippets.*MatMulTransposeB.*i8.*i8.*)",
+        // Issue: 136881
+        R"(.*smoke_CompareWithRefs_4D_BitwiseShift_overflow_i32_cast.*_eltwise_op_type=BitwiseLeft.*_model_type=.*(i16|u16).*)",
     };
 
     // fp32 floor for bf16 models: conversion issue
@@ -356,6 +357,7 @@ std::vector<std::string> disabledTestPatterns() {
     retVector.emplace_back(R"(smoke_VariableState/OVInferRequestVariableStateTest.*)");
     // Issue: 141705
     retVector.emplace_back(R"(.*smoke_arm_Deconv_2D_Planar_FP16/DeconvolutionLayerCPUTest.*INFERENCE_PRECISION_HINT=f16.*)");
+    retVector.emplace_back(R"(.*ConcatMultiQuerySDPTest.*u8.*)");
 #endif
 
 #if defined(OPENVINO_ARCH_ARM)
@@ -379,7 +381,18 @@ std::vector<std::string> disabledTestPatterns() {
     retVector.emplace_back(R"(.*smoke_RoPETest.*)");
 #endif
 
+#if defined(OPENVINO_ARCH_ARM64)
+    // Issue: 149216. For low precision model from original framework, Snippets PropagatePrecision should insert ConvertTruncation instead
+    // of ConvertSaturation when converting larger integer to smaller integer to align with c++ standard and ngraph reference.
+    retVector.emplace_back(R"(.*smoke_EltwiseChain_MergeConvert_int8/.*Op0=Prod.*Conversion=i8.*)");
+#endif
+
 #if defined(OPENVINO_ARCH_RISCV64)
+    // object is not initialized
+    retVector.emplace_back(R"(.*StaticLoopDynamicSubgraphCPUTest.smoke_StaticLoopWithDynSubgraph.*)");
+    // crash with 'double free or corruption (!prev)'
+    retVector.emplace_back(R"(.*smoke_InterpolateBilinearPillow_Layout_Test.*)");
+    retVector.emplace_back(R"(.*smoke_InterpolateBicubicPillow_Layout_Test.*)");
     // unsupported node type 'CausalMaskPreprocess'
     retVector.emplace_back(R"(CausalMaskPreprocessCausalMaskPreprocess.smoke_CompareWithRefs)");
     // fused op FakeQuantize has not been found
@@ -394,9 +407,12 @@ std::vector<std::string> disabledTestPatterns() {
     retVector.emplace_back(R"(.*smoke_TopK(_int32|_bubble_BLK_on_channel_horiz)?(_dynamic)?/TopKLayerCPUTest.CompareWithRefs.*inFmts=(nhwc|nChw8c|nChw16c).x.*)");
     retVector.emplace_back(R"(.*smoke_(Group)?Convolution(2|3)D/ConvConcatSubgraphTest.CompareWithRefs.*)");
     retVector.emplace_back(R"(.*smoke_FakeQuantizeCache_(4|5)D/FakeQuantizeCacheTest.CompareWithRefs.*inFmts=(nhwc|nChw8c|ndhwc|nCdhw8c).*)");
+    retVector.emplace_back(R"(.*ReduceCPULayerTest.CompareWithRefs.*inFmts=nhwc.*)");
     // only infer_precision=f32 is supported on riscv64 platforms
     retVector.emplace_back(R"(.*smoke_CompareWithRefs_(4|5)D.*EltwiseLayerCPUTest.CompareWithRefs.*INFERENCE_PRECISION_HINT=f16.*)");
     retVector.emplace_back(R"(.*smoke_CompareWithRefs_Mvn[12345]D.*/MvnLayerCPUTest.CompareWithRefs.*INFERENCE_PRECISION_HINT=f16.*)");
+    retVector.emplace_back(R"(.*ReduceCPULayerTest.CompareWithRefs.*INFERENCE_PRECISION_HINT=f16.*)");
+    retVector.emplace_back(R"(.*RemoveUselessFP16ConvertCPUTest.*INFERENCE_PRECISION_HINT=f16.*)");
     // fused op Add has not been found
     retVector.emplace_back(R"(.*smoke_CompareWithRefs_fma_(4|5)D/EltwiseLayerCPUTest.CompareWithRefs.*)");
     // primType is unexpected
@@ -477,14 +493,12 @@ std::vector<std::string> disabledTestPatterns() {
     retVector.emplace_back(R"(smoke_Snippets.*\[.*\?.*\].*)");
     retVector.emplace_back(R"(smoke_Snippets_Eltwise.*\[1.1..10.1..8.1..4\].*)");
     // smoke_Snippets test cases are not supported on arm64 platforms, except for smoke_Snippets_Eltwise
-    retVector.emplace_back(R"(smoke_Snippets(?!_Eltwise).*)");
+    retVector.emplace_back(R"(smoke_Snippets(?!_Eltwise|_Convert).*)");
     // arm snippets doesn't support sve_128 that required by dnnl injector jit_uni_eltwise_injector_f32 yet
     retVector.emplace_back(R"(smoke_Snippets_Eltwise_TwoResults.*)");
     retVector.emplace_back(R"(smoke_Snippets_Eltwise/TwoInputsAndOutputs.*)");
     // arm jit_eltwise_emitters doesn't support jit_power_dynamic_emitter yet
     retVector.emplace_back(R"(smoke_Snippets_Eltwise/MaxNumParamsEltwise.*)");
-    // TODO: 141292
-    retVector.emplace_back(R"(smoke_Snippets_Eltwise_FP16.*)");
 #endif
 #if defined(_WIN32)
     retVector.emplace_back(R"(.*smoke_QuantizedConvolutionBatchNormTransposeOnWeights/QuantizedConvolutionBatchNorm.CompareWithRefs/conv_type=convolution_quantize_type=fake_quantize_intervals_type=per_(tensor|channel)_transpose_on_weights=true_device=CPU.*)");
@@ -515,11 +529,15 @@ std::vector<std::string> disabledTestPatterns() {
     if (!ov::with_cpu_x86_avx512_core_fp16()) {
         // Skip fp16 tests for paltforms that don't support fp16 precision
         retVector.emplace_back(R"(.*INFERENCE_PRECISION_HINT=(F|f)16.*)");
+        retVector.emplace_back(R"(.*ConcatMultiQuerySDPTest.*f16.*)");
+        retVector.emplace_back(R"(.*ConcatSDPTest.*f16.*)");
     }
 #elif defined(OPENVINO_ARCH_ARM64) || defined(OPENVINO_ARCH_ARM)
     if (!ov::intel_cpu::hasHardwareSupport(ov::element::f16)) {
         // Skip fp16 tests for paltforms that don't support fp16 precision
         retVector.emplace_back(R"(.*INFERENCE_PRECISION_HINT=(F|f)16.*)");
+        retVector.emplace_back(R"(.*Prc=f16.*)");
+        retVector.emplace_back(R"(.*ConcatMultiQuerySDPTest.*f16.*HasShapeOf=1.*)");
     } else {
         // Issue 117407
         retVector.emplace_back(
@@ -544,9 +562,24 @@ std::vector<std::string> disabledTestPatterns() {
         // ignored for not supported bf16 platforms
         retVector.emplace_back(R"(.*smoke_Snippets_EnforcePrecision_bf16.*)");
         retVector.emplace_back(R"(.*smoke_Snippets_MHAWOTransposeEnforceBF16.*)");
-        retVector.emplace_back(R"(.*smoke_Snippets_MHAEnforceBF16.*)");
+        retVector.emplace_back(R"(.*smoke_Snippets_MHA.*EnforceBF16.*)");
+        retVector.emplace_back(R"(.*ConcatSDPTest.*bf16.*)");
+    }
+    // [150842] Need to support dynamic K dimension of BF16|INT8 MatMul on AMX systems
+    if (ov::with_cpu_x86_avx512_core_amx()) {
+        retVector.emplace_back(R"(.*smoke_Snippets_MatMul/MatMul.CompareWithRefImpl/.*IS\[0\]=\[2.2.70.\?\].*T\[0\]=(u8|i8|bf16)_T\[1\]=(i8|bf16).*)");
+        retVector.emplace_back(R"(.*smoke_Snippets_MatMul/MatMul.CompareWithRefImpl/.*IS\[0\]=\[\?.\?.\?.\?\].*T\[0\]=(u8|i8|bf16)_T\[1\]=(i8|bf16).*)");
+        retVector.emplace_back(R"(.*smoke_Snippets_MatMulTransposeB.*IS\[0\]=\[\?.\?.\?.\?\].*T\[0\]=(u8|i8|bf16)_T\[1\]=(i8|bf16).*)");
+        retVector.emplace_back(R"(.*smoke_Snippets_MatMulBias.*IS\[0\]=\[\?.\?.\?.\?\].*T\[0\]=(u8|i8|bf16)_T\[1\]=(i8|bf16).*)");
+
+        retVector.emplace_back(R"(.*smoke_Snippets_MHAWOTransposeEnforceBF16_3D.*IS\[1\]=\[2.64.\?\].*)");
+        retVector.emplace_back(R"(.*smoke_Snippets_MHA.*BF16.*/MHA.*IS\[0\]=\[(\?|1).(\?|4).(\?|12).(\?|64)\].*)");
+        retVector.emplace_back(R"(.*smoke_Snippets_MHA.*BF16.*/MHA.*IS\[0\]=\[\?.\?.\?\].*)");
+        retVector.emplace_back(R"(.*smoke_Snippets_(MHAINT8MatMul|MHAQuantMatMul0|MHAFQAfterMatMul_4D|smoke_Snippets_MHAFQ).*IS\[0\]=\[\?.\?.\?\.\?].*)");
     }
 #ifdef SNIPPETS_LIBXSMM_TPP
+    // GN in TPP requires exposing tmp Buffer results outside the loop (ticket: 151234)
+    retVector.emplace_back(R"(.*smoke_Snippets_GroupNormalization.*)");
     // TPP performs precision conversion implicitly, it makes all Convert tests irrelevant
     retVector.emplace_back(R"(.*smoke_Snippets_Convert.*)");
     // ABS and ROUND operations are needed for TPP support. Disable, since low precisions are not supported by TPP yet.
@@ -560,14 +593,15 @@ std::vector<std::string> disabledTestPatterns() {
     retVector.emplace_back(R"(.*smoke_Snippets_AddSoftmax.*)");
     retVector.emplace_back(R"(.*smoke_Snippets_TransposeSoftmaxEltwise.*)");
     // Low-precision Matmuls are not supported by TPP yet
-    retVector.emplace_back(R"(.*smoke_Snippets_MatMulFQ.*)");
-    retVector.emplace_back(R"(.*smoke_Snippets_MatMulBiasQuantized.*)");
-    retVector.emplace_back(R"(.*smoke_Snippets_MatMulQuantized.*)");
-    retVector.emplace_back(R"(.*smoke_Snippets_MatMulQuantizedSoftmax.*)");
-    retVector.emplace_back(R"(.*smoke_Snippets_MHAINT8MatMul.*)");
-    retVector.emplace_back(R"(.*smoke_Snippets_MHAQuantMatMul0.*)");
-    retVector.emplace_back(R"(.*smoke_Snippets_MHAFQ.*)");
-    retVector.emplace_back(R"(.*smoke_Snippets_PrecisionPropagation_Convertion.*)");
+    retVector.emplace_back(R"(.*smoke_Snippets.*MatMulFQ.*)");
+    retVector.emplace_back(R"(.*smoke_Snippets.*MatMulBiasQuantized.*)");
+    retVector.emplace_back(R"(.*smoke_Snippets.*MatMulsQuantized.*)");
+    retVector.emplace_back(R"(.*smoke_Snippets.*MatMulsQuantizedSoftmax.*)");
+    retVector.emplace_back(R"(.*smoke_Snippets.*MHAINT8MatMul.*)");
+    retVector.emplace_back(R"(.*smoke_Snippets.*MHAQuantMatMul0.*)");
+    retVector.emplace_back(R"(.*smoke_Snippets.*MHAFQ.*)");
+    retVector.emplace_back(R"(.*smoke_Snippets.*PrecisionPropagation_Convertion.*)");
+    retVector.emplace_back(R"(.*smoke_MHAQuant.*)");
 #endif
 
     if (ov::with_cpu_x86_avx512_core_amx()) {

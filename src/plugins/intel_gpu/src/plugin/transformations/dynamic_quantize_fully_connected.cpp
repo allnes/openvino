@@ -61,8 +61,19 @@ DynamicQuantizeFullyConnected::DynamicQuantizeFullyConnected(uint64_t group_size
         auto rank = m_fc->get_input_partial_shape(0).size();
         std::vector<uint64_t> shape_group_size(rank, 1);
         shape_group_size.back() = group_size;
-        auto dyn_quan = std::make_shared<ov::op::internal::DynamicQuantize>(m_data, shape_group_size, element::f16);
+
+        ov::op::internal::DynamicQuantize::Attributes config;
+        config.quantization_dt = element::i8;
+        config.quantization_type = ov::op::internal::DynamicQuantize::QuantizationType::Symmetric;
+        config.scale_dt = element::f16;
+        config.group_sizes = shape_group_size;
+
+        auto dyn_quan = std::make_shared<ov::op::internal::DynamicQuantize>(m_data, config);
         auto optional_w_zp = m_fc->get_input_size() > 4 ? m_fc->get_input_node_shared_ptr(4) : std::make_shared<ov::intel_gpu::op::Placeholder>();
+
+        auto output_type = m_fc->get_output_type();
+        if (output_type == ov::element::undefined)
+            output_type = m_fc->get_input_element_type(0);
 
         auto new_fc = std::make_shared<op::FullyConnectedCompressed>(dyn_quan->output(0),
                                                                      m_fc->get_input_node_shared_ptr(1),
@@ -70,7 +81,8 @@ DynamicQuantizeFullyConnected::DynamicQuantizeFullyConnected(uint64_t group_size
                                                                      m_fc->get_input_node_shared_ptr(3),
                                                                      optional_w_zp,
                                                                      dyn_quan->output(1),
-                                                                     m_fc->get_output_type());
+                                                                     output_type);
+
         ov::replace_node(m_fc, new_fc);
 
         new_fc->set_friendly_name(m_fc->get_friendly_name());

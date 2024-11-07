@@ -11,6 +11,7 @@
 #include "openvino/core/graph_util.hpp"
 #include "openvino/core/type.hpp"
 
+#include "snippets/utils/loop_utils.hpp"
 #include "snippets/itt.hpp"
 
 
@@ -20,8 +21,12 @@ namespace lowered {
 
 std::shared_ptr<LoopManager> LoopManager::clone_with_new_expr(const ExpressionMap& expr_map) const {
     auto new_loop_manager = std::make_shared<LoopManager>();
+    // To fully cloned all LoopInfo we have to create this map [old LoopInfo -> cloned LoopInfo],
+    // because some LoopInfo types contains pointer to another LoopInfo
+    // so we should recurrently make a cloning of LoopInfos'
+    LoopInfoMap loop_info_map; // [ old - > cloned ]
     for (const auto& id_info : m_map)
-        new_loop_manager->m_map.insert({id_info.first, id_info.second->clone_with_new_expr(expr_map)});
+        new_loop_manager->m_map.insert({id_info.first, id_info.second->clone_with_new_expr(expr_map, loop_info_map)});
     new_loop_manager->next_id = next_id;
     return new_loop_manager;
 }
@@ -273,14 +278,22 @@ void LoopManager::fuse_loops(LinearIR::constExprIt loop_begin_target, LinearIR::
     const auto work_amount = std::max(loop_info_upper->get_work_amount(), loop_info_lower->get_work_amount());
     const auto increment = std::max(loop_info_upper->get_increment(), loop_info_lower->get_increment());
     const auto handlers = SpecificIterationHandlers::merge_handlers(loop_info_upper->get_handlers(), loop_info_lower->get_handlers());
-    const auto is_work_amount_const = loop_info_upper->is_work_amount_const() || loop_info_lower->is_work_amount_const();
 
     auto new_entries = std::move(input_ports_upper);
     new_entries.insert(new_entries.end(), input_ports_lower.begin(), input_ports_lower.end());
     auto new_exits = std::move(output_ports_upper);
     new_exits.insert(new_exits.end(), output_ports_lower.begin(), output_ports_lower.end());
 
-    m_map[to] = std::make_shared<UnifiedLoopInfo>(work_amount, increment, new_entries, new_exits, handlers, is_work_amount_const);
+    m_map[to] = std::make_shared<UnifiedLoopInfo>(work_amount, increment, new_entries, new_exits, handlers);
+
+    // Need to handle InnerSplittedLoopInfo - update outer splitted loop info if it was fused
+    for (const auto& p : m_map) {
+        if (const auto inner_splitted_loop_info = ov::as_type_ptr<InnerSplittedUnifiedLoopInfo>(p.second)) {
+            const auto outer = inner_splitted_loop_info->get_outer_splitted_loop_info();
+            if (utils::one_of(outer, loop_info_upper, loop_info_lower))
+                inner_splitted_loop_info->set_outer_splitted_loop_info(m_map[to]);
+        }
+    }
 
     for (auto it = loop_begin_target; it != loop_end_target; ++it) {
         const auto& expr = *it;
@@ -337,30 +350,45 @@ void LoopManager::fuse_loop_ports(std::vector<LoopPort>& output_ports,
 }
 
 void LoopManager::update_loop_ports(const ExpressionPtr& expr) {
-    auto output_ports = expr->get_output_ports();
-    for (size_t i = 0; i < expr->get_input_count(); ++i) {
-        const auto& source = expr->get_input_port_connector(i)->get_source();
-        const auto common_outer_loop_ids = get_common_outer_loops(expr, source.get_expr());
-        // The source output port can have several consumers (including the current expr) that can be potential output ports
-        // So we should verify on the possible future output ports
-        size_t count_of_common_outer_loops = common_outer_loop_ids.size();
-        for (const auto& source_consumer : source.get_connected_ports()) {
-            if (source_consumer.get_expr() == expr)
+    auto update_ports = [&](const ov::snippets::lowered::ExpressionPort& connected_port) {
+        const auto is_output = connected_port.get_type() == ExpressionPort::Output;
+        // Iterate through all Loops of the connected expression
+        for (const auto& loop_id : connected_port.get_expr()->get_loop_ids()) {
+            const auto& loop_info = get_loop_info(loop_id);
+            // If the connected expression port is not Loop port - nothing to update
+            // If the target expression is not from the same Loop - nothing to update
+            if (!loop_info->is_loop_port(connected_port) || !is_loop_id_found(expr, loop_id))
                 continue;
-            count_of_common_outer_loops = std::min(count_of_common_outer_loops, get_common_outer_loops(source.get_expr(), source_consumer.get_expr()).size());
+
+            std::vector<ExpressionPort> new_ports;
+            // Check if some ports of target expression must be Loop port
+            const auto target_expr_ports = is_output ? expr->get_output_ports() : expr->get_input_ports();
+            for (const auto& port : target_expr_ports) {
+                if (utils::should_be_loop_port(port, loop_id))
+                    new_ports.push_back(port);
+            }
+            // Leave the connected expression port as Loop port if needed
+            if (utils::should_be_loop_port(connected_port, loop_id))
+                new_ports.push_back(connected_port);
+
+            // Nothing should be updated
+            if (new_ports.size() == 1 && new_ports.front() == connected_port)
+                continue;
+
+            loop_info->replace_with_new_ports(connected_port, new_ports);
         }
-        replace_loop_ports({common_outer_loop_ids.cbegin(), common_outer_loop_ids.cbegin() + count_of_common_outer_loops}, source, output_ports);
-        // Save previous port
-        if (count_of_common_outer_loops != common_outer_loop_ids.size()) {
-            output_ports.insert(output_ports.begin(), source);
-            replace_loop_ports({common_outer_loop_ids.cbegin() + count_of_common_outer_loops, common_outer_loop_ids.cend()}, source, output_ports);
-        }
+    };
+
+    // The case with parent loops: source -> target expr
+    for (size_t i = 0; i < expr->get_input_count(); ++i) {
+        update_ports(expr->get_input_port_connector(i)->get_source());
     }
-    const auto input_ports = expr->get_input_ports();
+
+    // The case with child loops: target expr -> consumers
     for (size_t i = 0; i < expr->get_output_count(); ++i) {
         const auto& consumers = expr->get_output_port_connector(i)->get_consumers();
         for (const auto& consumer : consumers) {
-            replace_loop_ports(get_common_outer_loops(expr, consumer.get_expr()), consumer, input_ports);
+            update_ports(consumer);
         }
     }
 }

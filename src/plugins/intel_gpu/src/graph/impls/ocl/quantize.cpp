@@ -25,7 +25,7 @@ struct quantize_impl : typed_primitive_impl_ocl<quantize> {
 
     void load(BinaryInputBuffer& ib) override {
         parent::load(ib);
-        if (is_dynamic()) {
+        if (is_dynamic() && _kernel_data.kernelName.length() != 0) {
             auto& kernel_selector = kernel_selector_t::Instance();
             auto kernel_impl = kernel_selector.GetImplementation(_kernel_data.kernelName);
             kernel_impl->GetUpdateDispatchDataFunc(_kernel_data);
@@ -142,6 +142,7 @@ attach_quantize_impl::attach_quantize_impl() {
         format::bfwzyx,
         format::bfuwzyx,
         format::bfvuwzyx,
+        format::b_fs_yx_fsv16,
     };
 
     auto keys = implementation_map<quantize>::combine(types, formats);

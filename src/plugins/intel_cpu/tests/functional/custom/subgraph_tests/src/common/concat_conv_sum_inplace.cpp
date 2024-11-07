@@ -51,6 +51,7 @@ public:
 #else
         const auto targetFormat = nhwc;
 #endif
+
         ov::ParameterVector inputParams{std::make_shared<ov::op::v0::Parameter>(ov::element::f32, inputShape),
                                         std::make_shared<ov::op::v0::Parameter>(ov::element::f32, inputShape)};
         auto Relu1 = std::make_shared<ov::op::v0::Relu>(inputParams[0]);

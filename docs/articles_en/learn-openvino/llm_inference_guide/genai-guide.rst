@@ -4,6 +4,14 @@ Run LLM Inference on OpenVINO with the GenAI Flavor
 .. meta::
    :description: Learn how to use the OpenVINO GenAI flavor to execute LLM models.
 
+.. toctree::
+   :maxdepth: 1
+   :hidden:
+
+   NPU inference of LLMs <genai-guide-npu>
+   genai-guide/genai-use-cases
+
+
 This guide will show you how to integrate the OpenVINO GenAI flavor into your application, covering
 loading a model and passing the input context to receive generated text. Note that the vanilla flavor of OpenVINO
 will not work with these instructions, make sure to
@@ -167,59 +175,6 @@ You can also create your custom streamer for more sophisticated processing:
             pipe.generate("The Sun is yellow because", ov::genai::streamer(custom_streamer), ov::genai::max_new_tokens(100));
          }
 
-Using GenAI in Chat Scenario
-################################
-
-For chat scenarios where inputs and outputs represent a conversation, maintaining KVCache across inputs
-may prove beneficial. The chat-specific methods **start_chat** and **finish_chat** are used to
-mark a conversation session, as you can see in these simple examples:
-
-.. tab-set::
-
-   .. tab-item:: Python
-      :sync: py
-
-      .. code-block:: python
-
-         import openvino_genai as ov_genai
-         pipe = ov_genai.LLMPipeline(model_path)
-
-         pipe.set_generation_config({'max_new_tokens': 100)
-
-         pipe.start_chat()
-         while True:
-            print('question:')
-            prompt = input()
-            if prompt == 'Stop!':
-               break
-            print(pipe.generate(prompt))
-         pipe.finish_chat()
-
-
-   .. tab-item:: C++
-      :sync: cpp
-
-      .. code-block:: cpp
-
-         int main(int argc, char* argv[]) {
-            std::string prompt;
-
-            std::string model_path = argv[1];
-            ov::genai::LLMPipeline pipe(model_path, "CPU");
-
-            ov::genai::GenerationConfig config = pipe.get_generation_config();
-            config.max_new_tokens = 100;
-            pipe.set_generation_config(config)
-
-            pipe.start_chat();
-            for (size_t i = 0; i < questions.size(); i++) {
-               std::cout << "question:\n";
-               std::getline(std::cin, prompt);
-
-               std::cout << pipe.generate(prompt) << std::endl;
-            }
-            pipe.finish_chat();
-         }
 
 Optimizing Generation with Grouped Beam Search
 #######################################################
@@ -310,7 +265,7 @@ OpenVINO GenAI Flavor includes the following API:
 
 * visibility  -  controls the visibility of the GenAI library.
 
-Learn more about API in the `GenAI repository <https://github.com/openvinotoolkit/openvino.genai/tree/master/src/cpp/include/openvino/genai>`__.
+Learn more in the `GenAI API reference <https://docs.openvino.ai/2024/api/genai_api/api.html>`__.
 
 Additional Resources
 ####################

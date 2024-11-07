@@ -53,6 +53,9 @@ struct Config {
     uint64_t fcDynamicQuantizationGroupSize = 32;
     ov::element::Type kvCachePrecision = ov::element::f16;
     bool fcDynamicQuantizationGroupSizeSetExplicitly = false;
+#if defined(OV_CPU_WITH_ACL)
+    bool aclFastMath = false;
+#endif
 #if defined(OPENVINO_ARCH_X86_64)
     size_t rtCacheCapacity = 5000ul;
 #else
@@ -66,6 +69,7 @@ struct Config {
     int threadsPerStream = 0;
     ov::threading::IStreamsExecutor::ThreadBindingType threadBindingType = ov::threading::IStreamsExecutor::ThreadBindingType::NONE;
     ov::hint::PerformanceMode hintPerfMode = ov::hint::PerformanceMode::LATENCY;
+    std::vector<std::vector<int>> streamsRankTable;
     bool changedHintPerfMode = false;
     ov::log::Level logLevel = ov::log::Level::NO;
     uint32_t hintNumRequests = 0;
@@ -73,6 +77,9 @@ struct Config {
     bool changedCpuPinning = false;
     ov::hint::SchedulingCoreType schedulingCoreType = ov::hint::SchedulingCoreType::ANY_CORE;
     std::set<ov::hint::ModelDistributionPolicy> modelDistributionPolicy = {};
+    int streamsRankLevel = 1;
+    int numSubStreams = 0;
+    bool enableNodeSplit = false;
     bool enableHyperThreading = true;
     bool changedHyperThreading = false;
 #if defined(OPENVINO_ARCH_X86) || defined(OPENVINO_ARCH_X86_64)
@@ -101,6 +108,8 @@ struct Config {
 
     int modelPreferThreads = -1;
     ModelType modelType = ModelType::Unknown;
+    std::function<std::string(const std::string&)> cacheEncrypt;
+    std::function<std::string(const std::string&)> cacheDecrypt;
 
 #ifdef CPU_DEBUG_CAPS
     DebugCapsConfig debugCaps;

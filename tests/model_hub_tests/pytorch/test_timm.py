@@ -6,7 +6,6 @@ import os
 import pytest
 import timm
 import torch
-from huggingface_hub.utils import HfHubHTTPError, LocalEntryNotFoundError
 from models_hub_common.utils import get_models_list, retry
 
 from torch_utils import TestTorchConvertModel
@@ -15,10 +14,10 @@ from torch_utils import TestTorchConvertModel
 def filter_timm(timm_list: list) -> list:
     unique_models = dict()
     filtered_list = []
-    ignore_list = ["base", "atto", "femto", "xxtiny", "xxsmall", "xxs", "pico",
-                   "xtiny", "xmall", "xs", "nano", "tiny", "s", "mini", "small",
-                   "lite", "medium", "m", "big", "large", "l", "xlarge", "xl",
-                   "huge", "xxlarge", "gigantic", "giant", "enormous"]
+    ignore_list = ["base", "zepto", "atto", "femto", "xxtiny", "xxsmall", "xxs",
+                   "pico", "xtiny", "xmall", "xs", "nano", "tiny", "s", "mini",
+                   "small", "lite", "medium", "m", "big", "large", "l", "xlarge",
+                   "xl", "huge", "xxlarge", "gigantic", "giant", "enormous"]
     ignore_set = set(ignore_list)
     for name in sorted(timm_list):
         if "x_" in name:
@@ -48,7 +47,7 @@ torch.manual_seed(0)
 
 
 class TestTimmConvertModel(TestTorchConvertModel):
-    @retry(3, exceptions=(HfHubHTTPError, LocalEntryNotFoundError), delay=1)
+    @retry(3, exceptions=(OSError,), delay=5)
     def load_model(self, model_name, model_link):
         m = timm.create_model(model_name, pretrained=True)
         cfg = timm.get_pretrained_cfg(model_name)

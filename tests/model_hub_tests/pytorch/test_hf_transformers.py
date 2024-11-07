@@ -5,7 +5,6 @@ import os
 
 from datasets import Audio, load_dataset
 from huggingface_hub import hf_hub_download, model_info
-from huggingface_hub.utils import HfHubHTTPError, LocalEntryNotFoundError
 from PIL import Image
 import pytest
 import torch
@@ -56,7 +55,7 @@ class TestTransformersModel(TestTorchConvertModel):
         url = "http://images.cocodataset.org/val2017/000000039769.jpg"
         self.image = Image.open(requests.get(url, stream=True).raw)
 
-    @retry(3, exceptions=(HfHubHTTPError, LocalEntryNotFoundError), delay=1)
+    @retry(3, exceptions=(OSError,), delay=1)
     def load_model(self, name, type):
         name, _, name_suffix = name.partition(':')
 
@@ -521,11 +520,18 @@ class TestTransformersModel(TestTorchConvertModel):
                                            ("bert-base-uncased", "bert"),
                                            ("google/flan-t5-base", "t5"),
                                            ("google/tapas-large-finetuned-wtq", "tapas"),
-                                           ("gpt2", "gpt2"),
                                            ("openai/clip-vit-large-patch14", "clip"),
                                            ])
     @pytest.mark.precommit
     def test_convert_model_precommit(self, name, type, ie_device):
+        self.run(model_name=name, model_link=type, ie_device=ie_device)
+
+    @pytest.mark.parametrize("name,type", [("bert-base-uncased", "bert"),
+                                           ("openai/clip-vit-large-patch14", "clip"),
+                                           ])
+    @pytest.mark.precommit
+    def test_convert_model_precommit_export(self, name, type, ie_device):
+        self.mode = "export"
         self.run(model_name=name, model_link=type, ie_device=ie_device)
 
     @pytest.mark.parametrize("type,name,mark,reason",

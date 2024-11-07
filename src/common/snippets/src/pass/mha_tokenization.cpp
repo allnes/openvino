@@ -268,15 +268,10 @@ ov::snippets::pass::TokenizeMHASnippets::TokenizeMHASnippets(const SnippetsToken
 
         const auto pattern_rank = matmul0->get_output_partial_shape(0).size();
 
-        const auto ops_count_before_softmax = ordered_ops.size();
         auto interm_op = matmul0->get_output_target_inputs(0).begin()->get_node()->shared_from_this();
         // Add supported operations which are between MatMul0 and Softmax to ordered_ops
         if (!update_intermediate_supported_ops(interm_op, ordered_ops, hidden_virtual_ports_count, potential_body_params_count))
             return false;
-
-        // If before Softmax there is Eltwise ops, there will be one more Buffer
-        if (ops_count_before_softmax != ordered_ops.size() && interm_op->get_output_partial_shape(0).rbegin()->is_dynamic())
-            uniqie_buffer_reg_group_count++;
 
         std::shared_ptr<ov::opset1::Reshape> reshape0 = nullptr;
         if (!tokenize_reshape_around_softmax(interm_op, reshape0, ordered_ops))
@@ -294,10 +289,6 @@ ov::snippets::pass::TokenizeMHASnippets::TokenizeMHASnippets(const SnippetsToken
 
         if (axis != rank.get_length() - 1 || interm_op->get_output_target_inputs(0).size() != 1)
             return false;
-
-        // Softmax need one buffer at least
-        if (interm_op->get_output_partial_shape(0).rbegin()->is_dynamic())
-            uniqie_buffer_reg_group_count++;
 
         ordered_ops.push_back(interm_op);
 
@@ -333,7 +324,7 @@ ov::snippets::pass::TokenizeMHASnippets::TokenizeMHASnippets(const SnippetsToken
         // The Loop will have one Buffer with the same shape both on input and output.
         // Need to check for precision to get if we need one more register for Buffer
         const auto matmul0_prc = op::Brgemm::get_output_type(matmul0->get_input_element_type(0), matmul0->get_input_element_type(1));
-        if (matmul1->get_input_element_type(0).size() != matmul0_prc.size() || matmul1->get_input_partial_shape(0).is_dynamic()) {
+        if (matmul1->get_input_element_type(0).size() != matmul0_prc.size()) {
             uniqie_buffer_reg_group_count++;
         }
 
@@ -387,8 +378,8 @@ ov::snippets::pass::TokenizeMHASnippets::TokenizeMHASnippets(const SnippetsToken
             parent = parent->get_input_node_shared_ptr(0);
             has_matmul0_has_ops_on_input = true;
         }
-        // If there are ops on second input of MatMul0 -> there always will be unique Buffer
-        if (has_matmul0_has_ops_on_input) {
+        // If there are ops on second input of MatMul0 and only one unique Buffer between MatMuls - there must be one more unique Buffer
+        if (has_matmul0_has_ops_on_input && uniqie_buffer_reg_group_count < 2) {
             uniqie_buffer_reg_group_count++;
         }
 
@@ -472,9 +463,25 @@ ov::snippets::pass::TokenizeMHASnippets::TokenizeMHASnippets(const SnippetsToken
 
         // TODO [75567]: move this plugin-specific constraint to the plugin callback
         const auto last_node = ordered_ops.back();
-        if (potential_body_params_count + last_node->get_output_size() + hidden_virtual_ports_count + uniqie_buffer_reg_group_count > 11) {
+        const auto io_count =  potential_body_params_count + last_node->get_output_size() + hidden_virtual_ports_count;
+        const auto data_count = io_count + uniqie_buffer_reg_group_count;
+        auto available_regs = config.get_data_ptr_gpr_count();
+        // [150148, 150149] Currently Snippets don't have mechanism of spilling registers on stack.
+        //                  Due to this limitation we have to skip tokenization of some subgraphs
+        //                  if we need more registers than we have on the target machine.
+        //                  `config.get_data_ptr_gpr_count()` provides available data registers count (including parameters, results and buffers)
+        //                  after excluding 2 registers for work amounts.
+        //                  However, MHA Subgraph has `SplitLoops` optimization which adds outermost blocked Loop by M. This Loop requires
+        //                  the separate own register for `work_amount` also. Thus, we have to decrement `available_regs` count in MHA case.
+        //                  Need to notice that in general we have enough count of available registers.
+        //                  But in rare cases (when there are a lot of parameters/results, the heuristic value of their number is `5`)
+        //                  the count of available registers might be not enough and we have to not tokenize these subgraphs.
+        //                  So only for these rare cases we decrement `available_regs` value.
+        if (io_count > 5)
+            available_regs--;
+
+        if (data_count > available_regs)
             return false;
-        }
 
         // If backend doesn't enable dynamic MHA tokenization, return false
         if (!config.is_dynamic_mha_token_enabled()) {
