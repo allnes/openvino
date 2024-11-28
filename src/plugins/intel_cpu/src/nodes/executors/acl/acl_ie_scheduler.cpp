@@ -28,10 +28,15 @@ void ACLScheduler::schedule_custom(ICPPKernel *kernel, const Hints &hints, const
 #if OV_THREAD == OV_THREAD_OMP
     //In OpenMP case parallel_get_num_threads() method returns 1 here because it's called outside parallel section
     //This is the reason why this method isn't used to initialize _num_threads
-    const auto _num_threads = num_iterations;
+    int current_num_threads = 1;
+#pragma omp parallel
+    {
+        current_num_threads = parallel_get_num_threads();
+    };
 #else
-    const auto _num_threads = std::min(num_iterations, static_cast<unsigned int>(parallel_get_num_threads()));
+    current_num_threads = parallel_get_num_threads();
 #endif
+    const auto _num_threads = std::min(num_iterations, static_cast<unsigned int>(current_num_threads));
     std::function<void(const Window &window, const ThreadInfo &info)> main_run;
     if (tensors.empty()) {
         main_run = [&](const Window &window, const ThreadInfo &info) {
