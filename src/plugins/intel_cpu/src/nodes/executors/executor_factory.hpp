@@ -108,7 +108,7 @@ public:
         m_suitableImplementations.erase(std::remove_if(m_suitableImplementations.begin(),
                                                        m_suitableImplementations.end(),
                                                        [&](const ExecutorImplementationRef& impl) -> bool {
-                                                           auto config = GraphEmitter<Attrs>::createConfig(memory, m_attrs, m_postOps);
+                                                           auto config = GraphEmitter<Attrs>::createConfig(memory, m_attrs);
                                                            if (auto fallbackConfig = impl.get().requiresFallback(config)) {
                                                                return true;
                                                            }

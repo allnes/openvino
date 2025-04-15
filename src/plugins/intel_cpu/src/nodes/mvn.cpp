@@ -200,10 +200,10 @@ void MVN::initSupportedPrimitiveDescriptors() {
     mvnAttrs.src_prc = descs.at(ARG_SRC)->getPrecision();
     mvnAttrs.dst_prc = descs.at(ARG_DST)->getPrecision();
 
-    postOps = getPostOps(fusedWith);
+    mvnAttrs.postOps = getPostOps(fusedWith);
 //    mvnAttrs.fusedWith = fusedWith;
     auto executionContext = std::make_shared<ExecutorContext>(context, getImplPriority(), privateWeightCache);
-    factory = std::make_shared<ExecutorFactory<MVNAttrs>>(mvnAttrs, postOps, executionContext, descs);
+    factory = std::make_shared<ExecutorFactory<MVNAttrs>>(mvnAttrs, executionContext, descs);
     const auto nodeDescriptors = factory->getProperMemoryDescriptors(descs);
 
     // TODO [DS]: inplace

@@ -7,6 +7,7 @@
 #include "openvino/core/type/element_type.hpp"
 #include "cpu_memory.h"
 #include "executor_config.hpp"
+#include "post_ops.hpp"
 
 namespace ov::intel_cpu {
 
@@ -24,6 +25,7 @@ struct MVNAttrs {
     MVNEpsMode epsMode_ = INSIDE_SQRT;
     ov::element::Type src_prc;
     ov::element::Type dst_prc;
+    PostOps postOps;
 };
 
 using MVNConfig = executor::Config<MVNAttrs>;

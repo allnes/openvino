@@ -13,7 +13,6 @@ namespace intel_cpu {
 class CommonMVNExecutor : public Executor {
 public:
     CommonMVNExecutor(const MVNAttrs& attrs,
-                      const PostOps& postOps,
                       const MemoryArgs& memory,
                       const ExecutorContext::CPtr context) : refMVNAttrs(attrs) {}
 

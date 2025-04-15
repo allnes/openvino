@@ -13,7 +13,6 @@ namespace intel_cpu {
 class ACLMVNExecutor : public ACLCommonExecutor {
 public:
     ACLMVNExecutor(const MVNAttrs& attrs,
-                   const PostOps& postOps,
                    const MemoryArgs& memory,
                    const ExecutorContext::CPtr context) : aclMVNAtrrs(attrs) {}
 

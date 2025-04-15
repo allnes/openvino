@@ -46,7 +46,6 @@ public:
 private:
     ExecutorPtr createExecutor();
     MVNAttrs mvnAttrs;
-    PostOps postOps;
     MemoryArgs memory;
     ExecutorFactoryPtr<MVNAttrs> factory;
     ExecutorPtr executor = nullptr;

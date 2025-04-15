@@ -79,10 +79,9 @@ const std::vector<ExecutorImplementation<MVNAttrs>>& getImplementations() {
             AcceptsAnyShape<MVNAttrs>{},
             // create
             [](const MVNAttrs& attrs,
-               const PostOps& postOps,
                const MemoryArgs& memory,
                const ExecutorContext::CPtr context) {
-                return std::make_shared<JITMVNExecutor>(attrs, postOps, memory, context);
+                return std::make_shared<JITMVNExecutor>(attrs, memory, context);
             })
         OV_CPU_INSTANCE_X64(
             "mvn_jit_x64_nCsp16c", ExecutorType::jit_x64, OperationType::MVN, ShapeTolerance::Agnostic,
@@ -102,10 +101,9 @@ const std::vector<ExecutorImplementation<MVNAttrs>>& getImplementations() {
             AcceptsAnyShape<MVNAttrs>{},
             // create
             [](const MVNAttrs& attrs,
-               const PostOps& postOps,
                const MemoryArgs& memory,
                const ExecutorContext::CPtr context) {
-                return std::make_shared<JITMVNExecutor>(attrs, postOps, memory, context);
+                return std::make_shared<JITMVNExecutor>(attrs, memory, context);
             })
         OV_CPU_INSTANCE_X64(
             "mvn_jit_x64_nCsp8c", ExecutorType::jit_x64, OperationType::MVN, ShapeTolerance::Agnostic,
@@ -125,10 +123,9 @@ const std::vector<ExecutorImplementation<MVNAttrs>>& getImplementations() {
             AcceptsAnyShape<MVNAttrs>{},
             // create
             [](const MVNAttrs& attrs,
-               const PostOps& postOps,
                const MemoryArgs& memory,
                const ExecutorContext::CPtr context) {
-                return std::make_shared<JITMVNExecutor>(attrs, postOps, memory, context);
+                return std::make_shared<JITMVNExecutor>(attrs, memory, context);
             })
         OV_CPU_INSTANCE_X64(
             "mvn_jit_x64_ncsp", ExecutorType::jit_x64, OperationType::MVN, ShapeTolerance::Agnostic,
@@ -146,10 +143,9 @@ const std::vector<ExecutorImplementation<MVNAttrs>>& getImplementations() {
             AcceptsAnyShape<MVNAttrs>{},
             // create
             [](const MVNAttrs& attrs,
-               const PostOps& postOps,
                const MemoryArgs& memory,
                const ExecutorContext::CPtr context) {
-                return std::make_shared<JITMVNExecutor>(attrs, postOps, memory, context);
+                return std::make_shared<JITMVNExecutor>(attrs, memory, context);
             })
         OV_CPU_INSTANCE_ACL(
             "mvn_acl_nspc", ExecutorType::Acl, OperationType::MVN, ShapeTolerance::Agnostic,
@@ -167,10 +163,9 @@ const std::vector<ExecutorImplementation<MVNAttrs>>& getImplementations() {
             AcceptsAnyShape<MVNAttrs>{},
             // create
             [](const MVNAttrs& attrs,
-               const PostOps& postOps,
                const MemoryArgs& memory,
                const ExecutorContext::CPtr context) {
-                return std::make_shared<ACLMVNExecutor>(attrs, postOps, memory, context);
+                return std::make_shared<ACLMVNExecutor>(attrs, memory, context);
             })
         OV_CPU_INSTANCE_ACL(
             "mvn_acl_ncsp", ExecutorType::Acl, OperationType::MVN, ShapeTolerance::Agnostic,
@@ -188,10 +183,9 @@ const std::vector<ExecutorImplementation<MVNAttrs>>& getImplementations() {
             AcceptsAnyShape<MVNAttrs>{},
             // create
             [](const MVNAttrs& attrs,
-               const PostOps& postOps,
                const MemoryArgs& memory,
                const ExecutorContext::CPtr context) {
-                return std::make_shared<ACLMVNExecutor>(attrs, postOps, memory, context);
+                return std::make_shared<ACLMVNExecutor>(attrs, memory, context);
             })
         OV_CPU_INSTANCE_COMMON(
             "mvn_ref_ncsp", ExecutorType::Common, OperationType::MVN, ShapeTolerance::Agnostic,
@@ -209,10 +203,9 @@ const std::vector<ExecutorImplementation<MVNAttrs>>& getImplementations() {
             AcceptsAnyShape<MVNAttrs>{},
             // create
             [](const MVNAttrs& attrs,
-               const PostOps& postOps,
                const MemoryArgs& memory,
                const ExecutorContext::CPtr context) {
-                return std::make_shared<CommonMVNExecutor>(attrs, postOps, memory, context);
+                return std::make_shared<CommonMVNExecutor>(attrs, memory, context);
             })
     };
     return mvnImplementations;
