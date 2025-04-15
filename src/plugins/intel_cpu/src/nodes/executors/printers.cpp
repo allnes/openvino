@@ -9,9 +9,10 @@
 #    include <ostream>
 
 #    include "fullyconnected_config.hpp"
-#    include "convolution_config.hpp"
+#    include "nodes/executors/convolution_config.hpp"
 #    include "post_ops.hpp"
 #    include "mvn_config.hpp"
+
 
 namespace ov::intel_cpu {
 

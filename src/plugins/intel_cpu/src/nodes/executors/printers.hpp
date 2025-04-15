@@ -20,6 +20,7 @@ struct Config;
 
 struct FCAttrs;
 struct ConvAttrs;
+struct MVNAttrs;
 
 std::ostream& operator<<(std::ostream& os, const FCAttrs& attrs);
 std::ostream& operator<<(std::ostream& os, const ConvAttrs& attrs);
@@ -34,7 +35,6 @@ std::ostream& operator<<(std::ostream& os, const executor::Config<Attrs>& config
         os << "[" << id << "]" << *descPtr << ";";
     }
 
-    os << config.postOps;
     os << config.attrs;
 
     return os;
