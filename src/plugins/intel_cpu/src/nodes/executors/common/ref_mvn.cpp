@@ -23,7 +23,7 @@ bool ov::intel_cpu::CommonMVNExecutor::update(const ov::intel_cpu::MemoryArgs &m
     return true;
 }
 
-bool ov::intel_cpu::CommonMVNExecutor::supports(const ov::intel_cpu::MVNConfig& config) {
+bool ov::intel_cpu::CommonMVNExecutor::supports([[maybe_unused]]const ov::intel_cpu::MVNConfig& config) {
     return true;
 }
 

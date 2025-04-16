@@ -117,9 +117,8 @@ using namespace dnnl::impl::utils;
 class JITMVNExecutor : public Executor {
 public:
     JITMVNExecutor(const MVNAttrs& attrs,
-                   const PostOps& postOps,
                    const MemoryArgs& memory,
-                   const ExecutorContext::CPtr context) : jitContext(context), jitMVNAttrs(attrs), mvnPostOps(postOps) {}
+                   const ExecutorContext::CPtr context) : jitContext(context), jitMVNAttrs(attrs) {}
 
     void execute(const MemoryArgs& memory) override;
 
@@ -145,7 +144,6 @@ public:
 private:
     ExecutorContext::CPtr jitContext;
     MVNAttrs jitMVNAttrs;
-    PostOps mvnPostOps;
     VectorDims shape5D;
     std::vector<const void*> postOpsDataPtrs;
     std::shared_ptr<old_version::MVNJitExecutor> oldMVNJitExecutor;

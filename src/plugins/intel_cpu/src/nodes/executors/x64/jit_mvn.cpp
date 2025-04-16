@@ -2268,7 +2268,7 @@ bool JITMVNExecutor::MVNKey::operator==(const MVNKey& rhs) const {
 void JITMVNExecutor::setPostOps(dnnl::primitive_attr &attr, bool initWeights) {
     dnnl::post_ops ops;
     postOpsDataPtrs.clear();
-    for (auto &postOp : mvnPostOps) {
+    for (auto &postOp : jitMVNAttrs.postOps) {
         if (const auto activation = std::dynamic_pointer_cast<ActivationPostOp>(postOp)) {
             std::cout << "std::dynamic_pointer_cast<ActivationPostOp>(postOp)" << std::endl;
         } else if (const auto scaleShift = std::dynamic_pointer_cast<ScaleShiftPostOp>(postOp)) {
