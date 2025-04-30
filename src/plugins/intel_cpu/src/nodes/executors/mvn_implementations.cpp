@@ -47,7 +47,8 @@ static const TypeMapping aclMVNTypeMapping {
 static const TypeMapping jitMVNTypeMapping {
         // {src, dst}         pt<src, dst>
         {{_f32 | _f16 | _bf16, _f32 | _f16 | _bf16}, pt(bypass(),    use<0>())},
-        {{_u8  | _i8,  _u8  | _i8},                  pt(bypass(),    use<0>())},
+        {{_u8  | _i8,  _u8  | _i8},                  pt(bypass(),    bypass())},
+        {{_u8  | _i8,  _f32 | _f16 | _bf16},         pt(bypass(),    bypass())},
         {{_any, _any},                               pt(just<f32>(), use<0>())}
 };
 
@@ -66,7 +67,7 @@ const std::vector<ExecutorImplementation<MVNAttrs>>& getImplementations() {
             "mvn_jit_x64_nspc", ExecutorType::jit_x64, OperationType::MVN, ShapeTolerance::Agnostic,
             // supports
             [](const MVNConfig& config) -> bool {
-                VERIFY(one_of(srcRank(config), 4lu, 5lu), UNSUPPORTED_SRC_RANK);
+//                VERIFY(one_of(srcRank(config), 4lu, 5lu), UNSUPPORTED_SRC_RANK);
                 return JITMVNExecutor::supports(config);
             },
             // requiresFallback
@@ -87,7 +88,7 @@ const std::vector<ExecutorImplementation<MVNAttrs>>& getImplementations() {
             "mvn_jit_x64_nCsp16c", ExecutorType::jit_x64, OperationType::MVN, ShapeTolerance::Agnostic,
             // supports
             [](const MVNConfig& config) -> bool {
-                VERIFY(one_of(srcRank(config), 4lu, 5lu), UNSUPPORTED_SRC_RANK);
+//                VERIFY(one_of(srcRank(config), 4lu, 5lu), UNSUPPORTED_SRC_RANK);
                 VERIFY(mayiuse(cpu::x64::avx512_core), UNSUPPORTED_ISA);
                 return JITMVNExecutor::supports(config);
             },
@@ -109,8 +110,8 @@ const std::vector<ExecutorImplementation<MVNAttrs>>& getImplementations() {
             "mvn_jit_x64_nCsp8c", ExecutorType::jit_x64, OperationType::MVN, ShapeTolerance::Agnostic,
             // supports
             [](const MVNConfig& config) -> bool {
-                VERIFY(one_of(srcRank(config), 4lu, 5lu), UNSUPPORTED_SRC_RANK);
-                VERIFY(mayiuse(cpu::x64::avx2) || mayiuse(cpu::x64::sse41), UNSUPPORTED_ISA);
+//                VERIFY(one_of(srcRank(config), 4lu, 5lu), UNSUPPORTED_SRC_RANK);
+                VERIFY(mayiuse(cpu::x64::avx2), UNSUPPORTED_ISA);
                 return JITMVNExecutor::supports(config);
             },
             // requiresFallback

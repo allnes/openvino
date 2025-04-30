@@ -26,6 +26,7 @@ struct MVNAttrs {
     ov::element::Type src_prc;
     ov::element::Type dst_prc;
     PostOps postOps;
+    std::vector<NodePtr> fusedWith;
 };
 
 using MVNConfig = executor::Config<MVNAttrs>;

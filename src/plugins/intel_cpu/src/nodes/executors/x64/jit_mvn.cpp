@@ -14,8 +14,7 @@
 #include "memory_desc/dnnl_blocked_memory_desc.h"
 #include "utils/cpu_utils.hpp"
 
-namespace ov {
-namespace intel_cpu {
+namespace ov::intel_cpu {
 
 namespace old_version {
 
@@ -2265,36 +2264,36 @@ bool JITMVNExecutor::MVNKey::operator==(const MVNKey& rhs) const {
 }
 
 
-void JITMVNExecutor::setPostOps(dnnl::primitive_attr &attr, bool initWeights) {
+void JITMVNExecutor::setPostOps(dnnl::primitive_attr &attr, [[maybe_unused]] bool initWeights) {
     dnnl::post_ops ops;
     postOpsDataPtrs.clear();
-    for (auto &postOp : jitMVNAttrs.postOps) {
-        if (const auto activation = std::dynamic_pointer_cast<ActivationPostOp>(postOp)) {
-            std::cout << "std::dynamic_pointer_cast<ActivationPostOp>(postOp)" << std::endl;
-        } else if (const auto scaleShift = std::dynamic_pointer_cast<ScaleShiftPostOp>(postOp)) {
-            std::cout << "std::dynamic_pointer_cast<ScaleShiftPostOp>(postOp)" << std::endl;
-        } else if (const auto fakeQuantize = std::dynamic_pointer_cast<FakeQuantizePostOp>(postOp)) {
-            std::cout << "std::dynamic_pointer_cast<FakeQuantizePostOp>(postOp)" << std::endl;
-        } else {
-            OPENVINO_THROW("Fusing operation to MVN node is not implemented");
+//    for (auto &postOp : jitMVNAttrs.postOps) {
+//        if (const auto activation = std::dynamic_pointer_cast<ActivationPostOp>(postOp)) {
+//            std::cout << "std::dynamic_pointer_cast<ActivationPostOp>(postOp)" << std::endl;
+//        } else if (const auto scaleShift = std::dynamic_pointer_cast<ScaleShiftPostOp>(postOp)) {
+//            std::cout << "std::dynamic_pointer_cast<ScaleShiftPostOp>(postOp)" << std::endl;
+//        } else if (const auto fakeQuantize = std::dynamic_pointer_cast<FakeQuantizePostOp>(postOp)) {
+//            std::cout << "std::dynamic_pointer_cast<FakeQuantizePostOp>(postOp)" << std::endl;
+//        } else {
+//            OPENVINO_THROW("Fusing operation to MVN node is not implemented");
+//        }
+//    }
+
+    for (auto &node : jitMVNAttrs.fusedWith) {
+        int channelAxis = 1;
+        auto* fakeQuantizeNode = dynamic_cast<node::FakeQuantize *>(node.get());
+        if (fakeQuantizeNode) {
+            fakeQuantizeNode->appendPostOps(ops, {}, postOpsDataPtrs, channelAxis);
+            continue;
+        }
+
+        auto* eltwiseNode = dynamic_cast<node::Eltwise *>(node.get());
+        if (eltwiseNode) {
+            eltwiseNode->appendPostOps(ops, shape5D, postOpsDataPtrs, channelAxis);
+            continue;
         }
     }
     attr.set_post_ops(ops);
-
-//    for (auto &node : jitMVNAttrs.fusedWith) {
-//        auto* fakeQuantizeNode = dynamic_cast<node::FakeQuantize *>(node.get());
-//        if (fakeQuantizeNode) {
-//            fakeQuantizeNode->appendPostOps(ops, {}, postOpsDataPtrs);
-//            continue;
-//        }
-//
-//        auto* eltwiseNode = dynamic_cast<node::Eltwise *>(node.get());
-//        if (eltwiseNode) {
-//            eltwiseNode->appendPostOps(ops, shape5D, postOpsDataPtrs);
-//            continue;
-//        }
-//    }
 }
 
-}  // namespace intel_cpu
-}  // namespace ov
+} // namespace ov::intel_cpu
