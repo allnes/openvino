@@ -21,6 +21,7 @@
 #define UNSUPPORTED_PER_CHANNEL_QUANTIZATION " unsupported per-channel quantization"
 #define UNSUPPORTED_SRC_LAYOUT               " unsupported src layout"
 
+// @todo implement VERIFY_OR version to support multiple conditions and error messages
 #define VERIFY(condition, ...)      \
     do {                            \
         if (!(condition)) {         \
