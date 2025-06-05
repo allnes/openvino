@@ -24,7 +24,7 @@ public:
                                  uint8_t* dst_data,
                                  const jit_permute_config_params& jcp,
                                  const int mb);
-    bool init(const TransposeParams& transposeParams,
+    bool init(const TransposeAttrs& transposeParams,
               const std::vector<MemoryDescPtr>& srcDescs,
               const std::vector<MemoryDescPtr>& dstDescs,
               const dnnl::primitive_attr& attr) override;
@@ -39,7 +39,7 @@ private:
 
 class RefTransposeExecutorBuilder : public TransposeExecutorBuilder {
 public:
-    [[nodiscard]] bool isSupported([[maybe_unused]] const TransposeParams& transposeParams,
+    [[nodiscard]] bool isSupported([[maybe_unused]] const TransposeAttrs& transposeParams,
                                    [[maybe_unused]] const std::vector<MemoryDescPtr>& srcDescs,
                                    [[maybe_unused]] const std::vector<MemoryDescPtr>& dstDescs) const override {
         return true;

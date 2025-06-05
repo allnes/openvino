@@ -26,7 +26,7 @@ const std::vector<TransposeExecutorDesc>& getTransposeExecutorsList();
 
 class TransposeExecutorFactory : public ExecutorFactoryLegacy {
 public:
-    TransposeExecutorFactory(const TransposeParams& transposeParams,
+    TransposeExecutorFactory(const TransposeAttrs& transposeParams,
                              const std::vector<MemoryDescPtr>& srcDescs,
                              const std::vector<MemoryDescPtr>& dstDescs,
                              const ExecutorContext::CPtr& context)
@@ -39,7 +39,7 @@ public:
     }
 
     ~TransposeExecutorFactory() override = default;
-    virtual TransposeExecutorPtr makeExecutor(const TransposeParams& transposeParams,
+    virtual TransposeExecutorPtr makeExecutor(const TransposeAttrs& transposeParams,
                                               const std::vector<MemoryDescPtr>& srcDescs,
                                               const std::vector<MemoryDescPtr>& dstDescs,
                                               const dnnl::primitive_attr& attr);

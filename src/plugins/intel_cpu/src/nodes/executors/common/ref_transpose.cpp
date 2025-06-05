@@ -88,7 +88,7 @@ void RefTransposeExecutor::exec(const std::vector<MemoryCPtr>& src, const std::v
     referenceExecute(src_data, dst_data, jcp, MB);
 }
 
-bool RefTransposeExecutor::init(const TransposeParams& transposeParams,
+bool RefTransposeExecutor::init(const TransposeAttrs& transposeParams,
                                 [[maybe_unused]] const std::vector<MemoryDescPtr>& srcDescs,
                                 [[maybe_unused]] const std::vector<MemoryDescPtr>& dstDescs,
                                 [[maybe_unused]] const dnnl::primitive_attr& attr) {

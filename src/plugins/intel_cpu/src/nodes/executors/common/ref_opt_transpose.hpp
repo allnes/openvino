@@ -22,7 +22,7 @@ class RefOptimizedTransposeExecutor : public TransposeExecutor {
 public:
     using TransposeExecutor::TransposeExecutor;
 
-    bool init(const TransposeParams& transposeParams,
+    bool init(const TransposeAttrs& transposeParams,
               const std::vector<MemoryDescPtr>& srcDescs,
               const std::vector<MemoryDescPtr>& dstDescs,
               const dnnl::primitive_attr& attr) override;
@@ -34,7 +34,7 @@ public:
 
 class RefOptimizedTransposeExecutorBuilder : public TransposeExecutorBuilder {
 public:
-    [[nodiscard]] bool isSupported(const TransposeParams& transposeParams,
+    [[nodiscard]] bool isSupported(const TransposeAttrs& transposeParams,
                                    const std::vector<MemoryDescPtr>& srcDescs,
                                    [[maybe_unused]] const std::vector<MemoryDescPtr>& dstDescs) const override {
         static const std::vector<std::vector<size_t>> optimizedOrders = {

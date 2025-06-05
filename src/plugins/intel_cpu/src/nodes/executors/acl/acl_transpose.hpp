@@ -15,7 +15,7 @@ class ACLTransposeExecutor : public TransposeExecutor {
 public:
     using TransposeExecutor::TransposeExecutor;
 
-    bool init(const TransposeParams& transposeParams,
+    bool init(const TransposeAttrs& transposeParams,
               const std::vector<MemoryDescPtr>& srcDescs,
               const std::vector<MemoryDescPtr>& dstDescs,
               const dnnl::primitive_attr& attr) override;
@@ -31,7 +31,7 @@ private:
 
 class ACLTransposeExecutorBuilder : public TransposeExecutorBuilder {
 public:
-    [[nodiscard]] bool isSupported([[maybe_unused]] const TransposeParams& transposeParams,
+    [[nodiscard]] bool isSupported([[maybe_unused]] const TransposeAttrs& transposeParams,
                                    const std::vector<MemoryDescPtr>& srcDescs,
                                    const std::vector<MemoryDescPtr>& dstDescs) const override {
         if (!(srcDescs[0]->hasLayoutType(LayoutType::ncsp) && dstDescs[0]->hasLayoutType(LayoutType::ncsp)) &&

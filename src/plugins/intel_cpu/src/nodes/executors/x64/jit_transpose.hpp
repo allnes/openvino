@@ -21,7 +21,7 @@ class JitTransposeExecutor : public TransposeExecutor {
 public:
     using TransposeExecutor::TransposeExecutor;
 
-    bool init(const TransposeParams& transposeParams,
+    bool init(const TransposeAttrs& transposeParams,
               const std::vector<MemoryDescPtr>& srcDescs,
               const std::vector<MemoryDescPtr>& dstDescs,
               const dnnl::primitive_attr& attr) override;
@@ -36,7 +36,7 @@ private:
 
 class JitTransposeExecutorBuilder : public TransposeExecutorBuilder {
 public:
-    [[nodiscard]] bool isSupported(const TransposeParams& transposeParams,
+    [[nodiscard]] bool isSupported(const TransposeAttrs& transposeParams,
                                    const std::vector<MemoryDescPtr>& srcDescs,
                                    const std::vector<MemoryDescPtr>& dstDescs) const override;
     [[nodiscard]] TransposeExecutorPtr makeExecutor(const ExecutorContext::CPtr context) const override {

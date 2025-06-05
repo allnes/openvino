@@ -350,7 +350,7 @@ void MlasTransposeExecutor::exec(const std::vector<MemoryCPtr>& src, const std::
     }
 }
 
-bool MlasTransposeExecutor::init(const TransposeParams& transposeParams,
+bool MlasTransposeExecutor::init(const TransposeAttrs& transposeParams,
                                  [[maybe_unused]] const std::vector<MemoryDescPtr>& srcDescs,
                                  [[maybe_unused]] const std::vector<MemoryDescPtr>& dstDescs,
                                  [[maybe_unused]] const dnnl::primitive_attr& attr) {
@@ -361,7 +361,7 @@ bool MlasTransposeExecutor::init(const TransposeParams& transposeParams,
     return true;
 }
 
-bool MlasTransposeExecutorBuilder::isSupported([[maybe_unused]] const TransposeParams& transposeParams,
+bool MlasTransposeExecutorBuilder::isSupported([[maybe_unused]] const TransposeAttrs& transposeParams,
                                                const std::vector<MemoryDescPtr>& srcDescs,
                                                const std::vector<MemoryDescPtr>& dstDescs) const {
     if (!srcDescs[0]->hasLayoutType(LayoutType::ncsp) || !dstDescs[0]->hasLayoutType(LayoutType::ncsp)) {

@@ -16,11 +16,8 @@
 #include "nodes/executors/executor.hpp"
 #include "nodes/executors/transpose.hpp"
 #include "openvino/core/node.hpp"
-#include "openvino/core/type/element_type.hpp"
 
-namespace ov {
-namespace intel_cpu {
-namespace node {
+namespace ov::intel_cpu::node {
 
 class Transpose : public Node {
 public:
@@ -37,7 +34,7 @@ public:
     }
 
     const VectorDims& getOrder() const {
-        return order;
+        return transposeParams.order;
     }
 
     bool neverExecute() const override;
@@ -45,8 +42,8 @@ public:
     bool needPrepareParams() const override;
     void prepareParams() override;
 
-    void setOptimized(bool isOptimized) {
-        this->isOptimized = isOptimized;
+    void setOptimized(bool _isOptimized) {
+        this->transposeParams.isOptimized = _isOptimized;
     }
 
 protected:
@@ -56,20 +53,9 @@ protected:
 private:
     TransposeExecutorPtr execPtr = nullptr;
     dnnl::primitive prim;
-    VectorDims order;
-    ov::element::Type prec;
-
-    TransposeParams transposeParams;
-
-    bool isInputOrderConst = false;
-
+    TransposeAttrs transposeParams;
     static constexpr size_t INPUT_DATA_IDX = 0lu;
     static constexpr size_t INPUT_ORDER_IDX = 1lu;
-
-    bool performAsReorder = false;
-    bool isOptimized = false;
 };
 
-}  // namespace node
-}  // namespace intel_cpu
-}  // namespace ov
+} // namespace ov::intel_cpu::node

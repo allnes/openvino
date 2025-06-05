@@ -6,7 +6,7 @@
 
 #include "acl_utils.hpp"
 
-bool ov::intel_cpu::ACLTransposeExecutor::init(const ov::intel_cpu::TransposeParams& transposeParams,
+bool ov::intel_cpu::ACLTransposeExecutor::init(const ov::intel_cpu::TransposeAttrs& transposeParams,
                                                const std::vector<MemoryDescPtr>& srcDescs,
                                                const std::vector<MemoryDescPtr>& dstDescs,
                                                [[maybe_unused]] const dnnl::primitive_attr& attr) {

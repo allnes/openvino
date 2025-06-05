@@ -33,7 +33,7 @@ const std::vector<TransposeExecutorDesc>& getTransposeExecutorsList() {
     return descs;
 }
 
-TransposeExecutorPtr TransposeExecutorFactory::makeExecutor(const TransposeParams& transposeParams,
+TransposeExecutorPtr TransposeExecutorFactory::makeExecutor(const TransposeAttrs& transposeParams,
                                                             const std::vector<MemoryDescPtr>& srcDescs,
                                                             const std::vector<MemoryDescPtr>& dstDescs,
                                                             const dnnl::primitive_attr& attr) {

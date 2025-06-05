@@ -189,7 +189,7 @@ void Reorder::prepareReorderAsTranspose(const MemoryDescPtr& parentDesc, const M
     auto transposedDesc =
         std::make_shared<CpuBlockedMemoryDesc>(parentDesc->getPrecision(), Shape{transposedBlockDims});
 
-    TransposeParams transposeParams;
+    TransposeAttrs transposeParams;
     transposeParams.permuteParams.src_block_dims = parentDesc->as<BlockedMemoryDesc>()->getBlockDims();
     transposeParams.permuteParams.src_block_order = parentDesc->as<BlockedMemoryDesc>()->getOrder();
     transposeParams.permuteParams.dst_block_dims = transposedBlockDims;
