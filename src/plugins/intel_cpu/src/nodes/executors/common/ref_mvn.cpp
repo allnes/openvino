@@ -10,6 +10,7 @@
 #include "openvino/core/parallel.hpp"
 #include "utils/bfloat16.hpp"
 #include "utils/general_utils.h"
+#include "nodes/common/cpu_convert.h"
 
 namespace ov::intel_cpu {
 
@@ -68,86 +69,314 @@ void MVNRefExecutor::executeImpl(const MemoryArgs& memory) {
 }
 
 void MVNRefExecutor::mvn_ref(const uint8_t* src_data, uint8_t* dst_data, const VectorDims& shape5d) {
-    const float* src_data_ptr = reinterpret_cast<const float*>(src_data);
-    float* dst_data_ptr = reinterpret_cast<float*>(dst_data);
-
     const size_t N = shape5d[0];
     const size_t C = shape5d[1];
     const size_t D = shape5d[2];
     const size_t H = shape5d[3];
     const size_t W = shape5d[4];
+    const size_t total_size = N * C * D * H * W;
+    
+    // Check if we need conversion or can work directly with the data
+    const float* src_data_ptr = nullptr;
+    float* dst_data_ptr = nullptr;
+    std::vector<float> src_float;
+    std::vector<float> dst_float;
+    
+    if (attrs.src_prc == ov::element::f32) {
+        // No conversion needed for input
+        src_data_ptr = reinterpret_cast<const float*>(src_data);
+    } else {
+        // Convert input to float for intermediate calculations
+        src_float.resize(total_size);
+        cpu_convert(src_data, src_float.data(), attrs.src_prc, ov::element::f32, total_size);
+        src_data_ptr = src_float.data();
+    }
+    
+    if (attrs.dst_prc == ov::element::f32) {
+        // No conversion needed for output
+        dst_data_ptr = reinterpret_cast<float*>(dst_data);
+    } else {
+        // We'll need to convert output later
+        dst_float.resize(total_size);
+        dst_data_ptr = dst_float.data();
+    }
 
     if (attrs.execAcrossChannels_) {
         parallel_for(N, [&](int b) {
             const size_t data_size = C * D * H * W;
-            const float* src_data_ptr_b = src_data_ptr + b * data_size;
-            float* dst_data_ptr_b = dst_data_ptr + b * data_size;
-
+            
+            // Pre-calculate strides for better optimization
+            const size_t spatial_size = D * H * W;
+            const size_t HW = H * W;
+            
             // Calculate mean
             double mean = 0;
-            for (size_t i = 0; i < data_size; i++) {
-                mean += src_data_ptr_b[i];
+            if (attrs.layout == mvn_planar) {
+                // NCDHW/NCHW layout - planar format
+                for (size_t c = 0; c < C; c++) {
+                    const size_t c_offset = b * C * spatial_size + c * spatial_size;
+                    for (size_t d = 0; d < D; d++) {
+                        const size_t d_offset = c_offset + d * HW;
+                        for (size_t h = 0; h < H; h++) {
+                            const size_t h_offset = d_offset + h * W;
+                            for (size_t w = 0; w < W; w++) {
+                                mean += src_data_ptr[h_offset + w];
+                            }
+                        }
+                    }
+                }
+            } else {
+                // NDHWC/NHWC layout - channel last format
+                const size_t b_offset = b * spatial_size * C;
+                for (size_t d = 0; d < D; d++) {
+                    const size_t d_offset = b_offset + d * HW * C;
+                    for (size_t h = 0; h < H; h++) {
+                        const size_t h_offset = d_offset + h * W * C;
+                        for (size_t w = 0; w < W; w++) {
+                            const size_t w_offset = h_offset + w * C;
+                            for (size_t c = 0; c < C; c++) {
+                                mean += src_data_ptr[w_offset + c];
+                            }
+                        }
+                    }
+                }
             }
             mean /= data_size;
 
             // Calculate variance (if needed) and normalize
             if (attrs.normalizeVariance_) {
                 double variance = 0;
-                for (size_t i = 0; i < data_size; i++) {
-                    double diff = src_data_ptr_b[i] - mean;
-                    variance += diff * diff;
+                if (attrs.layout == mvn_planar) {
+                    for (size_t c = 0; c < C; c++) {
+                        const size_t c_offset = b * C * spatial_size + c * spatial_size;
+                        for (size_t d = 0; d < D; d++) {
+                            const size_t d_offset = c_offset + d * HW;
+                            for (size_t h = 0; h < H; h++) {
+                                const size_t h_offset = d_offset + h * W;
+                                for (size_t w = 0; w < W; w++) {
+                                    double diff = src_data_ptr[h_offset + w] - mean;
+                                    variance += diff * diff;
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    const size_t b_offset = b * spatial_size * C;
+                    for (size_t d = 0; d < D; d++) {
+                        const size_t d_offset = b_offset + d * HW * C;
+                        for (size_t h = 0; h < H; h++) {
+                            const size_t h_offset = d_offset + h * W * C;
+                            for (size_t w = 0; w < W; w++) {
+                                const size_t w_offset = h_offset + w * C;
+                                for (size_t c = 0; c < C; c++) {
+                                    double diff = src_data_ptr[w_offset + c] - mean;
+                                    variance += diff * diff;
+                                }
+                            }
+                        }
+                    }
                 }
                 variance /= data_size;
 
                 double sigma = attrs.epsMode_ == INSIDE_SQRT
                     ? std::sqrt(variance + attrs.epsValue_)
                     : std::sqrt(variance) + attrs.epsValue_;
+                const double inv_sigma = 1.0 / sigma;
 
-                for (size_t i = 0; i < data_size; i++) {
-                    dst_data_ptr_b[i] = (src_data_ptr_b[i] - mean) / sigma;
+                // Normalize
+                if (attrs.layout == mvn_planar) {
+                    for (size_t c = 0; c < C; c++) {
+                        const size_t c_offset = b * C * spatial_size + c * spatial_size;
+                        for (size_t d = 0; d < D; d++) {
+                            const size_t d_offset = c_offset + d * HW;
+                            for (size_t h = 0; h < H; h++) {
+                                const size_t h_offset = d_offset + h * W;
+                                for (size_t w = 0; w < W; w++) {
+                                    const size_t idx = h_offset + w;
+                                    dst_data_ptr[idx] = (src_data_ptr[idx] - mean) * inv_sigma;
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    const size_t b_offset = b * spatial_size * C;
+                    for (size_t d = 0; d < D; d++) {
+                        const size_t d_offset = b_offset + d * HW * C;
+                        for (size_t h = 0; h < H; h++) {
+                            const size_t h_offset = d_offset + h * W * C;
+                            for (size_t w = 0; w < W; w++) {
+                                const size_t w_offset = h_offset + w * C;
+                                for (size_t c = 0; c < C; c++) {
+                                    const size_t idx = w_offset + c;
+                                    dst_data_ptr[idx] = (src_data_ptr[idx] - mean) * inv_sigma;
+                                }
+                            }
+                        }
+                    }
                 }
             } else {
-                for (size_t i = 0; i < data_size; i++) {
-                    dst_data_ptr_b[i] = src_data_ptr_b[i] - mean;
+                // Just subtract mean
+                if (attrs.layout == mvn_planar) {
+                    for (size_t c = 0; c < C; c++) {
+                        const size_t c_offset = b * C * spatial_size + c * spatial_size;
+                        for (size_t d = 0; d < D; d++) {
+                            const size_t d_offset = c_offset + d * HW;
+                            for (size_t h = 0; h < H; h++) {
+                                const size_t h_offset = d_offset + h * W;
+                                for (size_t w = 0; w < W; w++) {
+                                    const size_t idx = h_offset + w;
+                                    dst_data_ptr[idx] = src_data_ptr[idx] - mean;
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    const size_t b_offset = b * spatial_size * C;
+                    for (size_t d = 0; d < D; d++) {
+                        const size_t d_offset = b_offset + d * HW * C;
+                        for (size_t h = 0; h < H; h++) {
+                            const size_t h_offset = d_offset + h * W * C;
+                            for (size_t w = 0; w < W; w++) {
+                                const size_t w_offset = h_offset + w * C;
+                                for (size_t c = 0; c < C; c++) {
+                                    const size_t idx = w_offset + c;
+                                    dst_data_ptr[idx] = src_data_ptr[idx] - mean;
+                                }
+                            }
+                        }
+                    }
                 }
             }
         });
     } else {
         parallel_for2d(N, C, [&](int b, int c) {
             const size_t data_size = D * H * W;
-            const size_t offset = (b * C + c) * data_size;
-            const float* src_data_ptr_c = src_data_ptr + offset;
-            float* dst_data_ptr_c = dst_data_ptr + offset;
-
+            const size_t HW = H * W;
+            
             // Calculate mean
             double mean = 0;
-            for (size_t i = 0; i < data_size; i++) {
-                mean += src_data_ptr_c[i];
+            if (attrs.layout == mvn_planar) {
+                // NCDHW/NCHW layout - planar format
+                const size_t c_offset = b * C * data_size + c * data_size;
+                for (size_t d = 0; d < D; d++) {
+                    const size_t d_offset = c_offset + d * HW;
+                    for (size_t h = 0; h < H; h++) {
+                        const size_t h_offset = d_offset + h * W;
+                        for (size_t w = 0; w < W; w++) {
+                            mean += src_data_ptr[h_offset + w];
+                        }
+                    }
+                }
+            } else {
+                // NDHWC/NHWC layout - channel last format
+                const size_t b_offset = b * data_size * C;
+                for (size_t d = 0; d < D; d++) {
+                    const size_t d_offset = b_offset + d * HW * C;
+                    for (size_t h = 0; h < H; h++) {
+                        const size_t h_offset = d_offset + h * W * C;
+                        for (size_t w = 0; w < W; w++) {
+                            mean += src_data_ptr[h_offset + w * C + c];
+                        }
+                    }
+                }
             }
             mean /= data_size;
 
             // Calculate variance (if needed) and normalize
             if (attrs.normalizeVariance_) {
                 double variance = 0;
-                for (size_t i = 0; i < data_size; i++) {
-                    double diff = src_data_ptr_c[i] - mean;
-                    variance += diff * diff;
+                if (attrs.layout == mvn_planar) {
+                    const size_t c_offset = b * C * data_size + c * data_size;
+                    for (size_t d = 0; d < D; d++) {
+                        const size_t d_offset = c_offset + d * HW;
+                        for (size_t h = 0; h < H; h++) {
+                            const size_t h_offset = d_offset + h * W;
+                            for (size_t w = 0; w < W; w++) {
+                                double diff = src_data_ptr[h_offset + w] - mean;
+                                variance += diff * diff;
+                            }
+                        }
+                    }
+                } else {
+                    const size_t b_offset = b * data_size * C;
+                    for (size_t d = 0; d < D; d++) {
+                        const size_t d_offset = b_offset + d * HW * C;
+                        for (size_t h = 0; h < H; h++) {
+                            const size_t h_offset = d_offset + h * W * C;
+                            for (size_t w = 0; w < W; w++) {
+                                double diff = src_data_ptr[h_offset + w * C + c] - mean;
+                                variance += diff * diff;
+                            }
+                        }
+                    }
                 }
                 variance /= data_size;
 
                 double sigma = attrs.epsMode_ == INSIDE_SQRT
                     ? std::sqrt(variance + attrs.epsValue_)
                     : std::sqrt(variance) + attrs.epsValue_;
+                const double inv_sigma = 1.0 / sigma;
 
-                for (size_t i = 0; i < data_size; i++) {
-                    dst_data_ptr_c[i] = (src_data_ptr_c[i] - mean) / sigma;
+                // Normalize
+                if (attrs.layout == mvn_planar) {
+                    const size_t c_offset = b * C * data_size + c * data_size;
+                    for (size_t d = 0; d < D; d++) {
+                        const size_t d_offset = c_offset + d * HW;
+                        for (size_t h = 0; h < H; h++) {
+                            const size_t h_offset = d_offset + h * W;
+                            for (size_t w = 0; w < W; w++) {
+                                const size_t idx = h_offset + w;
+                                dst_data_ptr[idx] = (src_data_ptr[idx] - mean) * inv_sigma;
+                            }
+                        }
+                    }
+                } else {
+                    const size_t b_offset = b * data_size * C;
+                    for (size_t d = 0; d < D; d++) {
+                        const size_t d_offset = b_offset + d * HW * C;
+                        for (size_t h = 0; h < H; h++) {
+                            const size_t h_offset = d_offset + h * W * C;
+                            for (size_t w = 0; w < W; w++) {
+                                const size_t idx = h_offset + w * C + c;
+                                dst_data_ptr[idx] = (src_data_ptr[idx] - mean) * inv_sigma;
+                            }
+                        }
+                    }
                 }
             } else {
-                for (size_t i = 0; i < data_size; i++) {
-                    dst_data_ptr_c[i] = src_data_ptr_c[i] - mean;
+                // Just subtract mean
+                if (attrs.layout == mvn_planar) {
+                    const size_t c_offset = b * C * data_size + c * data_size;
+                    for (size_t d = 0; d < D; d++) {
+                        const size_t d_offset = c_offset + d * HW;
+                        for (size_t h = 0; h < H; h++) {
+                            const size_t h_offset = d_offset + h * W;
+                            for (size_t w = 0; w < W; w++) {
+                                const size_t idx = h_offset + w;
+                                dst_data_ptr[idx] = src_data_ptr[idx] - mean;
+                            }
+                        }
+                    }
+                } else {
+                    const size_t b_offset = b * data_size * C;
+                    for (size_t d = 0; d < D; d++) {
+                        const size_t d_offset = b_offset + d * HW * C;
+                        for (size_t h = 0; h < H; h++) {
+                            const size_t h_offset = d_offset + h * W * C;
+                            for (size_t w = 0; w < W; w++) {
+                                const size_t idx = h_offset + w * C + c;
+                                dst_data_ptr[idx] = src_data_ptr[idx] - mean;
+                            }
+                        }
+                    }
                 }
             }
         });
+    }
+    
+    // Convert output back to destination precision if needed
+    if (attrs.dst_prc != ov::element::f32) {
+        cpu_convert(dst_float.data(), dst_data, ov::element::f32, attrs.dst_prc, total_size);
     }
 }
 

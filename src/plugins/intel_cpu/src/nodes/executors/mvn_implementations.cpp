@@ -39,9 +39,10 @@ using namespace executor;
 // Mapping notation for MVN arguments
 static const MappingNotation mvnMappingNotation{ARG_SRC, ARG_DST};
 
-// Layout configuration for MVN
+// Layout configuration for MVN - support both planar and channel-last formats
 using LayoutConfig = std::vector<LayoutType>;
-static const LayoutConfig mvnLayoutConfig{LayoutType::ncsp, LayoutType::ncsp};
+static const LayoutConfig mvnPlanarLayoutConfig{LayoutType::ncsp, LayoutType::ncsp};
+static const LayoutConfig mvnByChannelLayoutConfig{LayoutType::nspc, LayoutType::nspc};
 
 // Type mapping for MVN - supports f32, bf16, f16
 static const TypeMapping mvnTypeMapping {
@@ -106,9 +107,14 @@ const std::vector<ExecutorImplementation<MVNAttrs>>& getImplementations() {
             },
             // createOptimalConfig
             [](const executor::Config<MVNAttrs>& config) -> std::optional<executor::Config<MVNAttrs>> {
+                // Choose layout config based on input layout
+                const auto& srcDesc = config.descs.at(ARG_SRC_0);
+                bool isChannelLast = srcDesc->hasLayoutType(LayoutType::nspc);
+                const auto& layoutConfig = isChannelLast ? mvnByChannelLayoutConfig : mvnPlanarLayoutConfig;
+                
                 return createOptimalConfigCommon(config,
                                                  mvnTypeMapping,
-                                                 mvnLayoutConfig,
+                                                 layoutConfig,
                                                  mvnMappingNotation);
             },
             AcceptsAnyShape<MVNAttrs>{},
@@ -125,9 +131,14 @@ const std::vector<ExecutorImplementation<MVNAttrs>>& getImplementations() {
             SupportsAnyConfig<MVNAttrs>{},
             // createOptimalConfig
             [](const executor::Config<MVNAttrs>& config) -> std::optional<executor::Config<MVNAttrs>> {
+                // Choose layout config based on input layout
+                const auto& srcDesc = config.descs.at(ARG_SRC_0);
+                bool isChannelLast = srcDesc->hasLayoutType(LayoutType::nspc);
+                const auto& layoutConfig = isChannelLast ? mvnByChannelLayoutConfig : mvnPlanarLayoutConfig;
+                
                 return createOptimalConfigCommon(config,
                                                  mvnTypeMapping,
-                                                 mvnLayoutConfig,
+                                                 layoutConfig,
                                                  mvnMappingNotation);
             },
             AcceptsAnyShape<MVNAttrs>{},
