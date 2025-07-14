@@ -12,7 +12,10 @@
 
 namespace ov::intel_cpu {
 
-MVNExecutor::MVNExecutor(ExecutorContext::CPtr context) : context(std::move(context)) {}
+MVNExecutor::MVNExecutor(const MVNAttrs& mvnAttrs, 
+                         const MemoryArgs& memory,
+                         const ExecutorContext::CPtr& context) 
+    : attrs(mvnAttrs), memoryArgs(memory), context(context) {}
 
 VectorDims MVNExecutor::transformTo5DCase(const VectorDims& shape, bool initAcrossChannels) {
     switch (shape.size()) {

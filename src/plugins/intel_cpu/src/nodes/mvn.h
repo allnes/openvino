@@ -132,9 +132,8 @@ private:
         size_t dst_data_size = 0;
     };
 
-    std::shared_ptr<MVNExecutorBase> execPtr = nullptr;
+    std::shared_ptr<MVNExecutor> mvnExecPtr = nullptr;
     bool canUseAclExecutor = false;
-    std::shared_ptr<MVNExecutor> aclExecPtr = nullptr;
 
     class MVNJitExecutor : public MVNExecutorBase {
     public:

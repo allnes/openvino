@@ -4,28 +4,23 @@
 
 #include "acl_mvn.hpp"
 
-#include <arm_compute/core/TensorInfo.h>
-#include <arm_compute/runtime/NEON/functions/NEMeanStdDevNormalizationLayer.h>
-
-#include <cstddef>
-#include <memory>
-#include <oneapi/dnnl/dnnl.hpp>
-#include <utility>
-#include <vector>
-
-#include "cpu_memory.h"
-#include "memory_desc/cpu_memory_desc.h"
-#include "nodes/executors/acl/acl_utils.hpp"
-#include "nodes/executors/executor.hpp"
-#include "nodes/executors/mvn.hpp"
-#include "openvino/core/type/element_type.hpp"
-#include "utils/debug_capabilities.h"
-
 namespace ov::intel_cpu {
 
 using namespace arm_compute;
 
-AclMVNExecutor::AclMVNExecutor(ExecutorContext::CPtr context) : MVNExecutor(std::move(context)) {}
+AclMVNExecutor::AclMVNExecutor(const MVNAttrs& mvnAttrs,
+                               const MemoryArgs& memory,
+                               const ExecutorContext::CPtr& context)
+    : MVNExecutor(mvnAttrs, memory, context) {
+    // Initialize the ACL implementation
+    auto srcDesc = memory.at(ARG_SRC_0)->getDescPtr();
+    auto dstDesc = memory.at(ARG_DST)->getDescPtr();
+    std::vector<MemoryDescPtr> srcDescs = {srcDesc};
+    std::vector<MemoryDescPtr> dstDescs = {dstDesc};
+    
+    dnnl::primitive_attr attr;
+    init(mvnAttrs, srcDescs, dstDescs, attr);
+}
 
 bool AclMVNExecutor::init(const MVNAttrs& mvnAttrs,
                           const std::vector<MemoryDescPtr>& srcDescs,
@@ -86,11 +81,12 @@ bool AclMVNExecutor::init(const MVNAttrs& mvnAttrs,
     return true;
 }
 
-void AclMVNExecutor::exec(const std::vector<MemoryCPtr>& src,
-                          const std::vector<MemoryPtr>& dst,
-                          [[maybe_unused]] const void* post_ops_data_) {
-    srcTensor.allocator()->import_memory(src[0]->getData());
-    dstTensor.allocator()->import_memory(dst[0]->getData());
+void AclMVNExecutor::executeImpl(const MemoryArgs& memory) {
+    const auto src = memory.at(ARG_SRC_0);
+    const auto dst = memory.at(ARG_DST);
+    
+    srcTensor.allocator()->import_memory(src->getData());
+    dstTensor.allocator()->import_memory(dst->getData());
 
     mvn->run();
 
@@ -98,9 +94,10 @@ void AclMVNExecutor::exec(const std::vector<MemoryCPtr>& src,
     dstTensor.allocator()->free();
 }
 
-bool AclMVNExecutorBuilder::isSupported(const MVNAttrs& mvnAttrs,
-                                        const std::vector<MemoryDescPtr>& srcDescs,
-                                        const std::vector<MemoryDescPtr>& dstDescs) const {
+// static method for ACL support check
+bool AclMVNExecutor::supports(const MVNAttrs& mvnAttrs,
+                              const std::vector<MemoryDescPtr>& srcDescs,
+                              const std::vector<MemoryDescPtr>& dstDescs) {
     if ((srcDescs[0]->getPrecision() != ov::element::f32 && srcDescs[0]->getPrecision() != ov::element::f16) ||
         srcDescs[0]->getPrecision() != dstDescs[0]->getPrecision()) {
         DEBUG_LOG("NEMeanStdDevNormalizationLayer does not support precisions:",

@@ -13,19 +13,23 @@ namespace ov::intel_cpu {
 
 class AclMVNExecutor : public MVNExecutor {
 public:
-    AclMVNExecutor(ExecutorContext::CPtr context);
+    AclMVNExecutor(const MVNAttrs& mvnAttrs,
+                   const MemoryArgs& memory,
+                   const ExecutorContext::CPtr& context);
 
     bool init(const MVNAttrs& mvnAttrs,
               const std::vector<MemoryDescPtr>& srcDescs,
               const std::vector<MemoryDescPtr>& dstDescs,
               const dnnl::primitive_attr& attr) override;
-    void exec(const std::vector<MemoryCPtr>& src,
-              const std::vector<MemoryPtr>& dst,
-              const void* post_ops_data_) override;
+    void executeImpl(const MemoryArgs& memory) override;
 
     [[nodiscard]] impl_desc_type getImplType() const override {
         return implType;
     }
+    
+    static bool supports(const MVNAttrs& mvnAttrs,
+                        const std::vector<MemoryDescPtr>& srcDescs,
+                        const std::vector<MemoryDescPtr>& dstDescs);
 
 private:
     impl_desc_type implType = impl_desc_type::acl;
@@ -35,15 +39,6 @@ private:
     std::unique_ptr<arm_compute::NEMeanStdDevNormalizationLayer> mvn = nullptr;
 };
 
-class AclMVNExecutorBuilder : public MVNExecutorBuilder {
-public:
-    [[nodiscard]] bool isSupported(const MVNAttrs& mvnAttrs,
-                                   const std::vector<MemoryDescPtr>& srcDescs,
-                                   const std::vector<MemoryDescPtr>& dstDescs) const override;
-
-    [[nodiscard]] MVNExecutorPtr makeExecutor(const ExecutorContext::CPtr context) const override {
-        return std::make_shared<AclMVNExecutor>(context);
-    }
-};
+// Builder is now in mvn_implementations.cpp using ExecutorFactoryBuilder template
 
 }  // namespace ov::intel_cpu
