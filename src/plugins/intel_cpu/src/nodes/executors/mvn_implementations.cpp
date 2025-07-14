@@ -14,6 +14,7 @@
 #include "nodes/executors/precision_matcher.hpp"
 #include "nodes/executors/type_mask.hpp"
 #include "openvino/core/type/element_type.hpp"
+#include "utils/arch_macros.h"
 #include "utils/debug_capabilities.h"
 #include "nodes/executors/debug_messages.hpp"
 
@@ -54,12 +55,13 @@ static const TypeMapping mvnTypeMapping {
     {{_any, _any},   pt(just<ov::element::f32>(), just<ov::element::f32>())},
 };
 
+// to keep OV_CPU_INSTANCE macros aligned
+// clang-format off
 template <>
 const std::vector<ExecutorImplementation<MVNAttrs>>& getImplementations() {
     static const std::vector<ExecutorImplementation<MVNAttrs>> mvnImplementations {
 // TODO: Re-enable JIT implementation once JIT kernels are reimplemented
-// #if defined(OPENVINO_ARCH_X86_64)
-//         {
+// OV_CPU_INSTANCE_X64(
 //             "mvn_jit_x64",
 //             ExecutorType::jit_x64,
 //             OperationType::MVN,
@@ -83,10 +85,8 @@ const std::vector<ExecutorImplementation<MVNAttrs>>& getImplementations() {
 //             },
 //             AcceptsAnyShape<MVNAttrs>{},
 //             CreateDefault<MVNJitExecutor, MVNAttrs>{}
-//         },
-// #endif
-#if defined(OV_CPU_WITH_ACL)
-        {
+//             )
+        OV_CPU_INSTANCE_ACL(
             "mvn_acl",
             ExecutorType::Acl,
             OperationType::MVN,
@@ -119,10 +119,8 @@ const std::vector<ExecutorImplementation<MVNAttrs>>& getImplementations() {
             },
             AcceptsAnyShape<MVNAttrs>{},
             CreateDefault<AclMVNExecutor, MVNAttrs>{}
-        },
-#endif
-        // Reference implementation as fallback
-        {
+            )
+        OV_CPU_INSTANCE_COMMON(
             "mvn_ref",
             ExecutorType::Common,
             OperationType::MVN,
@@ -143,10 +141,11 @@ const std::vector<ExecutorImplementation<MVNAttrs>>& getImplementations() {
             },
             AcceptsAnyShape<MVNAttrs>{},
             CreateDefault<MVNRefExecutor, MVNAttrs>{}
-        }
+            )
     };
     
     return mvnImplementations;
 }
+// clang-format on
 
 }  // namespace ov::intel_cpu
