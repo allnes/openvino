@@ -32,6 +32,7 @@
 #include "nodes/executors/mvn.hpp"
 #include "nodes/executors/mvn_list.hpp"
 #include "nodes/executors/mvn_config.hpp"
+#include "nodes/executors/memory_arguments.hpp"
 #include "nodes/node_config.h"
 #include "onednn/iml_type_mapper.h"
 #include "openvino/core/except.hpp"
@@ -257,85 +258,67 @@ void MVN::initSupportedPrimitiveDescriptors() {
         inputPrecision = outputPrecision = ov::element::f32;
     }
 #endif
-// Output precision has to be equal to input precision in ACL MVN
-#if defined(OV_CPU_WITH_ACL)
-    outputPrecision = inputPrecision;
-#endif
+    
+    // Create initial memory descriptors
+    const auto& creatorsMap = BlockedDescCreator::getCommonCreators();
+    auto srcDesc = creatorsMap.at(LayoutType::ncsp)->createSharedDesc(inputPrecision, getInputShapeAtPort(0));
+    auto dstDesc = creatorsMap.at(LayoutType::ncsp)->createSharedDesc(outputPrecision, getOutputShapeAtPort(0));
+    
+    // Prepare memory descriptor args for executor factory
+    MemoryDescArgs descs;
+    descs[ARG_SRC_0] = srcDesc;
+    descs[ARG_DST] = dstDesc;
+    
+    // Set minimal required fields in mvnAttrs for getProperMemoryDescriptors
+    mvnAttrs.src_prc = inputPrecision;
+    mvnAttrs.dst_prc = outputPrecision;
+    mvnAttrs.layout = MVNLayoutType::mvn_planar;  // Initial layout, will be updated in prepareParams
+    
+    // Create planar configuration
+    auto planarSrcDesc = creatorsMap.at(LayoutType::ncsp)->createSharedDesc(inputPrecision, getInputShapeAtPort(0));
+    auto planarDstDesc = creatorsMap.at(LayoutType::ncsp)->createSharedDesc(outputPrecision, getOutputShapeAtPort(0));
+    
+    // Create channel-last configuration
+    auto nspcSrcDesc = creatorsMap.at(LayoutType::nspc)->createSharedDesc(inputPrecision, getInputShapeAtPort(0));
+    auto nspcDstDesc = creatorsMap.at(LayoutType::nspc)->createSharedDesc(outputPrecision, getOutputShapeAtPort(0));
+    
+    // Create both configurations
+    std::vector<std::pair<MemoryDescPtr, MemoryDescPtr>> configurations = {
+        {planarSrcDesc, planarDstDesc},
+        {nspcSrcDesc, nspcDstDesc}
+    };
+    
     // TODO [DS]: inplace
     bool canBeInplace = !isDynamicNode() && (inputPrecision.size() == outputPrecision.size()) &&
                         (getParentEdgeAt(0)->getParent()->getChildEdges().size() == 1) &&
                         !getParentEdgeAt(0)->getParent()->isConstant();
 
     const size_t inputsNum = getParentEdges().size();
-    NodeConfig config;
-    config.inConfs.resize(inputsNum);
-    config.outConfs.resize(1);
-    config.inConfs[0].constant(false);
-    config.outConfs[0].constant(false);
-    config.inConfs[0].inPlace(-1);
-    config.outConfs[0].inPlace(canBeInplace ? 0 : -1);
-    if (inputsNum == 2) {
-        config.inConfs[1].setMemDesc(std::make_shared<CpuBlockedMemoryDesc>(ov::element::i32, getInputShapeAtPort(1)));
-        config.inConfs[1].constant(true);
+    
+    // Create supported primitive descriptors for each layout configuration
+    for (const auto& config : configurations) {
+        NodeConfig nodeConfig;
+        nodeConfig.inConfs.resize(inputsNum);
+        nodeConfig.outConfs.resize(1);
+        nodeConfig.inConfs[0].constant(false);
+        nodeConfig.outConfs[0].constant(false);
+        nodeConfig.inConfs[0].inPlace(-1);
+        nodeConfig.outConfs[0].inPlace(canBeInplace ? 0 : -1);
+        if (inputsNum == 2) {
+            nodeConfig.inConfs[1].setMemDesc(std::make_shared<CpuBlockedMemoryDesc>(ov::element::i32, getInputShapeAtPort(1)));
+            nodeConfig.inConfs[1].constant(true);
+        }
+        
+        // Use the layout-specific descriptors
+        nodeConfig.inConfs[0].setMemDesc(config.first);
+        nodeConfig.outConfs[0].setMemDesc(config.second);
+        
+        supportedPrimitiveDescriptors.emplace_back(nodeConfig, impl_desc_type::undef);
     }
-
-    const auto& creatorsMap = BlockedDescCreator::getCommonCreators();
-    auto pushDesc = [&](LayoutType format, impl_desc_type impl_type, bool useAclExecutor = false) {
-        config.inConfs[0].setMemDesc(creatorsMap.at(format)->createSharedDesc(inputPrecision, getInputShapeAtPort(0)));
-        config.outConfs[0].setMemDesc(
-            creatorsMap.at(format)->createSharedDesc(outputPrecision, getOutputShapeAtPort(0)));
-
-        supportedPrimitiveDescriptors.emplace_back(config, impl_type);
-    };
-
-#if defined(OV_CPU_WITH_ACL)
-    pushDesc(LayoutType::nspc, undef, true);
-    pushDesc(LayoutType::ncsp, undef, true);
-    canUseAclExecutor = !supportedPrimitiveDescriptors.empty();
-    if (canUseAclExecutor) {
-        return;
-    }  // Reference MVN implementation does not support fp16, so set fp32 explicitly
-    inputPrecision = outputPrecision = ov::element::f32;
-#endif  // OV_CPU_WITH_ACL
-
-    impl_desc_type impl_type = [&]() {
-        if (mayiuse(cpu::x64::avx512_core)) {
-            return impl_desc_type::jit_avx512;
-        }
-        if (mayiuse(cpu::x64::avx2)) {
-            return impl_desc_type::jit_avx2;
-        }
-        if (mayiuse(cpu::x64::sse41)) {
-            return impl_desc_type::jit_sse42;
-        }
-        return impl_desc_type::ref;
-    }();
-
-    if (mayiuse(cpu::x64::sse41)) {
-        // nspc
-        if (getInputShapeAtPort(0).getRank() == 4 || getInputShapeAtPort(0).getRank() == 5) {
-            pushDesc(LayoutType::nspc, impl_type);
-        }
-        // blk
-        if (impl_desc_type::jit_avx512 == impl_type) {
-            if (getInputShapeAtPort(0).getRank() == 4 || getInputShapeAtPort(0).getRank() == 5) {
-                pushDesc(LayoutType::nCsp16c, impl_type);
-            }
-        } else if (impl_desc_type::jit_avx2 == impl_type || impl_desc_type::jit_sse42 == impl_type) {
-            if (getInputShapeAtPort(0).getRank() == 4 || getInputShapeAtPort(0).getRank() == 5) {
-                pushDesc(LayoutType::nCsp8c, impl_type);
-            }
-        }
-    }
-
-    // planar
-    if (canBeInplace) {
-        config.inConfs[0].inPlace(0);
-    }
-    pushDesc(LayoutType::ncsp, impl_type);
 }
 
 void MVN::prepareParams() {
+    DEBUG_LOG("MVN::prepareParams called");
     auto dstMemPtr = getDstMemoryAtPort(0);
     auto srcMemPtr = getSrcMemoryAtPort(0);
     if (!dstMemPtr || !dstMemPtr->isDefined()) {
@@ -394,13 +377,23 @@ void MVN::prepareParams() {
                                                        std::make_shared<ExecutorContext>(context, getImplPriority()),
                                                        descs);
     
-    mvnExecPtr = std::dynamic_pointer_cast<MVNExecutor>(factory->make(memoryArgs));
-    
-    if (!mvnExecPtr) {
+    auto execPtr = factory->make(memoryArgs);
+    if (!execPtr) {
+        DEBUG_LOG("MVN: Failed to create executor, factory returned nullptr");
         THROW_CPU_NODE_ERR("Failed to create MVN executor");
     }
     
-    selectedPD->setImplementationType(mvnExecPtr->getImplType());
+    mvnExecPtr = std::dynamic_pointer_cast<MVNExecutor>(execPtr);
+    if (!mvnExecPtr) {
+        // Not all executors inherit from MVNExecutor (e.g., ACL)
+        // Use the base Executor interface instead
+        executorPtr = execPtr;
+        DEBUG_LOG("MVN: Successfully created executor of type: ", executorPtr->implType());
+    } else {
+        DEBUG_LOG("MVN: Successfully created MVNExecutor of type: ", mvnExecPtr->implType());
+    }
+    
+    selectedPD->setImplementationType(execPtr->implType());
 }
 
 void MVN::transformTo5DCase(const VectorDims& shape) {
@@ -475,9 +468,29 @@ void MVN::executeDynamicImpl(const dnnl::stream& strm) {
 }
 
 void MVN::execute([[maybe_unused]] const dnnl::stream& strm) {
+    DEBUG_LOG("MVN::execute called");
     if (mvnExecPtr) {
+        DEBUG_LOG("MVN: Executing with MVNExecutor type: ", mvnExecPtr->implType());
         mvnExecPtr->execute();
+        DEBUG_LOG("MVN: Execute completed");
+    } else if (executorPtr) {
+        DEBUG_LOG("MVN: Executing with Executor type: ", executorPtr->implType());
+        MemoryArgs memoryArgs;
+        memoryArgs[ARG_SRC_0] = getSrcMemoryAtPort(0);
+        memoryArgs[ARG_DST] = getDstMemoryAtPort(0);
+        
+        // ACL executors need update before execute
+        if (executorPtr->implType() == impl_desc_type::acl) {
+            DEBUG_LOG("MVN: Calling update for ACL executor");
+            if (!executorPtr->update(memoryArgs)) {
+                THROW_CPU_NODE_ERR("Failed to update ACL executor");
+            }
+        }
+        
+        executorPtr->execute(memoryArgs);
+        DEBUG_LOG("MVN: Execute completed");
     } else {
+        DEBUG_LOG("MVN: Both mvnExecPtr and executorPtr are null!");
         THROW_CPU_NODE_ERR("Primitive wasn't created");
     }
 }

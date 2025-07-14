@@ -133,7 +133,7 @@ private:
     };
 
     std::shared_ptr<MVNExecutor> mvnExecPtr = nullptr;
-    bool canUseAclExecutor = false;
+    std::shared_ptr<Executor> executorPtr = nullptr;  // For executors that don't inherit from MVNExecutor
 
     class MVNJitExecutor : public MVNExecutorBase {
     public:

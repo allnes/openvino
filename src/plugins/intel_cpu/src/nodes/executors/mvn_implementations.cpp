@@ -93,17 +93,7 @@ const std::vector<ExecutorImplementation<MVNAttrs>>& getImplementations() {
             ShapeTolerance::Agnostic,
             // supports
             [](const executor::Config<MVNAttrs>& config) -> bool {
-                VERIFY(srcType(config) == ov::element::f32 || 
-                       srcType(config) == ov::element::bf16 || 
-                       srcType(config) == ov::element::f16, UNSUPPORTED_SRC_PRECISIONS);
-                VERIFY(dstType(config) == ov::element::f32 || 
-                       dstType(config) == ov::element::bf16 || 
-                       dstType(config) == ov::element::f16, UNSUPPORTED_DST_PRECISIONS);
-                // ACL only supports normalize_variance=true
-                VERIFY(config.attrs.normalizeVariance_, "ACL MVN supports normalize_variance=true only");
-                // ACL doesn't support OUTSIDE_SQRT mode
-                VERIFY(config.attrs.epsMode_ == MVNEpsMode::INSIDE_SQRT, "ACL MVN supports INSIDE_SQRT mode only");
-                return true;
+                return ACLMVNExecutor::supports(config);
             },
             // createOptimalConfig
             [](const executor::Config<MVNAttrs>& config) -> std::optional<executor::Config<MVNAttrs>> {
@@ -118,7 +108,7 @@ const std::vector<ExecutorImplementation<MVNAttrs>>& getImplementations() {
                                                  mvnMappingNotation);
             },
             AcceptsAnyShape<MVNAttrs>{},
-            CreateDefault<AclMVNExecutor, MVNAttrs>{}
+            CreateDefault<ACLMVNExecutor, MVNAttrs>{}
             )
         OV_CPU_INSTANCE_COMMON(
             "mvn_ref",
