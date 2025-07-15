@@ -6,7 +6,6 @@
 #include <vector>
 
 #include "mvn_config.hpp"
-#include "nodes/executors/mvn.hpp"
 #include "nodes/executors/executor.hpp"
 #include "nodes/executors/executor_implementation.hpp"
 #include "nodes/executors/implementations.hpp"
@@ -60,32 +59,41 @@ static const TypeMapping mvnTypeMapping {
 template <>
 const std::vector<ExecutorImplementation<MVNAttrs>>& getImplementations() {
     static const std::vector<ExecutorImplementation<MVNAttrs>> mvnImplementations {
-// TODO: Re-enable JIT implementation once JIT kernels are reimplemented
-// OV_CPU_INSTANCE_X64(
-//             "mvn_jit_x64",
-//             ExecutorType::jit_x64,
-//             OperationType::MVN,
-//             ShapeTolerance::Agnostic,
-//             // supports
-//             [](const executor::Config<MVNAttrs>& config) -> bool {
-//                 VERIFY(srcType(config) == ov::element::f32 || 
-//                        srcType(config) == ov::element::bf16 || 
-//                        srcType(config) == ov::element::f16, UNSUPPORTED_SRC_PRECISIONS);
-//                 VERIFY(dstType(config) == ov::element::f32 || 
-//                        dstType(config) == ov::element::bf16 || 
-//                        dstType(config) == ov::element::f16, UNSUPPORTED_DST_PRECISIONS);
-//                 return MVNJitExecutor::supports(config.attrs, config.descs.inputs, config.descs.outputs);
-//             },
-//             // createOptimalConfig
-//             [](const executor::Config<MVNAttrs>& config) -> std::optional<executor::Config<MVNAttrs>> {
-//                 return createOptimalConfigCommon(config,
-//                                                  mvnTypeMapping,
-//                                                  mvnLayoutConfig,
-//                                                  mvnMappingNotation);
-//             },
-//             AcceptsAnyShape<MVNAttrs>{},
-//             CreateDefault<MVNJitExecutor, MVNAttrs>{}
-//             )
+        OV_CPU_INSTANCE_X64(
+            "mvn_jit_x64",
+            ExecutorType::jit_x64,
+            OperationType::MVN,
+            ShapeTolerance::Agnostic,
+            // supports
+            [](const executor::Config<MVNAttrs>& config) -> bool {
+                VERIFY(srcType(config) == ov::element::f32 || 
+                       srcType(config) == ov::element::bf16 || 
+                       srcType(config) == ov::element::f16, UNSUPPORTED_SRC_PRECISIONS);
+                VERIFY(dstType(config) == ov::element::f32 || 
+                       dstType(config) == ov::element::bf16 || 
+                       dstType(config) == ov::element::f16, UNSUPPORTED_DST_PRECISIONS);
+                std::vector<MemoryDescPtr> inputs, outputs;
+                for (const auto& desc : config.descs) {
+                    if (desc.first == ARG_SRC_0) inputs.push_back(desc.second);
+                    if (desc.first == ARG_DST) outputs.push_back(desc.second);
+                }
+                return MVNJitExecutor::supports(config.attrs, inputs, outputs);
+            },
+            // createOptimalConfig
+            [](const executor::Config<MVNAttrs>& config) -> std::optional<executor::Config<MVNAttrs>> {
+                // Choose layout config based on input layout
+                const auto& srcDesc = config.descs.at(ARG_SRC_0);
+                bool isChannelLast = srcDesc->hasLayoutType(LayoutType::nspc);
+                const auto& layoutConfig = isChannelLast ? mvnByChannelLayoutConfig : mvnPlanarLayoutConfig;
+                
+                return createOptimalConfigCommon(config,
+                                                 mvnTypeMapping,
+                                                 layoutConfig,
+                                                 mvnMappingNotation);
+            },
+            AcceptsAnyShape<MVNAttrs>{},
+            CreateDefault<MVNJitExecutor, MVNAttrs>{}
+            )
         OV_CPU_INSTANCE_ACL(
             "mvn_acl",
             ExecutorType::Acl,

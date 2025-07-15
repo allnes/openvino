@@ -17,7 +17,7 @@
 
 #include "cpu_types.h"
 #include "graph_context.h"
-#include "nodes/executors/mvn.hpp"
+#include "nodes/executors/mvn_config.hpp"
 #include "openvino/core/node.hpp"
 #include "openvino/core/type/element_type.hpp"
 
@@ -132,8 +132,7 @@ private:
         size_t dst_data_size = 0;
     };
 
-    std::shared_ptr<MVNExecutor> mvnExecPtr = nullptr;
-    std::shared_ptr<Executor> executorPtr = nullptr;  // For executors that don't inherit from MVNExecutor
+    std::shared_ptr<Executor> executorPtr = nullptr;
 
     class MVNJitExecutor : public MVNExecutorBase {
     public:

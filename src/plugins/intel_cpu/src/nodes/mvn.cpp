@@ -29,8 +29,6 @@
 #include "nodes/common/blocked_desc_creator.h"
 #include "nodes/executors/executor.hpp"
 #include "nodes/executors/executor_factory.hpp"
-#include "nodes/executors/mvn.hpp"
-#include "nodes/executors/mvn_list.hpp"
 #include "nodes/executors/mvn_config.hpp"
 #include "nodes/executors/memory_arguments.hpp"
 #include "nodes/node_config.h"
@@ -45,28 +43,6 @@
 #include "shape_inference/shape_inference_cpu.hpp"
 #include "utils/general_utils.h"
 #include "utils/precision_support.h"
-
-#if defined(OPENVINO_ARCH_X86) || defined(OPENVINO_ARCH_X86_64)
-#    include <cpu/x64/xbyak/xbyak.h>
-
-#    include <common/c_types_map.hpp>
-#    include <functional>
-
-#    include "cpu/x64/injectors/jit_uni_depthwise_injector.hpp"
-#    include "cpu/x64/injectors/jit_uni_eltwise_injector.hpp"
-#    include "cpu/x64/injectors/jit_uni_quantization_injector.hpp"
-#    include "cpu/x64/jit_generator.hpp"
-#    include "emitters/plugin/x64/jit_load_store_emitters.hpp"
-#endif
-
-using namespace dnnl;
-
-using namespace dnnl::impl;
-using namespace dnnl::impl::cpu::x64;
-using namespace dnnl::impl::utils;
-using namespace Xbyak;
-
-#define GET_OFF(field) offsetof(jit_mvn_call_args, field)
 
 namespace ov::intel_cpu::node {
 namespace {
@@ -252,12 +228,6 @@ void MVN::initSupportedPrimitiveDescriptors() {
             break;
         }
     }
-#if defined(OPENVINO_ARCH_X86) || defined(OPENVINO_ARCH_X86_64)
-    // ref with float planar and no fusion
-    if (!mayiuse(cpu::x64::sse41)) {
-        inputPrecision = outputPrecision = ov::element::f32;
-    }
-#endif
     
     // Create initial memory descriptors
     const auto& creatorsMap = BlockedDescCreator::getCommonCreators();
@@ -335,17 +305,6 @@ void MVN::prepareParams() {
     transformTo5DCase(in_dims);
     mvnAttrs.shape5D = shape5D;
 
-#if defined(OPENVINO_ARCH_X86_64)
-    // New shape5D always need prepare via transformTo5DCase(), which is need in exec().
-    // MVN itself and unary post ops is totally shape agnostic, mvnExecPtr can be reused directly w/o recompilation and
-    // setPostOps when shape is changed. As key have not shape, if shape changes and new post ops attr is also the same,
-    // mvnExecPtr can still hit. If new shape(channel changes) impact post ops attr, such as entry.quantization.offset,
-    // entry.depthwise.offset, entry.quantization.per_channel, which is participate in compilation, even postOpsData is
-    // passed in runtime, still need recompilation.
-    if (mvnExecPtr != nullptr && (fusedWith.empty() || onlyUnaryPostOps)) {
-        return;
-    }
-#endif
 
     auto* selectedPD = getSelectedPrimitiveDescriptor();
     mvnAttrs.src_prc = selectedPD->getConfig().inConfs[0].getMemDesc()->getPrecision();
@@ -383,15 +342,8 @@ void MVN::prepareParams() {
         THROW_CPU_NODE_ERR("Failed to create MVN executor");
     }
     
-    mvnExecPtr = std::dynamic_pointer_cast<MVNExecutor>(execPtr);
-    if (!mvnExecPtr) {
-        // Not all executors inherit from MVNExecutor (e.g., ACL)
-        // Use the base Executor interface instead
-        executorPtr = execPtr;
-        DEBUG_LOG("MVN: Successfully created executor of type: ", executorPtr->implType());
-    } else {
-        DEBUG_LOG("MVN: Successfully created MVNExecutor of type: ", mvnExecPtr->implType());
-    }
+    executorPtr = execPtr;
+    DEBUG_LOG("MVN: Successfully created executor of type: ", executorPtr->implType());
     
     selectedPD->setImplementationType(execPtr->implType());
 }
@@ -469,34 +421,27 @@ void MVN::executeDynamicImpl(const dnnl::stream& strm) {
 
 void MVN::execute([[maybe_unused]] const dnnl::stream& strm) {
     DEBUG_LOG("MVN::execute called");
-    if (mvnExecPtr) {
-        DEBUG_LOG("MVN: Executing with MVNExecutor type: ", mvnExecPtr->implType());
-        mvnExecPtr->execute();
-        DEBUG_LOG("MVN: Execute completed");
-    } else if (executorPtr) {
+    if (executorPtr) {
         DEBUG_LOG("MVN: Executing with Executor type: ", executorPtr->implType());
         MemoryArgs memoryArgs;
         memoryArgs[ARG_SRC_0] = getSrcMemoryAtPort(0);
         memoryArgs[ARG_DST] = getDstMemoryAtPort(0);
         
-        // ACL executors need update before execute
-        if (executorPtr->implType() == impl_desc_type::acl) {
-            DEBUG_LOG("MVN: Calling update for ACL executor");
-            if (!executorPtr->update(memoryArgs)) {
-                THROW_CPU_NODE_ERR("Failed to update ACL executor");
-            }
+        // Update executor with current memory arguments
+        if (!executorPtr->update(memoryArgs)) {
+            THROW_CPU_NODE_ERR("Failed to update executor");
         }
         
         executorPtr->execute(memoryArgs);
         DEBUG_LOG("MVN: Execute completed");
     } else {
-        DEBUG_LOG("MVN: Both mvnExecPtr and executorPtr are null!");
+        DEBUG_LOG("MVN: executorPtr is null!");
         THROW_CPU_NODE_ERR("Primitive wasn't created");
     }
 }
 
 bool MVN::canFuse(const NodePtr& node) const {
-    if (!mayiuse(cpu::x64::sse41)) {
+    if (!dnnl::impl::cpu::x64::mayiuse(dnnl::impl::cpu::x64::sse41)) {
         return false;
     }
     // limit post ops to unary when shape transformed on channel

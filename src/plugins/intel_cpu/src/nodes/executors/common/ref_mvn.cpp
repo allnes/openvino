@@ -17,7 +17,7 @@ namespace ov::intel_cpu {
 MVNRefExecutor::MVNRefExecutor(const MVNAttrs& mvnAttrs,
                                const MemoryArgs& memory,
                                const ExecutorContext::CPtr& context)
-    : MVNExecutor(mvnAttrs, memory, context) {
+    : attrs(mvnAttrs), memoryArgs(memory), context(context) {
     // Initialize the reference implementation
     auto srcDesc = memory.at(ARG_SRC_0)->getDescPtr();
     auto dstDesc = memory.at(ARG_DST)->getDescPtr();
