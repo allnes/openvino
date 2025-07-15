@@ -5,6 +5,7 @@
 #pragma once
 
 #include <memory>
+#include <unordered_map>
 #include <oneapi/dnnl/dnnl.hpp>
 #include <vector>
 
@@ -14,6 +15,11 @@
 #include "cpu/x64/cpu_isa_traits.hpp"
 
 namespace ov::intel_cpu {
+
+// Forward declarations for JIT kernels
+struct jit_mvn_config_params;
+struct jit_uni_mvn_mean_variance_kernel;
+struct jit_uni_mvn_kernel;
 
 class MVNJitExecutor : public Executor {
 public:

@@ -7,8 +7,6 @@
 #include <algorithm>
 #include <cassert>
 #include <cmath>
-#include <common/primitive_hashing_utils.hpp>
-#include <common/utils.hpp>
 #include <cpu/x64/cpu_isa_traits.hpp>
 #include <cstddef>
 #include <cstdint>
@@ -45,47 +43,6 @@
 #include "utils/precision_support.h"
 
 namespace ov::intel_cpu::node {
-namespace {
-
-struct MVNKey {
-    MVNAttrs mvnAttrs;
-    dnnl::primitive_attr attr;
-
-    [[nodiscard]] size_t hash() const;
-    bool operator==(const MVNKey& rhs) const;
-};
-
-size_t MVNKey::hash() const {
-    using namespace dnnl::impl;
-    using namespace dnnl::impl::primitive_hashing;
-
-    size_t seed = 0;
-    seed = hash_combine(seed, mvnAttrs.initAcrossChannels_);
-    seed = hash_combine(seed, mvnAttrs.execAcrossChannels_);
-    seed = hash_combine(seed, mvnAttrs.normalizeVariance_);
-    seed = hash_combine(seed, mvnAttrs.epsValue_);
-    seed = hash_combine(seed, mvnAttrs.epsMode_);
-    seed = hash_combine(seed, mvnAttrs.src_prc.hash());
-    seed = hash_combine(seed, mvnAttrs.dst_prc.hash());
-    seed = hash_combine(seed, mvnAttrs.layout);
-    seed = hash_combine(seed, get_attr_hash(*attr.get()));
-    return seed;
-}
-
-bool MVNKey::operator==(const MVNKey& rhs) const {
-    bool retVal = true;
-    retVal = retVal && mvnAttrs.initAcrossChannels_ == rhs.mvnAttrs.initAcrossChannels_ &&
-             mvnAttrs.execAcrossChannels_ == rhs.mvnAttrs.execAcrossChannels_ &&
-             mvnAttrs.normalizeVariance_ == rhs.mvnAttrs.normalizeVariance_ &&
-             mvnAttrs.epsValue_ == rhs.mvnAttrs.epsValue_ && mvnAttrs.epsMode_ == rhs.mvnAttrs.epsMode_ &&
-             mvnAttrs.src_prc == rhs.mvnAttrs.src_prc && mvnAttrs.dst_prc == rhs.mvnAttrs.dst_prc &&
-             mvnAttrs.layout == rhs.mvnAttrs.layout;
-    retVal = retVal && *attr.get() == *rhs.attr.get();
-    return retVal;
-}
-}  // namespace
-
-//////////////////////////////////////////////////////////////////////////////////
 
 bool MVN::isSupportedOperation(const std::shared_ptr<const ov::Node>& op, std::string& errorMessage) noexcept {
     try {
@@ -288,7 +245,6 @@ void MVN::initSupportedPrimitiveDescriptors() {
 }
 
 void MVN::prepareParams() {
-    DEBUG_LOG("MVN::prepareParams called");
     auto dstMemPtr = getDstMemoryAtPort(0);
     auto srcMemPtr = getSrcMemoryAtPort(0);
     if (!dstMemPtr || !dstMemPtr->isDefined()) {
@@ -338,14 +294,15 @@ void MVN::prepareParams() {
     
     auto execPtr = factory->make(memoryArgs);
     if (!execPtr) {
-        DEBUG_LOG("MVN: Failed to create executor, factory returned nullptr");
         THROW_CPU_NODE_ERR("Failed to create MVN executor");
     }
     
     executorPtr = execPtr;
-    DEBUG_LOG("MVN: Successfully created executor of type: ", executorPtr->implType());
     
-    selectedPD->setImplementationType(execPtr->implType());
+    // Update executor with memory arguments
+    executorPtr->update(memoryArgs);
+    
+    selectedPD->setImplementationType(executorPtr->implType());
 }
 
 void MVN::transformTo5DCase(const VectorDims& shape) {
@@ -420,22 +377,13 @@ void MVN::executeDynamicImpl(const dnnl::stream& strm) {
 }
 
 void MVN::execute([[maybe_unused]] const dnnl::stream& strm) {
-    DEBUG_LOG("MVN::execute called");
     if (executorPtr) {
-        DEBUG_LOG("MVN: Executing with Executor type: ", executorPtr->implType());
         MemoryArgs memoryArgs;
         memoryArgs[ARG_SRC_0] = getSrcMemoryAtPort(0);
         memoryArgs[ARG_DST] = getDstMemoryAtPort(0);
         
-        // Update executor with current memory arguments
-        if (!executorPtr->update(memoryArgs)) {
-            THROW_CPU_NODE_ERR("Failed to update executor");
-        }
-        
         executorPtr->execute(memoryArgs);
-        DEBUG_LOG("MVN: Execute completed");
     } else {
-        DEBUG_LOG("MVN: executorPtr is null!");
         THROW_CPU_NODE_ERR("Primitive wasn't created");
     }
 }
@@ -444,7 +392,7 @@ bool MVN::canFuse(const NodePtr& node) const {
     if (!dnnl::impl::cpu::x64::mayiuse(dnnl::impl::cpu::x64::sse41)) {
         return false;
     }
-    // limit post ops to unary when shape transformed on channel
+    // limit post-ops to unary when shape transformed on channel
     // 1D only fused with unary
     int inputRank = getInputShapeAtPort(0).getRank();
     bool unaryEltwise = isUnaryEltwise(node);
