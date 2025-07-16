@@ -28,9 +28,7 @@ MVNRefExecutor::MVNRefExecutor(const MVNAttrs& mvnAttrs,
     init(mvnAttrs, srcDescs, dstDescs, attr);
 }
 
-bool MVNRefExecutor::supports(const MVNAttrs& attrs,
-                              const std::vector<MemoryDescPtr>& srcDescs,
-                              const std::vector<MemoryDescPtr>& dstDescs) {
+bool MVNRefExecutor::supports([[maybe_unused]] const MVNConfig& config) {
     // Reference implementation supports all configurations
     return true;
 }
@@ -111,7 +109,7 @@ void MVNRefExecutor::mvn_ref(const uint8_t* src_data, uint8_t* dst_data, const V
             
             // Calculate mean
             double mean = 0;
-            if (attrs.layout == mvn_planar) {
+            if (attrs.layout == mvn_planar || attrs.layout == mvn_block) {
                 // NCDHW/NCHW layout - planar format
                 for (size_t c = 0; c < C; c++) {
                     const size_t c_offset = b * C * spatial_size + c * spatial_size;
@@ -146,7 +144,7 @@ void MVNRefExecutor::mvn_ref(const uint8_t* src_data, uint8_t* dst_data, const V
             // Calculate variance (if needed) and normalize
             if (attrs.normalizeVariance_) {
                 double variance = 0;
-                if (attrs.layout == mvn_planar) {
+                if (attrs.layout == mvn_planar || attrs.layout == mvn_block) {
                     for (size_t c = 0; c < C; c++) {
                         const size_t c_offset = b * C * spatial_size + c * spatial_size;
                         for (size_t d = 0; d < D; d++) {
@@ -184,7 +182,7 @@ void MVNRefExecutor::mvn_ref(const uint8_t* src_data, uint8_t* dst_data, const V
                 const double inv_sigma = 1.0 / sigma;
 
                 // Normalize
-                if (attrs.layout == mvn_planar) {
+                if (attrs.layout == mvn_planar || attrs.layout == mvn_block) {
                     for (size_t c = 0; c < C; c++) {
                         const size_t c_offset = b * C * spatial_size + c * spatial_size;
                         for (size_t d = 0; d < D; d++) {
@@ -216,7 +214,7 @@ void MVNRefExecutor::mvn_ref(const uint8_t* src_data, uint8_t* dst_data, const V
                 }
             } else {
                 // Just subtract mean
-                if (attrs.layout == mvn_planar) {
+                if (attrs.layout == mvn_planar || attrs.layout == mvn_block) {
                     for (size_t c = 0; c < C; c++) {
                         const size_t c_offset = b * C * spatial_size + c * spatial_size;
                         for (size_t d = 0; d < D; d++) {
@@ -255,7 +253,7 @@ void MVNRefExecutor::mvn_ref(const uint8_t* src_data, uint8_t* dst_data, const V
             
             // Calculate mean
             double mean = 0;
-            if (attrs.layout == mvn_planar) {
+            if (attrs.layout == mvn_planar || attrs.layout == mvn_block) {
                 // NCDHW/NCHW layout - planar format
                 const size_t c_offset = b * C * data_size + c * data_size;
                 for (size_t d = 0; d < D; d++) {
@@ -285,7 +283,7 @@ void MVNRefExecutor::mvn_ref(const uint8_t* src_data, uint8_t* dst_data, const V
             // Calculate variance (if needed) and normalize
             if (attrs.normalizeVariance_) {
                 double variance = 0;
-                if (attrs.layout == mvn_planar) {
+                if (attrs.layout == mvn_planar || attrs.layout == mvn_block) {
                     const size_t c_offset = b * C * data_size + c * data_size;
                     for (size_t d = 0; d < D; d++) {
                         const size_t d_offset = c_offset + d * HW;
@@ -318,7 +316,7 @@ void MVNRefExecutor::mvn_ref(const uint8_t* src_data, uint8_t* dst_data, const V
                 const double inv_sigma = 1.0 / sigma;
 
                 // Normalize
-                if (attrs.layout == mvn_planar) {
+                if (attrs.layout == mvn_planar || attrs.layout == mvn_block) {
                     const size_t c_offset = b * C * data_size + c * data_size;
                     for (size_t d = 0; d < D; d++) {
                         const size_t d_offset = c_offset + d * HW;
@@ -345,7 +343,7 @@ void MVNRefExecutor::mvn_ref(const uint8_t* src_data, uint8_t* dst_data, const V
                 }
             } else {
                 // Just subtract mean
-                if (attrs.layout == mvn_planar) {
+                if (attrs.layout == mvn_planar || attrs.layout == mvn_block) {
                     const size_t c_offset = b * C * data_size + c * data_size;
                     for (size_t d = 0; d < D; d++) {
                         const size_t d_offset = c_offset + d * HW;

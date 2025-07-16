@@ -150,6 +150,12 @@ bool MVNTransformation::transform(ov::pass::pattern::Matcher &m) {
                 THROW_TRANSFORMATION_EXCEPTION << "unexpected element type " << deqPrecision;
             }
         }
+    } else {
+        // When normalizeVariance is false, we cannot simply move the scale multiplication
+        // after MVN because MVN(scale * input) != scale * MVN(input)
+        // The mean values are different: mean(scale * input) != scale * mean(input)
+        // Therefore, we should not transform this case
+        return false;
     }
 
     std::shared_ptr<Node> newMVN;

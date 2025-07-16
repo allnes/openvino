@@ -209,11 +209,33 @@ void MVN::initSupportedPrimitiveDescriptors() {
     auto nspcSrcDesc = creatorsMap.at(LayoutType::nspc)->createSharedDesc(inputPrecision, getInputShapeAtPort(0));
     auto nspcDstDesc = creatorsMap.at(LayoutType::nspc)->createSharedDesc(outputPrecision, getOutputShapeAtPort(0));
     
-    // Create both configurations
+    // Create configurations
     std::vector<std::pair<MemoryDescPtr, MemoryDescPtr>> configurations = {
         {planarSrcDesc, planarDstDesc},
         {nspcSrcDesc, nspcDstDesc}
     };
+    
+    // Add blocked layout configurations for 4D and 5D tensors
+    if (getInputShapeAtPort(0).getRank() == 4 && creatorsMap.count(LayoutType::nCsp8c)) {
+        auto blocked8SrcDesc = creatorsMap.at(LayoutType::nCsp8c)->createSharedDesc(inputPrecision, getInputShapeAtPort(0));
+        auto blocked8DstDesc = creatorsMap.at(LayoutType::nCsp8c)->createSharedDesc(outputPrecision, getOutputShapeAtPort(0));
+        configurations.push_back({blocked8SrcDesc, blocked8DstDesc});
+    }
+    if (getInputShapeAtPort(0).getRank() == 4 && creatorsMap.count(LayoutType::nCsp16c)) {
+        auto blocked16SrcDesc = creatorsMap.at(LayoutType::nCsp16c)->createSharedDesc(inputPrecision, getInputShapeAtPort(0));
+        auto blocked16DstDesc = creatorsMap.at(LayoutType::nCsp16c)->createSharedDesc(outputPrecision, getOutputShapeAtPort(0));
+        configurations.push_back({blocked16SrcDesc, blocked16DstDesc});
+    }
+    if (getInputShapeAtPort(0).getRank() == 5 && creatorsMap.count(LayoutType::nCsp8c)) {
+        auto blocked8SrcDesc = creatorsMap.at(LayoutType::nCsp8c)->createSharedDesc(inputPrecision, getInputShapeAtPort(0));
+        auto blocked8DstDesc = creatorsMap.at(LayoutType::nCsp8c)->createSharedDesc(outputPrecision, getOutputShapeAtPort(0));
+        configurations.push_back({blocked8SrcDesc, blocked8DstDesc});
+    }
+    if (getInputShapeAtPort(0).getRank() == 5 && creatorsMap.count(LayoutType::nCsp16c)) {
+        auto blocked16SrcDesc = creatorsMap.at(LayoutType::nCsp16c)->createSharedDesc(inputPrecision, getInputShapeAtPort(0));
+        auto blocked16DstDesc = creatorsMap.at(LayoutType::nCsp16c)->createSharedDesc(outputPrecision, getOutputShapeAtPort(0));
+        configurations.push_back({blocked16SrcDesc, blocked16DstDesc});
+    }
     
     // TODO [DS]: inplace
     bool canBeInplace = !isDynamicNode() && (inputPrecision.size() == outputPrecision.size()) &&
@@ -285,8 +307,13 @@ void MVN::prepareParams() {
     // Set post-ops in mvnAttrs
     dnnl::primitive_attr attr;
     setPostOps(attr, true);
-    // For now, pass empty PostOps - the JIT implementation will handle post-ops through attr
-    mvnAttrs.postOps = PostOps();
+    
+    // Pass post-ops data pointers through MVNAttrs
+    // This allows the executor to access the actual post-ops data
+    mvnAttrs.postOps.clear();
+    for (const auto* ptr : postOpsDataPtrs) {
+        mvnAttrs.postOps.push_back(ptr);
+    }
 
     auto factory = std::make_shared<ExecutorFactory<MVNAttrs>>(mvnAttrs,
                                                        std::make_shared<ExecutorContext>(context, getImplPriority()),

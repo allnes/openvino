@@ -4,7 +4,9 @@
 
 #include "jit_mvn.hpp"
 #include "nodes/executors/common/ref_mvn.hpp"
+#include "post_ops.hpp"
 
+#include <any>
 #include "utils/cpu_utils.hpp"
 #include <cpu/x64/cpu_isa_traits.hpp>
 #include <memory>
@@ -93,7 +95,19 @@ bool MVNJitExecutor::init(const MVNAttrs& mvnAttrs,
     shape5D = mvnAttrs.shape5D;
     attrs = mvnAttrs;
     
-    // Create legacy executor with proper primitive attributes
+    // Extract post-ops data from MVNAttrs
+    postOpsDataPtrs.clear();
+    
+    // MVNAttrs.postOps contains the post-ops data pointers
+    // Each element is a std::any containing a const void* pointer
+    for (const auto& postOp : attrs.postOps) {
+        // Extract the data pointer from std::any
+        if (postOp.type() == typeid(const void*)) {
+            postOpsDataPtrs.push_back(std::any_cast<const void*>(postOp));
+        }
+    }
+    
+    // Create a legacy executor with proper primitive attributes
     legacyJitExecutor = std::make_shared<legacy::MVNJitExecutorLagacy>(attrs, attr);
     
     return true;
@@ -104,13 +118,10 @@ void MVNJitExecutor::executeImpl(const MemoryArgs& memory) {
     const auto* src_data = memory.at(ARG_SRC)->getDataAs<const uint8_t>();
     auto* dst_data = memory.at(ARG_DST)->getDataAs<uint8_t>();
     
-    // Extract post-ops data from attrs if available
+    // Pass post-ops data to the legacy executor
     const void* post_ops_data = nullptr;
-    if (!attrs.postOps.empty()) {
-        // Post-ops data is typically a pointer to the data vector
-        // For now, we pass nullptr as the legacy executor expects raw post-ops data pointer
-        // which would need to be extracted from the PostOps vector
-        post_ops_data = nullptr;
+    if (!postOpsDataPtrs.empty()) {
+        post_ops_data = postOpsDataPtrs.data();
     }
     
     // Call legacy executor with proper parameters
@@ -119,7 +130,7 @@ void MVNJitExecutor::executeImpl(const MemoryArgs& memory) {
 
 bool MVNJitExecutor::canReuseShapeAgnosticKernel(const VectorDims& newShape5D) const {
     // Shape-agnostic kernel optimization
-    // Reuse kernel if the shape is the same or only batch size changed
+    // Reuses kernel if the shape is the same or only batch size changed
     if (shape5D[0] != newShape5D[0]) {
         if (shape5D[1] == newShape5D[1] && shape5D[2] == newShape5D[2] && 
             shape5D[3] == newShape5D[3] && shape5D[4] == newShape5D[4]) {
@@ -130,18 +141,10 @@ bool MVNJitExecutor::canReuseShapeAgnosticKernel(const VectorDims& newShape5D) c
     return false;
 }
 
-bool MVNJitExecutor::supports(const MVNAttrs& attrs,
-                             const std::vector<MemoryDescPtr>& srcDescs,
-                             const std::vector<MemoryDescPtr>& dstDescs) {
-    // Force f32 precision for SSE4.1 due to performance considerations
-    if (mayiuse(cpu::x64::sse41) && !mayiuse(cpu::x64::avx2)) {
-        if (attrs.src_prc != ov::element::f32 || attrs.dst_prc != ov::element::f32) {
-            return false;
-        }
-    }
-
-    // For simplified version, support all cases that reference implementation supports
-    return MVNRefExecutor::supports(attrs, srcDescs, dstDescs);
+bool MVNJitExecutor::supports(const MVNConfig& config) {
+    // JIT implementation supports all precisions
+    // The legacy implementation handles precision conversions internally
+    return true;
 }
 
 }  // namespace intel_cpu

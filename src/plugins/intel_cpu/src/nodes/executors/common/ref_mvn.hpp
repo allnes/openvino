@@ -41,9 +41,7 @@ public:
 
     impl_desc_type implType() const override { return impl_desc_type::ref; }
     
-    static bool supports(const MVNAttrs& attrs,
-                        const std::vector<MemoryDescPtr>& srcDescs,
-                        const std::vector<MemoryDescPtr>& dstDescs);
+    static bool supports(const MVNConfig& config);
 
 private:
     void mvn_ref(const uint8_t* src_data, uint8_t* dst_data, const VectorDims& shape5d);

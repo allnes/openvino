@@ -130,7 +130,7 @@ public:
     void executeImpl(const MemoryArgs& memory);
 
     impl_desc_type implType() const override { 
-        // Return specific ISA implementation type based on runtime capabilities
+        // Return a specific ISA implementation type based on runtime capabilities
         if (dnnl::impl::cpu::x64::mayiuse(dnnl::impl::cpu::x64::avx512_core)) {
             return impl_desc_type::jit_avx512;
         } else if (dnnl::impl::cpu::x64::mayiuse(dnnl::impl::cpu::x64::avx2)) {
@@ -141,9 +141,7 @@ public:
         return impl_desc_type::ref;
     }
     
-    static bool supports(const MVNAttrs& attrs,
-                        const std::vector<MemoryDescPtr>& srcDescs,
-                        const std::vector<MemoryDescPtr>& dstDescs);
+    static bool supports(const MVNConfig& config);
 
     bool canReuseShapeAgnosticKernel(const VectorDims& newShape5D) const;
 
@@ -153,6 +151,7 @@ private:
     const ExecutorContext::CPtr context;
     mutable VectorDims shape5D;
     std::shared_ptr<legacy::MVNJitExecutorLagacy> legacyJitExecutor;
+    std::vector<const void*> postOpsDataPtrs;
 };
 
 }  // namespace ov::intel_cpu

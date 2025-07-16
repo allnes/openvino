@@ -32,27 +32,37 @@ namespace ov::intel_cpu {
 using namespace TypeMaskAlias;
 using namespace executor;
 
-// static bool is_data_type_supported(const ov::element::Type& dt) {
-//     return one_of(dt, ov::element::f32, ov::element::bf16, ov::element::f16);
-// }
-
 // Mapping notation for MVN arguments
 static const MappingNotation mvnMappingNotation{ARG_SRC, ARG_DST};
 
-// Layout configuration for MVN - support both planar and channel-last formats
-using LayoutConfig = std::vector<LayoutType>;
-static const LayoutConfig mvnPlanarLayoutConfig{LayoutType::ncsp, LayoutType::ncsp};
-static const LayoutConfig mvnByChannelLayoutConfig{LayoutType::nspc, LayoutType::nspc};
+// // Layout configuration for MVN - support planar, channel-last and blocked formats
+// using LayoutConfig = std::vector<LayoutType>;
+// static const LayoutConfig mvnPlanarLayoutConfig{LayoutType::ncsp, LayoutType::ncsp};
+// static const LayoutConfig mvnByChannelLayoutConfig{LayoutType::nspc, LayoutType::nspc};
+// static const LayoutConfig mvnBlockedC8LayoutConfig{LayoutType::nCsp8c, LayoutType::nCsp8c};
+// static const LayoutConfig mvnBlockedC16LayoutConfig{LayoutType::nCsp16c, LayoutType::nCsp16c};
 
-// Type mapping for MVN - supports f32, bf16, f16
+// Type mapping for MVN - supports f32, bf16, f16, i8, u8
 static const TypeMapping mvnTypeMapping {
     // {src, dst}                                   pt<src, dst>
     {{_f32, _f32},   pt(bypass(), bypass())},
     {{_bf16, _bf16}, pt(bypass(), bypass())},
     {{_f16, _f16},   pt(bypass(), bypass())},
+    {{_i8, _f32},    pt(bypass(), bypass())},  // i8 input -> f32 output
+    {{_u8, _f32},    pt(bypass(), bypass())},  // u8 input -> f32 output
+    {{_i8, _i8},     pt(bypass(), bypass())},  // i8 input -> i8 output
+    {{_u8, _u8},     pt(bypass(), bypass())},  // u8 input -> u8 output
     // Fallback to f32 for any unsupported type configuration
     {{_any, _any},   pt(just<ov::element::f32>(), just<ov::element::f32>())},
 };
+
+// Accept the input/output layouts as-is without conversion
+LayoutType getLayoutType(const MemoryDescPtr& desc) {
+    if (desc->hasLayoutType(LayoutType::nspc)) return LayoutType::nspc;
+    if (desc->hasLayoutType(LayoutType::nCsp16c)) return LayoutType::nCsp16c;
+    if (desc->hasLayoutType(LayoutType::nCsp8c)) return LayoutType::nCsp8c;
+    return LayoutType::ncsp;
+}
 
 // to keep OV_CPU_INSTANCE macros aligned
 // clang-format off
@@ -66,29 +76,18 @@ const std::vector<ExecutorImplementation<MVNAttrs>>& getImplementations() {
             ShapeTolerance::Agnostic,
             // supports
             [](const executor::Config<MVNAttrs>& config) -> bool {
-                VERIFY(srcType(config) == ov::element::f32 || 
-                       srcType(config) == ov::element::bf16 || 
-                       srcType(config) == ov::element::f16, UNSUPPORTED_SRC_PRECISIONS);
-                VERIFY(dstType(config) == ov::element::f32 || 
-                       dstType(config) == ov::element::bf16 || 
-                       dstType(config) == ov::element::f16, UNSUPPORTED_DST_PRECISIONS);
-                std::vector<MemoryDescPtr> inputs, outputs;
-                for (const auto& desc : config.descs) {
-                    if (desc.first == ARG_SRC_0) inputs.push_back(desc.second);
-                    if (desc.first == ARG_DST) outputs.push_back(desc.second);
-                }
-                return MVNJitExecutor::supports(config.attrs, inputs, outputs);
+                return MVNJitExecutor::supports(config);
             },
             // createOptimalConfig
             [](const executor::Config<MVNAttrs>& config) -> std::optional<executor::Config<MVNAttrs>> {
                 // Choose layout config based on input layout
-                const auto& srcDesc = config.descs.at(ARG_SRC_0);
-                bool isChannelLast = srcDesc->hasLayoutType(LayoutType::nspc);
-                const auto& layoutConfig = isChannelLast ? mvnByChannelLayoutConfig : mvnPlanarLayoutConfig;
-                
+                std::vector<LayoutType> actualLayouts = {
+                    getLayoutType(config.descs.at(ARG_SRC_0)),
+                    getLayoutType(config.descs.at(ARG_DST)),
+                };
                 return createOptimalConfigCommon(config,
                                                  mvnTypeMapping,
-                                                 layoutConfig,
+                                                 actualLayouts,
                                                  mvnMappingNotation);
             },
             AcceptsAnyShape<MVNAttrs>{},
@@ -106,13 +105,13 @@ const std::vector<ExecutorImplementation<MVNAttrs>>& getImplementations() {
             // createOptimalConfig
             [](const executor::Config<MVNAttrs>& config) -> std::optional<executor::Config<MVNAttrs>> {
                 // Choose layout config based on input layout
-                const auto& srcDesc = config.descs.at(ARG_SRC_0);
-                bool isChannelLast = srcDesc->hasLayoutType(LayoutType::nspc);
-                const auto& layoutConfig = isChannelLast ? mvnByChannelLayoutConfig : mvnPlanarLayoutConfig;
-                
+                std::vector<LayoutType> actualLayouts = {
+                    getLayoutType(config.descs.at(ARG_SRC_0)),
+                    getLayoutType(config.descs.at(ARG_DST)),
+                };
                 return createOptimalConfigCommon(config,
                                                  mvnTypeMapping,
-                                                 layoutConfig,
+                                                 actualLayouts,
                                                  mvnMappingNotation);
             },
             AcceptsAnyShape<MVNAttrs>{},
@@ -127,14 +126,14 @@ const std::vector<ExecutorImplementation<MVNAttrs>>& getImplementations() {
             SupportsAnyConfig<MVNAttrs>{},
             // createOptimalConfig
             [](const executor::Config<MVNAttrs>& config) -> std::optional<executor::Config<MVNAttrs>> {
-                // Choose layout config based on input layout
-                const auto& srcDesc = config.descs.at(ARG_SRC_0);
-                bool isChannelLast = srcDesc->hasLayoutType(LayoutType::nspc);
-                const auto& layoutConfig = isChannelLast ? mvnByChannelLayoutConfig : mvnPlanarLayoutConfig;
-                
+                // Reference implementation accepts whatever layout is provided
+                std::vector<LayoutType> actualLayouts = {
+                    getLayoutType(config.descs.at(ARG_SRC_0)),
+                    getLayoutType(config.descs.at(ARG_DST)),
+                };
                 return createOptimalConfigCommon(config,
                                                  mvnTypeMapping,
-                                                 layoutConfig,
+                                                 actualLayouts,
                                                  mvnMappingNotation);
             },
             AcceptsAnyShape<MVNAttrs>{},
