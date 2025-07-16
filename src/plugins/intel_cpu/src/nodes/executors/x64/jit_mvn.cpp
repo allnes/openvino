@@ -107,8 +107,22 @@ bool MVNJitExecutor::init(const MVNAttrs& mvnAttrs,
         }
     }
     
-    // Create a legacy executor with proper primitive attributes
-    legacyJitExecutor = std::make_shared<legacy::MVNJitExecutorLagacy>(attrs, attr);
+    // Create a key for caching
+    MVNKey key{attrs, attr};
+    
+    auto builder = [&](const MVNKey& key) -> std::shared_ptr<legacy::MVNJitExecutorLagacy> {
+        return std::make_shared<legacy::MVNJitExecutorLagacy>(key.mvnAttrs, key.attr);
+    };
+    
+    // Use context's cache if available
+    if (context) {
+        auto cache = context->getRuntimeCache();
+        auto result = cache->getOrCreate(key, builder);
+        legacyJitExecutor = result.first;
+    } else {
+        // Fallback if no context available
+        legacyJitExecutor = builder(key);
+    }
     
     return true;
 }

@@ -57,7 +57,7 @@ static const TypeMapping mvnTypeMapping {
 };
 
 // Accept the input/output layouts as-is without conversion
-LayoutType getLayoutType(const MemoryDescPtr& desc) {
+static LayoutType getLayoutType(const MemoryDescPtr& desc) {
     if (desc->hasLayoutType(LayoutType::nspc)) return LayoutType::nspc;
     if (desc->hasLayoutType(LayoutType::nCsp16c)) return LayoutType::nCsp16c;
     if (desc->hasLayoutType(LayoutType::nCsp8c)) return LayoutType::nCsp8c;
