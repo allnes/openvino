@@ -39,30 +39,6 @@ struct MVNAttrs {
     PostOps postOps;
 };
 
-struct jit_mvn_config_params {
-    MVNLayoutType layout = mvn_planar;
-    bool across_channels = false;
-    bool normalize_variance = false;
-    ov::element::Type src_prc;
-    ov::element::Type dst_prc;
-    int src_data_size = 0;
-    int dst_data_size = 0;
-};
-
-struct jit_mvn_call_args {
-    const void* src;
-    void* dst;
-    float* sum;
-    float* mean;
-    float* variance;
-    size_t work_amount;
-    size_t oc_off;
-    // shape need for shape agnostic kernel passed with each infer.
-    // OC for block layout and nspc per channel, tails for ncsp and nspc across channel.
-    size_t rt_shape_size;
-    const void* post_op_data;
-};
-
 using MVNConfig = executor::Config<MVNAttrs>;
 
 }  // namespace ov::intel_cpu
