@@ -842,8 +842,9 @@ void RefInterpolateExecutor::buildTblPillow(const VectorDims& srcDimPad5d, const
         int min = 0;
         int max = 0;
         for (int ox = 0; ox < outLen; ox++) {
-            // coordTransToInput expects scale as outShape/inShape
-            float ixCenter = coordTransToInput(ox, fScale, inLen, outLen);
+            // For pillow interpolation, use direct coordinate calculation to match reference
+            // This matches the pillow library's calculation: center = (xx + 0.5) * scale
+            float ixCenter = (ox + 0.5f) * (1.0f / fScale);
             min = static_cast<int>(ixCenter - args.filterRadius + 0.5f);
             if (min < 0) {
                 min = 0;
