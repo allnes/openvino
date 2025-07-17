@@ -4,18 +4,19 @@
 
 #pragma once
 
+#include <utility>
+
 #include "acl_common_executor.hpp"
-#include "nodes/executors/mvn_config.hpp"
-#include "nodes/executors/memory_arguments.hpp"
 #include "memory_desc/cpu_memory_desc.h"
+#include "nodes/executors/memory_arguments.hpp"
+#include "nodes/executors/mvn_config.hpp"
 
 namespace ov::intel_cpu {
 
 class ACLMVNExecutor : public ACLCommonExecutor {
 public:
-    ACLMVNExecutor(const MVNAttrs& attrs,
-                   const MemoryArgs& memory,
-                   const ExecutorContext::CPtr context) : aclMVNAtrrs(attrs) {
+    ACLMVNExecutor(MVNAttrs attrs, const MemoryArgs& memory, const ExecutorContext::CPtr& /*context*/)
+        : aclMVNAtrrs(std::move(attrs)) {
         // Initialize ACL tensor attributes for src and dst tensors
         aclTensorAttrs.memoryUsageIndicator[ACLArgs::ACL_SRC_0] = true;
         aclTensorAttrs.memoryUsageIndicator[ACLArgs::ACL_DST] = true;

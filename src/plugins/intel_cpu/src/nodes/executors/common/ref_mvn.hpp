@@ -15,9 +15,7 @@ namespace ov::intel_cpu {
 
 class MVNRefExecutor : public Executor {
 public:
-    MVNRefExecutor(const MVNAttrs& mvnAttrs,
-                   const MemoryArgs& memory,
-                   const ExecutorContext::CPtr& context);
+    MVNRefExecutor(const MVNAttrs& mvnAttrs, const MemoryArgs& memory, ExecutorContext::CPtr context);
 
     bool init(const MVNAttrs& mvnAttrs,
               const std::vector<MemoryDescPtr>& srcDescs,
@@ -39,12 +37,14 @@ public:
 
     void executeImpl(const MemoryArgs& memory);
 
-    impl_desc_type implType() const override { return impl_desc_type::ref; }
-    
+    [[nodiscard]] impl_desc_type implType() const override {
+        return impl_desc_type::ref;
+    }
+
     static bool supports(const MVNConfig& config);
 
 private:
-    void mvn_ref(const uint8_t* src_data, uint8_t* dst_data, const VectorDims& shape5d);
+    void mvn_ref(const uint8_t* src_data, uint8_t* dst_data, const VectorDims& shape5d) const;
 
     MVNAttrs attrs;
     MemoryArgs memoryArgs;

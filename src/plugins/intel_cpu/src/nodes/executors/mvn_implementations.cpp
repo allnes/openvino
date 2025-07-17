@@ -3,19 +3,22 @@
 //
 
 #include <memory>
+#include <optional>
 #include <vector>
 
+#include "memory_desc/cpu_memory_desc.h"
 #include "mvn_config.hpp"
-#include "nodes/executors/debug_messages.hpp"
 #include "nodes/executors/executor.hpp"
+#include "nodes/executors/executor_config.hpp"
 #include "nodes/executors/executor_implementation.hpp"
 #include "nodes/executors/implementation_utils.hpp"
 #include "nodes/executors/implementations.hpp"
+#include "nodes/executors/memory_arguments.hpp"
 #include "nodes/executors/precision_matcher.hpp"
+#include "nodes/executors/precision_translation.hpp"
 #include "nodes/executors/type_mask.hpp"
 #include "openvino/core/type/element_type.hpp"
 #include "utils/arch_macros.h"
-#include "utils/debug_capabilities.h"
 
 #if defined(OPENVINO_ARCH_X86_64)
 #    include "nodes/executors/x64/jit_mvn.hpp"
@@ -58,12 +61,15 @@ static const TypeMapping mvnTypeMapping{
 
 // Accept the input/output layouts as-is without conversion
 static LayoutType getLayoutType(const MemoryDescPtr& desc) {
-    if (desc->hasLayoutType(LayoutType::nspc))
+    if (desc->hasLayoutType(LayoutType::nspc)) {
         return LayoutType::nspc;
-    if (desc->hasLayoutType(LayoutType::nCsp16c))
+    }
+    if (desc->hasLayoutType(LayoutType::nCsp16c)) {
         return LayoutType::nCsp16c;
-    if (desc->hasLayoutType(LayoutType::nCsp8c))
+    }
+    if (desc->hasLayoutType(LayoutType::nCsp8c)) {
         return LayoutType::nCsp8c;
+    }
     return LayoutType::ncsp;
 }
 

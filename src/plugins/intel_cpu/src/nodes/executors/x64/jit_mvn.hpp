@@ -105,9 +105,7 @@ private:
 
 class MVNJitExecutor : public Executor {
 public:
-    MVNJitExecutor(const MVNAttrs& mvnAttrs,
-                   const MemoryArgs& memory, 
-                   const ExecutorContext::CPtr& context);
+    MVNJitExecutor(const MVNAttrs& mvnAttrs, MemoryArgs memory, ExecutorContext::CPtr context);
 
     bool init(const MVNAttrs& mvnAttrs,
               const std::vector<MemoryDescPtr>& srcDescs,
@@ -133,7 +131,8 @@ public:
         // Return a specific ISA implementation type based on runtime capabilities
         if (dnnl::impl::cpu::x64::mayiuse(dnnl::impl::cpu::x64::avx512_core)) {
             return impl_desc_type::jit_avx512;
-        } else if (dnnl::impl::cpu::x64::mayiuse(dnnl::impl::cpu::x64::avx2)) {
+        }
+        if (dnnl::impl::cpu::x64::mayiuse(dnnl::impl::cpu::x64::avx2)) {
             return impl_desc_type::jit_avx2;
         } else if (dnnl::impl::cpu::x64::mayiuse(dnnl::impl::cpu::x64::sse41)) {
             return impl_desc_type::jit_sse42;

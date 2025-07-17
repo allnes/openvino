@@ -4,29 +4,21 @@
 
 #include "jit_mvn.hpp"
 
-#include <cpu/x64/xbyak/xbyak.h>
-
 #include <any>
-#include <common/c_types_map.hpp>
 #include <common/primitive_hashing_utils.hpp>
-#include <cpu/x64/cpu_isa_traits.hpp>
-#include <functional>
+#include <common/utils.hpp>
+#include <cstddef>
+#include <cstdint>
 #include <memory>
+#include <oneapi/dnnl/dnnl.hpp>
+#include <utility>
+#include <vector>
 
-#include "cpu/x64/injectors/jit_uni_depthwise_injector.hpp"
-#include "cpu/x64/injectors/jit_uni_eltwise_injector.hpp"
-#include "cpu/x64/injectors/jit_uni_quantization_injector.hpp"
-#include "cpu/x64/jit_generator.hpp"
-#include "emitters/plugin/x64/jit_emitter.hpp"
-#include "emitters/plugin/x64/jit_load_store_emitters.hpp"
-#include "emitters/plugin/x64/utils.hpp"
-#include "nodes/executors/common/ref_mvn.hpp"
-#include "nodes/kernels/x64/jit_kernel_base.hpp"
+#include "memory_desc/cpu_memory_desc.h"
+#include "nodes/executors/executor.hpp"
+#include "nodes/executors/memory_arguments.hpp"
+#include "nodes/executors/mvn_config.hpp"
 #include "nodes/kernels/x64/mlp_utils.hpp"
-#include "openvino/core/parallel.hpp"
-#include "post_ops.hpp"
-#include "utils/cpu_utils.hpp"
-#include "utils/debug_capabilities.h"
 
 using namespace dnnl;
 using namespace dnnl::impl;
@@ -35,8 +27,7 @@ using namespace dnnl::impl::utils;
 using namespace Xbyak;
 using namespace ov;
 
-namespace ov {
-namespace intel_cpu {
+namespace ov::intel_cpu {
 
 namespace {
 
@@ -79,17 +70,17 @@ bool MVNKey::operator==(const MVNKey& rhs) const {
 
 }  // namespace
 
-MVNJitExecutor::MVNJitExecutor(const MVNAttrs& mvnAttrs, const MemoryArgs& memory, const ExecutorContext::CPtr& context)
+MVNJitExecutor::MVNJitExecutor(const MVNAttrs& mvnAttrs, MemoryArgs memory, ExecutorContext::CPtr context)
     : attrs(mvnAttrs),
-      memoryArgs(memory),
-      context(context),
+      memoryArgs(std::move(memory)),
+      context(std::move(context)),
       shape5D(mvnAttrs.shape5D) {
     legacyJitExecutor = std::make_shared<legacy::MVNJitExecutorLagacy>(attrs, dnnl::primitive_attr());
 }
 
 bool MVNJitExecutor::init(const MVNAttrs& mvnAttrs,
-                          const std::vector<MemoryDescPtr>& srcDescs,
-                          const std::vector<MemoryDescPtr>& dstDescs,
+                          const std::vector<MemoryDescPtr>& /*srcDescs*/,
+                          const std::vector<MemoryDescPtr>& /*dstDescs*/,
                           const dnnl::primitive_attr& attr) {
     shape5D = mvnAttrs.shape5D;
     attrs = mvnAttrs;
@@ -154,11 +145,10 @@ bool MVNJitExecutor::canReuseShapeAgnosticKernel(const VectorDims& newShape5D) c
     return false;
 }
 
-bool MVNJitExecutor::supports(const MVNConfig& config) {
+bool MVNJitExecutor::supports(const MVNConfig& /*config*/) {
     // JIT implementation supports all precisions
     // The legacy implementation handles precision conversions internally
     return true;
 }
 
-}  // namespace intel_cpu
-}  // namespace ov
+}  // namespace ov::intel_cpu

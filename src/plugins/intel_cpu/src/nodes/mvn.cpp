@@ -6,14 +6,13 @@
 
 #include <algorithm>
 #include <cassert>
-#include <cmath>
 #include <cpu/x64/cpu_isa_traits.hpp>
 #include <cstddef>
-#include <cstdint>
 #include <memory>
 #include <oneapi/dnnl/dnnl.hpp>
 #include <oneapi/dnnl/dnnl_common.hpp>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "cpu_types.h"
@@ -33,7 +32,6 @@
 #include "onednn/iml_type_mapper.h"
 #include "openvino/core/except.hpp"
 #include "openvino/core/node.hpp"
-#include "openvino/core/parallel.hpp"
 #include "openvino/core/type.hpp"
 #include "openvino/core/type/element_type.hpp"
 #include "openvino/op/constant.hpp"
@@ -214,33 +212,33 @@ void MVN::initSupportedPrimitiveDescriptors() {
                                                                            {nspcSrcDesc, nspcDstDesc}};
 
     // Add blocked layout configurations for 4D and 5D tensors
-    if (getInputShapeAtPort(0).getRank() == 4 && creatorsMap.count(LayoutType::nCsp8c)) {
+    if (getInputShapeAtPort(0).getRank() == 4 && (creatorsMap.count(LayoutType::nCsp8c) != 0u)) {
         auto blocked8SrcDesc =
             creatorsMap.at(LayoutType::nCsp8c)->createSharedDesc(inputPrecision, getInputShapeAtPort(0));
         auto blocked8DstDesc =
             creatorsMap.at(LayoutType::nCsp8c)->createSharedDesc(outputPrecision, getOutputShapeAtPort(0));
-        configurations.push_back({blocked8SrcDesc, blocked8DstDesc});
+        configurations.emplace_back(blocked8SrcDesc, blocked8DstDesc);
     }
-    if (getInputShapeAtPort(0).getRank() == 4 && creatorsMap.count(LayoutType::nCsp16c)) {
+    if (getInputShapeAtPort(0).getRank() == 4 && (creatorsMap.count(LayoutType::nCsp16c) != 0u)) {
         auto blocked16SrcDesc =
             creatorsMap.at(LayoutType::nCsp16c)->createSharedDesc(inputPrecision, getInputShapeAtPort(0));
         auto blocked16DstDesc =
             creatorsMap.at(LayoutType::nCsp16c)->createSharedDesc(outputPrecision, getOutputShapeAtPort(0));
-        configurations.push_back({blocked16SrcDesc, blocked16DstDesc});
+        configurations.emplace_back(blocked16SrcDesc, blocked16DstDesc);
     }
-    if (getInputShapeAtPort(0).getRank() == 5 && creatorsMap.count(LayoutType::nCsp8c)) {
+    if (getInputShapeAtPort(0).getRank() == 5 && (creatorsMap.count(LayoutType::nCsp8c) != 0u)) {
         auto blocked8SrcDesc =
             creatorsMap.at(LayoutType::nCsp8c)->createSharedDesc(inputPrecision, getInputShapeAtPort(0));
         auto blocked8DstDesc =
             creatorsMap.at(LayoutType::nCsp8c)->createSharedDesc(outputPrecision, getOutputShapeAtPort(0));
-        configurations.push_back({blocked8SrcDesc, blocked8DstDesc});
+        configurations.emplace_back(blocked8SrcDesc, blocked8DstDesc);
     }
-    if (getInputShapeAtPort(0).getRank() == 5 && creatorsMap.count(LayoutType::nCsp16c)) {
+    if (getInputShapeAtPort(0).getRank() == 5 && (creatorsMap.count(LayoutType::nCsp16c) != 0u)) {
         auto blocked16SrcDesc =
             creatorsMap.at(LayoutType::nCsp16c)->createSharedDesc(inputPrecision, getInputShapeAtPort(0));
         auto blocked16DstDesc =
             creatorsMap.at(LayoutType::nCsp16c)->createSharedDesc(outputPrecision, getOutputShapeAtPort(0));
-        configurations.push_back({blocked16SrcDesc, blocked16DstDesc});
+        configurations.emplace_back(blocked16SrcDesc, blocked16DstDesc);
     }
 
     // TODO [DS]: inplace
@@ -318,7 +316,7 @@ void MVN::prepareParams() {
     // This allows the executor to access the actual post-ops data
     mvnAttrs.postOps.clear();
     for (const auto* ptr : postOpsDataPtrs) {
-        mvnAttrs.postOps.push_back(ptr);
+        mvnAttrs.postOps.emplace_back(ptr);
     }
 
     auto factory =

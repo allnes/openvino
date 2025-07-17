@@ -5,19 +5,26 @@
 #include "ref_mvn.hpp"
 
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <oneapi/dnnl/dnnl.hpp>
+#include <utility>
 #include <vector>
 
+#include "memory_desc/cpu_memory_desc.h"
 #include "nodes/common/cpu_convert.h"
+#include "nodes/executors/executor.hpp"
+#include "nodes/executors/memory_arguments.hpp"
+#include "nodes/executors/mvn_config.hpp"
 #include "openvino/core/parallel.hpp"
-#include "utils/bfloat16.hpp"
-#include "utils/general_utils.h"
+#include "openvino/core/type/element_type.hpp"
 
 namespace ov::intel_cpu {
 
-MVNRefExecutor::MVNRefExecutor(const MVNAttrs& mvnAttrs, const MemoryArgs& memory, const ExecutorContext::CPtr& context)
+MVNRefExecutor::MVNRefExecutor(const MVNAttrs& mvnAttrs, const MemoryArgs& memory, ExecutorContext::CPtr context)
     : attrs(mvnAttrs),
       memoryArgs(memory),
-      context(context) {
+      context(std::move(context)) {
     // Initialize the reference implementation
     auto srcDesc = memory.at(ARG_SRC_0)->getDescPtr();
     auto dstDesc = memory.at(ARG_DST)->getDescPtr();
@@ -36,19 +43,21 @@ bool MVNRefExecutor::supports([[maybe_unused]] const MVNConfig& config) {
 bool MVNRefExecutor::init(const MVNAttrs& mvnAttrs,
                           const std::vector<MemoryDescPtr>& srcDescs,
                           const std::vector<MemoryDescPtr>& dstDescs,
-                          const dnnl::primitive_attr& attr) {
+                          const dnnl::primitive_attr& /*attr*/) {
     attrs = mvnAttrs;
 
-    auto srcDesc = srcDescs[0];
-    auto dstDesc = dstDescs[0];
+    const auto& srcDesc = srcDescs[0];
+    const auto& dstDesc = dstDescs[0];
 
-    if (!srcDesc || !dstDesc)
+    if (!srcDesc || !dstDesc) {
         return false;
+    }
 
     // Use the transformed 5D shape from attrs
     shape5D = attrs.shape5D;
-    if (shape5D.size() != 5 || shape5D.empty())
+    if (shape5D.size() != 5 || shape5D.empty()) {
         return false;
+    }
 
     src_data_size = srcDesc->getPrecision().size();
     dst_data_size = dstDesc->getPrecision().size();
@@ -60,13 +69,13 @@ void MVNRefExecutor::executeImpl(const MemoryArgs& memory) {
     const auto src = memory.at(ARG_SRC_0);
     const auto dst = memory.at(ARG_DST);
 
-    const uint8_t* src_data = src->getDataAs<const uint8_t>();
-    uint8_t* dst_data = dst->getDataAs<uint8_t>();
+    const auto* src_data = src->getDataAs<const uint8_t>();
+    auto* dst_data = dst->getDataAs<uint8_t>();
 
     mvn_ref(src_data, dst_data, attrs.shape5D);
 }
 
-void MVNRefExecutor::mvn_ref(const uint8_t* src_data, uint8_t* dst_data, const VectorDims& shape5d) {
+void MVNRefExecutor::mvn_ref(const uint8_t* src_data, uint8_t* dst_data, const VectorDims& shape5d) const {
     const size_t N = shape5d[0];
     const size_t C = shape5d[1];
     const size_t D = shape5d[2];
