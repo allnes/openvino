@@ -6,49 +6,39 @@
 
 #include "arm_compute/runtime/NEON/functions/NEScale.h"
 #include "arm_compute/runtime/Tensor.h"
-#include "nodes/executors/interpolate.hpp"
+#include "nodes/executors/executor.hpp"
+#include "nodes/executors/interpolate_config.hpp"
+#include "nodes/executors/memory_arguments.hpp"
+#include "post_ops.hpp"
 
-namespace ov::intel_cpu {
+namespace ov {
+namespace intel_cpu {
 
-class ACLInterpolateExecutor : public InterpolateExecutor {
+using PostOpsPtr = std::shared_ptr<PostOps>;
+
+class ACLInterpolateExecutor : public Executor {
 public:
-    explicit ACLInterpolateExecutor(const ExecutorContext::CPtr& context) : InterpolateExecutor(context) {}
+    ACLInterpolateExecutor(const InterpolateAttrs& attrs,
+                          const PostOpsPtr& postOps,
+                          const MemoryArgs& memory,
+                          const ExecutorContext::CPtr context);
 
-    bool init(const InterpolateAttrs& interpolateAttrs,
-              const std::vector<MemoryDescPtr>& srcDescs,
-              const std::vector<MemoryDescPtr>& dstDescs,
-              const dnnl::primitive_attr& attr) override;
-
-    void exec(const std::vector<MemoryCPtr>& src,
-              const std::vector<MemoryPtr>& dst,
-              const void* post_ops_data_) override;
-
-    [[nodiscard]] impl_desc_type getImplType() const override {
-        return implType;
+    bool update(const MemoryArgs& memory) override;
+    void execute(const MemoryArgs& memory) override;
+    
+    impl_desc_type implType() const override {
+        return impl_desc_type::acl;
     }
 
 private:
-    impl_desc_type implType = impl_desc_type::acl;
-    InterpolateAttrs aclInterpolateAttrs;
+    InterpolateAttrs m_attrs;
     arm_compute::SamplingPolicy acl_coord = arm_compute::SamplingPolicy::CENTER;
     arm_compute::InterpolationPolicy acl_policy = arm_compute::InterpolationPolicy::NEAREST_NEIGHBOR;
     arm_compute::Tensor srcTensor, dstTensor;
     std::unique_ptr<arm_compute::NEScale> acl_scale;
+    std::vector<uint8_t> m_padded_input;
+    const uint8_t* padPreprocess(const MemoryCPtr& src, const MemoryPtr& dst);
 };
 
-class ACLInterpolateExecutorBuilder : public InterpolateExecutorBuilder {
-public:
-    [[nodiscard]] bool isSupported(const InterpolateAttrs& interpolateAttrs,
-                                   const std::vector<MemoryDescPtr>& srcDescs,
-                                   const std::vector<MemoryDescPtr>& dstDescs) const override;
-
-    [[nodiscard]] InterpolateExecutorPtr makeExecutor(const ExecutorContext::CPtr context) const override {
-        return std::make_shared<ACLInterpolateExecutor>(context);
-    }
-
-private:
-    static bool isSupportedConfiguration(const InterpolateAttrs& interpolateAttrs,
-                                         const std::vector<MemoryDescPtr>& srcDescs,
-                                         const std::vector<MemoryDescPtr>& dstDescs);
-};
-}  // namespace ov::intel_cpu
+}  // namespace intel_cpu
+}  // namespace ov

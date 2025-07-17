@@ -31,8 +31,10 @@
 #include "node.h"
 #include "nodes/common/blocked_desc_creator.h"
 #include "nodes/executors/executor.hpp"
-#include "nodes/executors/interpolate.hpp"
+#include "nodes/executors/interpolate_config.hpp"
 #include "nodes/executors/interpolate_list.hpp"
+#include "nodes/executors/memory_arguments.hpp"
+#include "nodes/executors/executor_factory.hpp"
 #include "nodes/node_config.h"
 #include "onednn/iml_type_mapper.h"
 #include "openvino/core/enum_names.hpp"
@@ -2261,25 +2263,7 @@ void Interpolate::initSupportedPrimitiveDescriptors() {
             creatorsMap.at(dataFormat)->createSharedDesc(outputPrecision, getOutputShapeAtPort(0)));
 
         if (useAclExecutor) {
-            std::vector<MemoryDescPtr> srcMemoryDescs;
-            srcMemoryDescs.reserve(config.inConfs.size());
-            for (const auto& inConf : config.inConfs) {
-                srcMemoryDescs.push_back(inConf.getMemDesc());
-            }
-            std::vector<MemoryDescPtr> dstMemoryDescs;
-            dstMemoryDescs.reserve(config.outConfs.size());
-            for (const auto& outConf : config.outConfs) {
-                dstMemoryDescs.push_back(outConf.getMemDesc());
-            }
-
-            auto factory = std::make_shared<InterpolateExecutorFactory>(
-                interpAttrs,
-                srcMemoryDescs,
-                dstMemoryDescs,
-                std::make_shared<ExecutorContext>(context, getImplPriority()));
-            if (!factory->isEmpty()) {
-                supportedPrimitiveDescriptors.emplace_back(config, implDetail, factory);
-            }
+            supportedPrimitiveDescriptors.emplace_back(config, implDetail);
         } else {
             supportedPrimitiveDescriptors.emplace_back(config, implDetail);
         }
@@ -2504,24 +2488,34 @@ void Interpolate::prepareParams() {
         THROW_CPU_NODE_ERR("only supports resize on spatial dimensions(depth, height and width)");
     }
 
-    if (canUseAclExecutor) {
+    // Try to use the new executor pattern for supported modes
+    bool useNewExecutor = (interpAttrs.mode == InterpolateMode::nearest || 
+                          interpAttrs.mode == InterpolateMode::linear_onnx || 
+                          interpAttrs.mode == InterpolateMode::linear ||
+                          interpAttrs.mode == InterpolateMode::cubic ||
+                          interpAttrs.mode == InterpolateMode::bilinear_pillow ||
+                          interpAttrs.mode == InterpolateMode::bicubic_pillow);
+    
+    if (useNewExecutor) {
         interpAttrs.dataScales = dataScales;
 
-        std::vector<MemoryDescPtr> srcMemoryDescs;
-        for (size_t i = 0; i < getParentEdges().size(); i++) {
-            srcMemoryDescs.push_back(getSrcMemoryAtPort(i)->getDescPtr());
+        MemoryDescArgs descs;
+        descs[ARG_SRC] = getSrcMemoryAtPort(0)->getDescPtr();
+        descs[ARG_DST] = getDstMemoryAtPort(0)->getDescPtr();
+        
+        auto executionContext = std::make_shared<ExecutorContext>(context, getImplPriority());
+        factory = std::make_shared<InterpolateExecutorFactory>(interpAttrs, executionContext, descs);
+        
+        MemoryArgs memory;
+        memory[ARG_SRC] = getSrcMemoryAtPort(0);
+        memory[ARG_DST] = getDstMemoryAtPort(0);
+        
+        aclExecPtr = factory->make(memory);
+        if (aclExecPtr) {
+            getSelectedPrimitiveDescriptor()->setImplementationType(aclExecPtr->implType());
+            lastOutputDims = dstDimsOrign;
+            return;
         }
-        std::vector<MemoryDescPtr> dstMemoryDescs;
-        dstMemoryDescs.push_back(getDstMemoryAtPort(0)->getDescPtr());
-
-        auto* selectedPD = getSelectedPrimitiveDescriptor();
-        aclExecPtr = selectedPD->getExecutorFactoryAs<InterpolateExecutorFactory>()->makeExecutor(interpAttrs,
-                                                                                                  srcMemoryDescs,
-                                                                                                  dstMemoryDescs,
-                                                                                                  {});
-        selectedPD->setImplementationType(aclExecPtr->getImplType());
-
-        return;
     }
 
     InterpolateKey key = {interpAttrs, srcDims, dstDims, dataScales, dnnl::primitive_attr()};
@@ -2665,7 +2659,12 @@ void Interpolate::execute([[maybe_unused]] const dnnl::stream& strm) {
     auto dstMemPtr = getDstMemoryAtPort(0);
     auto srcMemPtr = getSrcMemoryAtPort(DATA_ID);
 
-    if (execPtr) {
+    if (aclExecPtr) {
+        MemoryArgs memory;
+        memory[ARG_SRC] = srcMemPtr;
+        memory[ARG_DST] = dstMemPtr;
+        aclExecPtr->execute(memory);
+    } else if (execPtr) {
         auto* dst_data = dstMemPtr->getDataAs<uint8_t>();
         const uint8_t* src_data_origin = srcMemPtr->getDataAs<uint8_t>();
         const uint8_t* src_data = nullptr;
@@ -2759,8 +2758,6 @@ void Interpolate::execute([[maybe_unused]] const dnnl::stream& strm) {
         }
 
         execPtr->exec(src_data, dst_data, reinterpret_cast<void*>(postOpsDataPtrs.data()));
-    } else if (aclExecPtr) {
-        aclExecPtr->exec({srcMemPtr}, {dstMemPtr}, reinterpret_cast<void*>(postOpsDataPtrs.data()));
     } else {
         THROW_CPU_NODE_ERR("Primitive wasn't created");
     }

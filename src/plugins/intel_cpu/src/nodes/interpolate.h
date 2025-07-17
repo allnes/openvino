@@ -14,13 +14,19 @@
 #include <string>
 
 #include "cpu_types.h"
-#include "executors/interpolate.hpp"
+#include "executors/interpolate_config.hpp"
+#include "executors/interpolate_list.hpp"
+#include "executors/executor.hpp"
+#include "executors/executor_factory.hpp"
+#include "executors/memory_arguments.hpp"
 #include "graph_context.h"
 #include "node.h"
 #include "openvino/core/node.hpp"
 #include "openvino/core/type/element_type.hpp"
 
 namespace ov::intel_cpu::node {
+
+// MAX_INPUT_INTERPOLATE is now defined in interpolate_config.hpp
 
 struct jit_interpolate_config_params {
     InterpolateLayoutType layout = InterpolateLayoutType::planar;
@@ -348,7 +354,8 @@ private:
     VectorDims lastOutputDims;
 
     bool canUseAclExecutor = false;
-    std::shared_ptr<InterpolateExecutor> aclExecPtr = nullptr;
+    ExecutorPtr aclExecPtr = nullptr;
+    InterpolateExecutorFactoryPtr factory;
 };
 
 }  // namespace ov::intel_cpu::node
