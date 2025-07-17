@@ -5,7 +5,6 @@
 #include "jit_mvn.hpp"
 
 #include <any>
-#include "common/primitive_attr.hpp"
 #include <common/primitive_hashing_utils.hpp>
 #include <common/utils.hpp>
 #include <cstddef>
@@ -15,6 +14,7 @@
 #include <utility>
 #include <vector>
 
+#include "common/primitive_attr.hpp"
 #include "memory_desc/cpu_memory_desc.h"
 #include "nodes/executors/executor.hpp"
 #include "nodes/executors/memory_arguments.hpp"
@@ -125,7 +125,7 @@ void MVNJitExecutor::executeImpl(const MemoryArgs& memory) {
     // Pass post-ops data to the legacy executor
     const void* post_ops_data = nullptr;
     if (!postOpsDataPtrs.empty()) {
-        post_ops_data = postOpsDataPtrs.data();
+        post_ops_data = static_cast<const void*>(postOpsDataPtrs.data());
     }
 
     // Call legacy executor with proper parameters

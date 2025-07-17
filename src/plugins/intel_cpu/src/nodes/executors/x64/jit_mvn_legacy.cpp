@@ -1,27 +1,26 @@
 
 #include "jit_mvn_legacy.hpp"
 
-#include "utils/cpu_utils.hpp"
-#include <cpu/x64/cpu_isa_traits.hpp>
-#include <memory>
-#include <common/primitive_hashing_utils.hpp>
-#include "openvino/core/parallel.hpp"
-
-#include "emitters/plugin/x64/jit_emitter.hpp"
-#include "emitters/plugin/x64/utils.hpp"
-#include "nodes/kernels/x64/mlp_utils.hpp"
-#include "nodes/kernels/x64/jit_kernel_base.hpp"
-#include "utils/debug_capabilities.h"
 #include <xbyak/xbyak.h>
 
 #include <common/c_types_map.hpp>
+#include <common/primitive_hashing_utils.hpp>
+#include <cpu/x64/cpu_isa_traits.hpp>
 #include <functional>
+#include <memory>
 
 #include "cpu/x64/injectors/jit_uni_depthwise_injector.hpp"
 #include "cpu/x64/injectors/jit_uni_eltwise_injector.hpp"
 #include "cpu/x64/injectors/jit_uni_quantization_injector.hpp"
 #include "cpu/x64/jit_generator.hpp"
+#include "emitters/plugin/x64/jit_emitter.hpp"
 #include "emitters/plugin/x64/jit_load_store_emitters.hpp"
+#include "emitters/plugin/x64/utils.hpp"
+#include "nodes/kernels/x64/jit_kernel_base.hpp"
+#include "nodes/kernels/x64/mlp_utils.hpp"
+#include "openvino/core/parallel.hpp"
+#include "utils/cpu_utils.hpp"
+#include "utils/debug_capabilities.h"
 
 using namespace dnnl;
 using namespace dnnl::impl;
@@ -938,11 +937,11 @@ struct jit_uni_mvn_kernel_f32 : public jit_uni_mvn_kernel, public jit_generator_
             auto& post_op = p.entry_[i];
             if (post_op.is_eltwise()) {
                 eltwise_injectors.push_back(std::make_shared<jit_uni_eltwise_injector_t<isa>>(this,
-                                                                                            post_op.eltwise.alg,
-                                                                                            post_op.eltwise.alpha,
-                                                                                            post_op.eltwise.beta,
-                                                                                            post_op.eltwise.scale,
-                                                                                            data_type::f32));
+                                                                                              post_op.eltwise.alg,
+                                                                                              post_op.eltwise.alpha,
+                                                                                              post_op.eltwise.beta,
+                                                                                              post_op.eltwise.scale,
+                                                                                              data_type::f32));
             } else if (post_op.is_depthwise()) {
                 depthwise_injectors.push_back(std::make_shared<jit_uni_depthwise_injector_f32<isa>>(this, post_op));
             } else if (post_op.is_quantization()) {
@@ -1807,7 +1806,9 @@ private:
 };
 
 MVNJitExecutorLagacy::MVNJitExecutorLagacy(const MVNAttrs& mvnAttrs, const dnnl::primitive_attr& attr)
-: mvnAttrs(mvnAttrs), src_data_size(mvnAttrs.src_prc.size()), dst_data_size(mvnAttrs.dst_prc.size()) {
+    : mvnAttrs(mvnAttrs),
+      src_data_size(mvnAttrs.src_prc.size()),
+      dst_data_size(mvnAttrs.dst_prc.size()) {
     auto jcp = jit_mvn_config_params();
     jcp.src_prc = mvnAttrs.src_prc;
     jcp.dst_prc = mvnAttrs.dst_prc;
@@ -1855,9 +1856,9 @@ MVNJitExecutorLagacy::MVNJitExecutorLagacy(const MVNAttrs& mvnAttrs, const dnnl:
 }
 
 void MVNJitExecutorLagacy::exec(const uint8_t* src_data,
-          uint8_t* dst_data,
-          const void* post_ops_data_,
-          const VectorDims& shape5d) {
+                                uint8_t* dst_data,
+                                const void* post_ops_data_,
+                                const VectorDims& shape5d) {
     if (!mvn_mean_kernel || (mvnAttrs.normalizeVariance_ && !mvn_variance_kernel) || !mvn_kernel) {
         OPENVINO_THROW("MVN layer doesn't create kernel to execute on sse41 above platform.");
     }
@@ -1870,7 +1871,10 @@ void MVNJitExecutorLagacy::exec(const uint8_t* src_data,
     }
 }
 
-void MVNJitExecutorLagacy::mvn_pln(const uint8_t* src_data, uint8_t* dst_data, const void* post_ops_data_, const VectorDims& shape5d) {
+void MVNJitExecutorLagacy::mvn_pln(const uint8_t* src_data,
+                                   uint8_t* dst_data,
+                                   const void* post_ops_data_,
+                                   const VectorDims& shape5d) {
     size_t blk_size = 1;  // blk size in vmm
     if (mayiuse(cpu::x64::avx512_core)) {
         blk_size = 16;
@@ -2012,8 +2016,10 @@ void MVNJitExecutorLagacy::mvn_pln(const uint8_t* src_data, uint8_t* dst_data, c
     }
 }
 
-
-void MVNJitExecutorLagacy::mvn_blk(const uint8_t* src_data, uint8_t* dst_data, const void* post_ops_data_, const VectorDims& shape5d) {
+void MVNJitExecutorLagacy::mvn_blk(const uint8_t* src_data,
+                                   uint8_t* dst_data,
+                                   const void* post_ops_data_,
+                                   const VectorDims& shape5d) {
     size_t blk_size = 1;  // channel blk for memory layout
     if (mayiuse(cpu::x64::avx512_core)) {
         blk_size = 16;
@@ -2271,9 +2277,9 @@ void MVNJitExecutorLagacy::mvn_blk(const uint8_t* src_data, uint8_t* dst_data, c
 }
 
 void MVNJitExecutorLagacy::mvn_nspc(const uint8_t* src_data,
-              uint8_t* dst_data,
-              const void* post_ops_data_,
-              const VectorDims& shape5d) {
+                                    uint8_t* dst_data,
+                                    const void* post_ops_data_,
+                                    const VectorDims& shape5d) {
     size_t blk_size = 1;  // channel blk for memory layout
     if (mayiuse(cpu::x64::avx512_core)) {
         blk_size = 16;
@@ -2398,4 +2404,4 @@ void MVNJitExecutorLagacy::mvn_nspc(const uint8_t* src_data,
     });
 }
 
-} // namespace ov::intel_cpu::legacy
+}  // namespace ov::intel_cpu::legacy

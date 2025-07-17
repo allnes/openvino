@@ -8,8 +8,8 @@
 #include <vector>
 
 #include "nodes/executors/executor.hpp"
-#include "nodes/executors/mvn_config.hpp"
 #include "nodes/executors/memory_arguments.hpp"
+#include "nodes/executors/mvn_config.hpp"
 
 namespace ov::intel_cpu {
 
@@ -26,11 +26,11 @@ public:
         memoryArgs = memory;
         return true;
     }
-    
+
     void execute() override {
         executeImpl(memoryArgs);
     }
-    
+
     void execute(const MemoryArgs& memory) override {
         executeImpl(memory);
     }

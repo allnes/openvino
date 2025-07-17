@@ -25,16 +25,16 @@ public:
     }
 
     static bool supports(const MVNConfig& config);
-    
+
     [[nodiscard]] impl_desc_type implType() const override {
         return impl_desc_type::acl;
     }
 
     void updateTensorsShapes(ACLShapes& aclMemoryShapes) override;
 
-    arm_compute::Status validateTensorsInfo(const ACLInfos & aclMemoryInfos) override;
+    arm_compute::Status validateTensorsInfo(const ACLInfos& aclMemoryInfos) override;
 
-    ACLFunction configureFunction(const ACLTensors & aclMemoryTensors) override;
+    ACLFunction configureFunction(const ACLTensors& aclMemoryTensors) override;
 
 private:
     MVNAttrs aclMVNAtrrs;
@@ -42,5 +42,4 @@ private:
 };
 
 using ACLMVNExecutorPtr = std::shared_ptr<ACLMVNExecutor>;
-} // namespace ov::intel_cpu
-
+}  // namespace ov::intel_cpu

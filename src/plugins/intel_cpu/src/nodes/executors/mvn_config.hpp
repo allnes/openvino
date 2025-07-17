@@ -5,26 +5,20 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <vector>
 
 #include "cpu_types.h"
-#include "openvino/core/type/element_type.hpp"
 #include "executor_config.hpp"
+#include "openvino/core/type/element_type.hpp"
 #include "post_ops.hpp"
 
 namespace ov::intel_cpu {
 
-enum MVNLayoutType {
-    mvn_planar,
-    mvn_block,
-    mvn_by_channel
-};
+enum MVNLayoutType : std::uint8_t { mvn_planar, mvn_block, mvn_by_channel };
 
-enum MVNEpsMode {
-    INSIDE_SQRT,
-    OUTSIDE_SQRT
-};
+enum MVNEpsMode : std::uint8_t { INSIDE_SQRT, OUTSIDE_SQRT };
 
 struct MVNAttrs {
     MVNLayoutType layout = mvn_planar;

@@ -5,14 +5,14 @@
 #pragma once
 
 #include <memory>
-#include <unordered_map>
 #include <oneapi/dnnl/dnnl.hpp>
+#include <unordered_map>
 #include <vector>
 
-#include "nodes/executors/executor.hpp"
-#include "nodes/executors/mvn_config.hpp"
-#include "nodes/executors/memory_arguments.hpp"
 #include "cpu/x64/cpu_isa_traits.hpp"
+#include "nodes/executors/executor.hpp"
+#include "nodes/executors/memory_arguments.hpp"
+#include "nodes/executors/mvn_config.hpp"
 
 namespace ov::intel_cpu {
 
@@ -79,18 +79,12 @@ struct jit_uni_mvn_kernel {
 class MVNJitExecutorLagacy {
 public:
     MVNJitExecutorLagacy(const MVNAttrs& mvnAttrs, const dnnl::primitive_attr& attr);
-    void exec(const uint8_t* src_data,
-              uint8_t* dst_data,
-              const void* post_ops_data_,
-              const VectorDims& shape5d);
+    void exec(const uint8_t* src_data, uint8_t* dst_data, const void* post_ops_data_, const VectorDims& shape5d);
 
 private:
     void mvn_pln(const uint8_t* src_data, uint8_t* dst_data, const void* post_ops_data_, const VectorDims& shape5d);
     void mvn_blk(const uint8_t* src_data, uint8_t* dst_data, const void* post_ops_data_, const VectorDims& shape5d);
-    void mvn_nspc(const uint8_t* src_data,
-                  uint8_t* dst_data,
-                  const void* post_ops_data_,
-                  const VectorDims& shape5d);
+    void mvn_nspc(const uint8_t* src_data, uint8_t* dst_data, const void* post_ops_data_, const VectorDims& shape5d);
 
     std::shared_ptr<jit_uni_mvn_mean_variance_kernel> mvn_mean_kernel;
     std::shared_ptr<jit_uni_mvn_mean_variance_kernel> mvn_variance_kernel;
@@ -101,7 +95,7 @@ private:
     size_t dst_data_size = 0;
 };
 
-} // namespace legacy
+}  // namespace legacy
 
 class MVNJitExecutor : public Executor {
 public:
@@ -116,30 +110,31 @@ public:
         memoryArgs = memory;
         return true;
     }
-    
+
     void execute() override {
         executeImpl(memoryArgs);
     }
-    
+
     void execute(const MemoryArgs& memory) override {
         executeImpl(memory);
     }
 
     void executeImpl(const MemoryArgs& memory);
 
-    impl_desc_type implType() const override { 
+    impl_desc_type implType() const override {
         // Return a specific ISA implementation type based on runtime capabilities
         if (dnnl::impl::cpu::x64::mayiuse(dnnl::impl::cpu::x64::avx512_core)) {
             return impl_desc_type::jit_avx512;
         }
         if (dnnl::impl::cpu::x64::mayiuse(dnnl::impl::cpu::x64::avx2)) {
             return impl_desc_type::jit_avx2;
-        } else if (dnnl::impl::cpu::x64::mayiuse(dnnl::impl::cpu::x64::sse41)) {
+        }
+        if (dnnl::impl::cpu::x64::mayiuse(dnnl::impl::cpu::x64::sse41)) {
             return impl_desc_type::jit_sse42;
         }
         return impl_desc_type::ref;
     }
-    
+
     static bool supports(const MVNConfig& config);
 
     bool canReuseShapeAgnosticKernel(const VectorDims& newShape5D) const;

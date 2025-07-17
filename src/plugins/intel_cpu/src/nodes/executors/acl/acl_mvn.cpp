@@ -3,53 +3,55 @@
 //
 
 #include "acl_mvn.hpp"
-#include "acl_utils.hpp"
 
+#include <arm_compute/core/Error.h>
 #include <arm_compute/core/TensorInfo.h>
 #include <arm_compute/core/Types.h>
-#include <arm_compute/core/Error.h>
 #include <arm_compute/runtime/NEON/functions/NEMeanStdDevNormalizationLayer.h>
 
-#include "nodes/executors/acl/acl_common_executor.hpp"
-
+#include <cstddef>
 #include <memory>
 #include <string>
-#include <cstddef>
 
-#include "nodes/executors/mvn_config.hpp"
-#include "nodes/executors/memory_arguments.hpp"
-#include "utils/debug_capabilities.h"
+#include "acl_utils.hpp"
 #include "memory_desc/cpu_memory_desc.h"
+#include "nodes/executors/acl/acl_common_executor.hpp"
+#include "nodes/executors/memory_arguments.hpp"
+#include "nodes/executors/mvn_config.hpp"
 #include "openvino/core/type/element_type.hpp"
+#include "utils/debug_capabilities.h"
 
 namespace ov::intel_cpu {
 
-bool ACLMVNExecutor::supports(const MVNConfig &config) {
+bool ACLMVNExecutor::supports(const MVNConfig& config) {
     DEBUG_LOG("ACL MVN supports() called");
-    
+
     // Check precision - ACL MVN supports f16 and f32
     const auto& srcDesc = config.descs.at(ARG_SRC_0);
     const auto& dstDesc = config.descs.at(ARG_DST);
-    
+
     // Check supported precisions
     auto srcPrecision = srcDesc->getPrecision();
     auto dstPrecision = dstDesc->getPrecision();
-    
+
     DEBUG_LOG("ACL MVN: srcPrecision=", srcPrecision.get_type_name(), " dstPrecision=", dstPrecision.get_type_name());
-    DEBUG_LOG("ACL MVN: normalizeVariance=", config.attrs.normalizeVariance_, " initAcrossChannels=", config.attrs.initAcrossChannels_);
-    
-    if ((srcPrecision != ov::element::f32 && srcPrecision != ov::element::f16) || 
+    DEBUG_LOG("ACL MVN: normalizeVariance=",
+              config.attrs.normalizeVariance_,
+              " initAcrossChannels=",
+              config.attrs.initAcrossChannels_);
+
+    if ((srcPrecision != ov::element::f32 && srcPrecision != ov::element::f16) ||
         (dstPrecision != ov::element::f32 && dstPrecision != ov::element::f16)) {
         DEBUG_LOG("ACL MVN: Unsupported precision");
         return false;
     }
-    
+
     // Input and output precisions must match
     if (srcPrecision != dstPrecision) {
         DEBUG_LOG("ACL MVN: Precision mismatch");
         return false;
     }
-    
+
     if (config.attrs.epsMode_ == MVNEpsMode::OUTSIDE_SQRT) {
         DEBUG_LOG("ACL MVN: OUTSIDE_SQRT not supported");
         return false;
@@ -58,21 +60,21 @@ bool ACLMVNExecutor::supports(const MVNConfig &config) {
         DEBUG_LOG("ACL MVN: normalize_variance=false not supported");
         return false;
     }
-    
+
     // Check layout compatibility
     if ((srcDesc->hasLayoutType(LayoutType::ncsp) && !dstDesc->hasLayoutType(LayoutType::ncsp)) ||
         (srcDesc->hasLayoutType(LayoutType::nspc) && !dstDesc->hasLayoutType(LayoutType::nspc))) {
         DEBUG_LOG("ACL MVN: Layout mismatch");
         return false;
     }
-    
+
     // ACL MVN with NHWC layout only supports initAcrossChannels = true
     // But we can handle this case by reshaping appropriately in updateTensorsShapes
     if (srcDesc->hasLayoutType(LayoutType::nspc) && !config.attrs.initAcrossChannels_) {
         DEBUG_LOG("ACL MVN: NHWC layout with initAcrossChannels=false will be handled via shape transformation");
         // We'll handle this in updateTensorsShapes
     }
-    
+
     DEBUG_LOG("ACL MVN: supports() returning true");
     return true;
 }
@@ -82,13 +84,18 @@ void ACLMVNExecutor::updateTensorsShapes(ACLShapes& aclMemoryShapes) {
     const auto srcDims = aclMemoryShapes[ACLArgs::ACL_SRC_0];
     const auto srcNumDim = aclMemoryShapes[ACLArgs::ACL_SRC_0].num_dimensions();
 
-    DEBUG_LOG("ACL MVN: srcNumDim=", srcNumDim, ", initAcrossChannels=", aclMVNAtrrs.initAcrossChannels_, ", isNHWCLayout=", isNHWCLayout);
+    DEBUG_LOG("ACL MVN: srcNumDim=",
+              srcNumDim,
+              ", initAcrossChannels=",
+              aclMVNAtrrs.initAcrossChannels_,
+              ", isNHWCLayout=",
+              isNHWCLayout);
     for (size_t i = 0; i < srcNumDim; i++) {
         DEBUG_LOG("  srcDims[", i, "]=", srcDims[i]);
     }
 
     size_t X = 1, Y = 1;  // Initialize with default values
-    
+
     // Handle empty tensor (scalar) or 1D tensor
     if (srcNumDim == 0) {
         DEBUG_LOG("ACL MVN: Handling scalar tensor, reshaping to (1,1)");
@@ -98,14 +105,16 @@ void ACLMVNExecutor::updateTensorsShapes(ACLShapes& aclMemoryShapes) {
         // For 1D tensor, reshape to 2D based on normalization mode
         if (aclMVNAtrrs.initAcrossChannels_) {
             DEBUG_LOG("ACL MVN: Handling 1D tensor across channels, reshaping to (", srcDims[0], ", 1)");
-            aclMemoryShapes[ACLArgs::ACL_SRC_0] = aclMemoryShapes[ACLArgs::ACL_DST] = arm_compute::TensorShape(srcDims[0], 1);
+            aclMemoryShapes[ACLArgs::ACL_SRC_0] = aclMemoryShapes[ACLArgs::ACL_DST] =
+                arm_compute::TensorShape(srcDims[0], 1);
         } else {
             DEBUG_LOG("ACL MVN: Handling 1D tensor not across channels, reshaping to (1, ", srcDims[0], ")");
-            aclMemoryShapes[ACLArgs::ACL_SRC_0] = aclMemoryShapes[ACLArgs::ACL_DST] = arm_compute::TensorShape(1, srcDims[0]);
+            aclMemoryShapes[ACLArgs::ACL_SRC_0] = aclMemoryShapes[ACLArgs::ACL_DST] =
+                arm_compute::TensorShape(1, srcDims[0]);
         }
         return;
     }
-    
+
     // Special handling for NHWC layout with initAcrossChannels=false
     if (isNHWCLayout && !aclMVNAtrrs.initAcrossChannels_) {
         DEBUG_LOG("ACL MVN: Special handling for NHWC with initAcrossChannels=false");
@@ -155,35 +164,33 @@ void ACLMVNExecutor::updateTensorsShapes(ACLShapes& aclMemoryShapes) {
     aclMemoryShapes[ACLArgs::ACL_SRC_0] = aclMemoryShapes[ACLArgs::ACL_DST] = arm_compute::TensorShape(X, Y);
 }
 
-arm_compute::Status ACLMVNExecutor::validateTensorsInfo(const ACLInfos &aclMemoryInfos) {
+arm_compute::Status ACLMVNExecutor::validateTensorsInfo(const ACLInfos& aclMemoryInfos) {
     DEBUG_LOG("ACL MVN validateTensorsInfo called");
-    
+
     // We handle NHWC with initAcrossChannels=false by shape transformation in updateTensorsShapes
     // So we don't need to reject it here
-    
-    auto status = arm_compute::NEMeanStdDevNormalizationLayer::validate(
-            aclMemoryInfos[ACLArgs::ACL_SRC_0].get(),
-            aclMemoryInfos[ACLArgs::ACL_DST].get(),
-            aclMVNAtrrs.epsValue_);
-            
+
+    auto status = arm_compute::NEMeanStdDevNormalizationLayer::validate(aclMemoryInfos[ACLArgs::ACL_SRC_0].get(),
+                                                                        aclMemoryInfos[ACLArgs::ACL_DST].get(),
+                                                                        aclMVNAtrrs.epsValue_);
+
     if (!status) {
         DEBUG_LOG("ACL MVN validation failed: ", status.error_description());
     } else {
         DEBUG_LOG("ACL MVN validation succeeded");
     }
-    
+
     return status;
 }
 
-ACLFunction ACLMVNExecutor::configureFunction(const ACLTensors & aclMemoryTensors) {
+ACLFunction ACLMVNExecutor::configureFunction(const ACLTensors& aclMemoryTensors) {
     DEBUG_LOG("ACL MVN configureFunction called, epsilon=", aclMVNAtrrs.epsValue_);
     auto neMVN = std::make_unique<arm_compute::NEMeanStdDevNormalizationLayer>();
-    neMVN->configure(
-            aclMemoryTensors[ACLArgs::ACL_SRC_0].get(),
-            aclMemoryTensors[ACLArgs::ACL_DST].get(),
-            aclMVNAtrrs.epsValue_);
+    neMVN->configure(aclMemoryTensors[ACLArgs::ACL_SRC_0].get(),
+                     aclMemoryTensors[ACLArgs::ACL_DST].get(),
+                     aclMVNAtrrs.epsValue_);
     DEBUG_LOG("ACL MVN configureFunction completed");
     return neMVN;
 }
 
-} // namespace ov::intel_cpu
+}  // namespace ov::intel_cpu
