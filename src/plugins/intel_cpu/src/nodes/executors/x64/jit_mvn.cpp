@@ -15,7 +15,6 @@
 #include <vector>
 
 #include "common/primitive_attr.hpp"
-#include "memory_desc/cpu_memory_desc.h"
 #include "nodes/executors/executor.hpp"
 #include "nodes/executors/memory_arguments.hpp"
 #include "nodes/executors/mvn_config.hpp"
@@ -70,21 +69,11 @@ bool MVNKey::operator==(const MVNKey& rhs) const {
 
 }  // namespace
 
-MVNJitExecutor::MVNJitExecutor(const MVNAttrs& mvnAttrs, MemoryArgs memory, ExecutorContext::CPtr context)
+MVNJitExecutor::MVNJitExecutor(const MVNAttrs& mvnAttrs, MemoryArgs memory, ExecutorContext::CPtr contextPtr)
     : attrs(mvnAttrs),
       memoryArgs(std::move(memory)),
-      context(std::move(context)),
+      context(std::move(contextPtr)),
       shape5D(mvnAttrs.shape5D) {
-    legacyJitExecutor = std::make_shared<legacy::MVNJitExecutorLagacy>(attrs, dnnl::primitive_attr());
-}
-
-bool MVNJitExecutor::init(const MVNAttrs& mvnAttrs,
-                          const std::vector<MemoryDescPtr>& /*srcDescs*/,
-                          const std::vector<MemoryDescPtr>& /*dstDescs*/,
-                          const dnnl::primitive_attr& attr) {
-    shape5D = mvnAttrs.shape5D;
-    attrs = mvnAttrs;
-
     // Extract post-ops data from MVNAttrs
     postOpsDataPtrs.clear();
 
@@ -96,6 +85,9 @@ bool MVNJitExecutor::init(const MVNAttrs& mvnAttrs,
             postOpsDataPtrs.push_back(std::any_cast<const void*>(postOp));
         }
     }
+
+    // Create primitive attribute with default values
+    dnnl::primitive_attr attr;
 
     // Create a key for caching
     MVNKey key{attrs, attr};
@@ -113,8 +105,6 @@ bool MVNJitExecutor::init(const MVNAttrs& mvnAttrs,
         // Fallback if no context available
         legacyJitExecutor = builder(key);
     }
-
-    return true;
 }
 
 void MVNJitExecutor::executeImpl(const MemoryArgs& memory) {
@@ -125,7 +115,7 @@ void MVNJitExecutor::executeImpl(const MemoryArgs& memory) {
     // Pass post-ops data to the legacy executor
     const void* post_ops_data = nullptr;
     if (!postOpsDataPtrs.empty()) {
-        post_ops_data = static_cast<const void*>(postOpsDataPtrs.data());
+        post_ops_data = static_cast<const void*>(static_cast<const void* const*>(postOpsDataPtrs.data()));
     }
 
     // Call legacy executor with proper parameters

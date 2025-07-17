@@ -3,24 +3,24 @@
 
 #include <xbyak/xbyak.h>
 
+#include <cassert>
 #include <common/c_types_map.hpp>
-#include <common/primitive_hashing_utils.hpp>
 #include <cpu/x64/cpu_isa_traits.hpp>
+#include <cstddef>
+#include <cstdint>
 #include <functional>
 #include <memory>
+#include <vector>
 
+#include "common/utils.hpp"
 #include "cpu/x64/injectors/jit_uni_depthwise_injector.hpp"
 #include "cpu/x64/injectors/jit_uni_eltwise_injector.hpp"
 #include "cpu/x64/injectors/jit_uni_quantization_injector.hpp"
 #include "cpu/x64/jit_generator.hpp"
-#include "emitters/plugin/x64/jit_emitter.hpp"
 #include "emitters/plugin/x64/jit_load_store_emitters.hpp"
-#include "emitters/plugin/x64/utils.hpp"
-#include "nodes/kernels/x64/jit_kernel_base.hpp"
 #include "nodes/kernels/x64/mlp_utils.hpp"
 #include "openvino/core/parallel.hpp"
-#include "utils/cpu_utils.hpp"
-#include "utils/debug_capabilities.h"
+#include "openvino/core/type/element_type.hpp"
 
 using namespace dnnl;
 using namespace dnnl::impl;

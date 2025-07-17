@@ -101,11 +101,6 @@ class MVNJitExecutor : public Executor {
 public:
     MVNJitExecutor(const MVNAttrs& mvnAttrs, MemoryArgs memory, ExecutorContext::CPtr context);
 
-    bool init(const MVNAttrs& mvnAttrs,
-              const std::vector<MemoryDescPtr>& srcDescs,
-              const std::vector<MemoryDescPtr>& dstDescs,
-              const dnnl::primitive_attr& attr);
-
     bool update(const MemoryArgs& memory) override {
         memoryArgs = memory;
         return true;

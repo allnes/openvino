@@ -13,7 +13,6 @@
 #include <memory>
 #include <string>
 
-#include "acl_utils.hpp"
 #include "memory_desc/cpu_memory_desc.h"
 #include "nodes/executors/acl/acl_common_executor.hpp"
 #include "nodes/executors/memory_arguments.hpp"
@@ -101,7 +100,8 @@ void ACLMVNExecutor::updateTensorsShapes(ACLShapes& aclMemoryShapes) {
         DEBUG_LOG("ACL MVN: Handling scalar tensor, reshaping to (1,1)");
         aclMemoryShapes[ACLArgs::ACL_SRC_0] = aclMemoryShapes[ACLArgs::ACL_DST] = arm_compute::TensorShape(1, 1);
         return;
-    } else if (srcNumDim == 1) {
+    }
+    if (srcNumDim == 1) {
         // For 1D tensor, reshape to 2D based on normalization mode
         if (aclMVNAtrrs.initAcrossChannels_) {
             DEBUG_LOG("ACL MVN: Handling 1D tensor across channels, reshaping to (", srcDims[0], ", 1)");

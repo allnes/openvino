@@ -7,61 +7,43 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
-#include <oneapi/dnnl/dnnl.hpp>
 #include <utility>
 #include <vector>
 
-#include "memory_desc/cpu_memory_desc.h"
 #include "nodes/common/cpu_convert.h"
 #include "nodes/executors/executor.hpp"
 #include "nodes/executors/memory_arguments.hpp"
 #include "nodes/executors/mvn_config.hpp"
+#include "openvino/core/except.hpp"
 #include "openvino/core/parallel.hpp"
 #include "openvino/core/type/element_type.hpp"
 
 namespace ov::intel_cpu {
 
-MVNRefExecutor::MVNRefExecutor(const MVNAttrs& mvnAttrs, const MemoryArgs& memory, ExecutorContext::CPtr context)
+MVNRefExecutor::MVNRefExecutor(const MVNAttrs& mvnAttrs, MemoryArgs memory, ExecutorContext::CPtr contextPtr)
     : attrs(mvnAttrs),
       memoryArgs(memory),
-      context(std::move(context)) {
-    // Initialize the reference implementation
+      context(std::move(contextPtr)) {
+    // Initialize from constructor parameters
     auto srcDesc = memory.at(ARG_SRC_0)->getDescPtr();
     auto dstDesc = memory.at(ARG_DST)->getDescPtr();
-    std::vector<MemoryDescPtr> srcDescs = {srcDesc};
-    std::vector<MemoryDescPtr> dstDescs = {dstDesc};
-
-    dnnl::primitive_attr attr;
-    init(mvnAttrs, srcDescs, dstDescs, attr);
-}
-
-bool MVNRefExecutor::supports([[maybe_unused]] const MVNConfig& config) {
-    // Reference implementation supports all configurations
-    return true;
-}
-
-bool MVNRefExecutor::init(const MVNAttrs& mvnAttrs,
-                          const std::vector<MemoryDescPtr>& srcDescs,
-                          const std::vector<MemoryDescPtr>& dstDescs,
-                          const dnnl::primitive_attr& /*attr*/) {
-    attrs = mvnAttrs;
-
-    const auto& srcDesc = srcDescs[0];
-    const auto& dstDesc = dstDescs[0];
 
     if (!srcDesc || !dstDesc) {
-        return false;
+        OPENVINO_THROW("Invalid memory descriptors for MVNRefExecutor");
     }
 
     // Use the transformed 5D shape from attrs
     shape5D = attrs.shape5D;
     if (shape5D.size() != 5 || shape5D.empty()) {
-        return false;
+        OPENVINO_THROW("Invalid shape5D in MVNRefExecutor");
     }
 
     src_data_size = srcDesc->getPrecision().size();
     dst_data_size = dstDesc->getPrecision().size();
+}
 
+bool MVNRefExecutor::supports([[maybe_unused]] const MVNConfig& config) {
+    // Reference implementation supports all configurations
     return true;
 }
 

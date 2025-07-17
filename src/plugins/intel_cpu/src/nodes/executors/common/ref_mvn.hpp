@@ -15,12 +15,7 @@ namespace ov::intel_cpu {
 
 class MVNRefExecutor : public Executor {
 public:
-    MVNRefExecutor(const MVNAttrs& mvnAttrs, const MemoryArgs& memory, ExecutorContext::CPtr context);
-
-    bool init(const MVNAttrs& mvnAttrs,
-              const std::vector<MemoryDescPtr>& srcDescs,
-              const std::vector<MemoryDescPtr>& dstDescs,
-              const dnnl::primitive_attr& attr);
+    MVNRefExecutor(const MVNAttrs& mvnAttrs, MemoryArgs memory, ExecutorContext::CPtr context);
 
     bool update(const MemoryArgs& memory) override {
         memoryArgs = memory;
