@@ -364,59 +364,99 @@ void RefInterpolateExecutor::buildTblLinearOnnx(const VectorDims& srcDimPad5d, c
 
 void RefInterpolateExecutor::NNRef(const uint8_t* in_ptr_, uint8_t* out_ptr_,
                                   int B, int C, int ID, int IH, int IW, int OD, int OH, int OW) {
-    const float* in_ptr_f32 = reinterpret_cast<const float*>(in_ptr_);
-    float* out_ptr_f32 = reinterpret_cast<float*>(out_ptr_);
-    
     const int* index_d = &auxTable[0];
     const int* index_h = &auxTable[OD];
     const int* index_w = &auxTable[OD + OH];
     
-    parallel_for3d(B, C, OD, [&](size_t b, size_t c, size_t od) {
-        int input_d_idx = index_d[od];
-        const float* in_ptr = in_ptr_f32 + (b * C * ID * IH * IW + c * ID * IH * IW + input_d_idx * IH * IW);
-        float* out_ptr = out_ptr_f32 + (b * C * OD * OH * OW + c * OD * OH * OW + od * OH * OW);
+    // Pre-calculate strides for better performance
+    const size_t input_spatial_stride = ID * IH * IW;
+    const size_t output_spatial_stride = OD * OH * OW;
+    const size_t input_channel_stride = input_spatial_stride * srcDataSize;
+    const size_t output_channel_stride = output_spatial_stride * srcDataSize;
+    
+    // Optimized implementation for float32
+    if (m_attrs.inPrc == ov::element::f32) {
+        const auto* in_f32 = reinterpret_cast<const float*>(in_ptr_);
+        auto* out_f32 = reinterpret_cast<float*>(out_ptr_);
         
-        for (int oh = 0; oh < OH; oh++) {
-            int input_h_idx = index_h[oh];
-            const float* in_ptr_h = in_ptr + (input_h_idx * IW);
-            float* out_ptr_h = out_ptr + (oh * OW);
-            for (int ow = 0; ow < OW; ow++) {
-                int input_w_idx = index_w[ow];
-                out_ptr_h[ow] = in_ptr_h[input_w_idx];
+        parallel_for2d(B, C, [&](size_t b, size_t c) {
+            const float* in_channel = in_f32 + b * C * input_spatial_stride + c * input_spatial_stride;
+            float* out_channel = out_f32 + b * C * output_spatial_stride + c * output_spatial_stride;
+            
+            for (int od = 0; od < OD; od++) {
+                const int input_d_idx = index_d[od];
+                const float* in_slice = in_channel + input_d_idx * IH * IW;
+                float* out_slice = out_channel + od * OH * OW;
+                
+                for (int oh = 0; oh < OH; oh++) {
+                    const int input_h_idx = index_h[oh];
+                    const float* in_row = in_slice + input_h_idx * IW;
+                    float* out_row = out_slice + oh * OW;
+                    
+                    // Optimized inner loop - compiler can vectorize this
+                    for (int ow = 0; ow < OW; ow++) {
+                        out_row[ow] = in_row[index_w[ow]];
+                    }
+                }
             }
-        }
-    });
+        });
+    } else {
+        // Generic implementation for other data types
+        parallel_for2d(B, C, [&](size_t b, size_t c) {
+            const uint8_t* in_channel = in_ptr_ + b * C * input_channel_stride + c * input_channel_stride;
+            uint8_t* out_channel = out_ptr_ + b * C * output_channel_stride + c * output_channel_stride;
+            
+            for (int od = 0; od < OD; od++) {
+                const int input_d_idx = index_d[od];
+                
+                for (int oh = 0; oh < OH; oh++) {
+                    const int input_h_idx = index_h[oh];
+                    
+                    for (int ow = 0; ow < OW; ow++) {
+                        const int input_w_idx = index_w[ow];
+                        
+                        const uint8_t* src_pixel = in_channel + 
+                            (input_d_idx * IH * IW + input_h_idx * IW + input_w_idx) * srcDataSize;
+                        uint8_t* dst_pixel = out_channel + 
+                            (od * OH * OW + oh * OW + ow) * srcDataSize;
+                        
+                        // Optimized copy based on data size
+                        if (srcDataSize == 4) {
+                            *reinterpret_cast<uint32_t*>(dst_pixel) = *reinterpret_cast<const uint32_t*>(src_pixel);
+                        } else if (srcDataSize == 2) {
+                            *reinterpret_cast<uint16_t*>(dst_pixel) = *reinterpret_cast<const uint16_t*>(src_pixel);
+                        } else {
+                            *dst_pixel = *src_pixel;
+                        }
+                    }
+                }
+            }
+        });
+    }
 }
 
 void RefInterpolateExecutor::linearOnnxRef(const uint8_t* in_ptr_, uint8_t* out_ptr_,
                                           int B, int C, int ID, int IH, int IW, int OD, int OH, int OW) {
-    std::vector<int*> indexPtr(MAX_INPUT_INTERPOLATE, nullptr);
-    std::vector<float*> weightPtr(MAX_INPUT_INTERPOLATE, nullptr);
-    // FrontTopLeft:0, FrontTopRight:1, FrontBottomLeft:2, FrontBottomRight:3,
-    // EndTopLeft:4,   EndTopRight:5,   EndBottomLeft:6,   EndBottomRight:7
-    // weight: Left:0, right:1, top:2, bottom:3, front:4, end:5
-
-    int eltInGrid = [&]() {
-        if (spatialDimSize > 2) {
-            return MAX_INPUT_INTERPOLATE;
-        }
-        if (spatialDimSize > 1) {
-            return 4;
-        }
-        return 2;
-    }();
-    int scratchLen = rnd_up(eltInGrid * OW * OH * OD, 16);
-
+    const int eltInGrid = (spatialDimSize > 2) ? MAX_INPUT_INTERPOLATE : 
+                         (spatialDimSize > 1) ? 4 : 2;
+    const int scratchLen = rnd_up(eltInGrid * OW * OH * OD, 16);
+    
+    std::vector<int*> indexPtr(MAX_INPUT_INTERPOLATE);
+    std::vector<float*> weightPtr(MAX_INPUT_INTERPOLATE);
+    
+    // Setup pointers more efficiently
     indexPtr[0] = auxTable.data();
     indexPtr[1] = &auxTable[OW * OH * OD];
     weightPtr[0] = reinterpret_cast<float*>(&auxTable[scratchLen]);
     weightPtr[1] = reinterpret_cast<float*>(&auxTable[scratchLen + OW * OH * OD]);
+    
     if (spatialDimSize > 1) {
         indexPtr[2] = &auxTable[2 * OW * OH * OD];
         indexPtr[3] = &auxTable[3 * OW * OH * OD];
         weightPtr[2] = reinterpret_cast<float*>(&auxTable[scratchLen + 2 * OW * OH * OD]);
         weightPtr[3] = reinterpret_cast<float*>(&auxTable[scratchLen + 3 * OW * OH * OD]);
     }
+    
     if (spatialDimSize > 2) {
         indexPtr[4] = &auxTable[4 * OW * OH * OD];
         indexPtr[5] = &auxTable[5 * OW * OH * OD];
@@ -425,67 +465,165 @@ void RefInterpolateExecutor::linearOnnxRef(const uint8_t* in_ptr_, uint8_t* out_
         weightPtr[4] = reinterpret_cast<float*>(&auxTable[scratchLen + 4 * OW * OH * OD]);
         weightPtr[5] = reinterpret_cast<float*>(&auxTable[scratchLen + 5 * OW * OH * OD]);
     }
-
-    const auto* in_ptr_f32 = reinterpret_cast<const float*>(in_ptr_);
-    auto* out_ptr_f32 = reinterpret_cast<float*>(out_ptr_);
     
-    // Debug output
-    // std::cout << "linearOnnxRef: B=" << B << " C=" << C << " ID=" << ID << " IH=" << IH 
-    //           << " IW=" << IW << " OD=" << OD << " OH=" << OH << " OW=" << OW 
-    //           << " spatialDimSize=" << spatialDimSize << std::endl;
-
-    // Check for planar layout (NCHW)
-    if (m_attrs.layout == InterpolateLayoutType::planar) {
-        parallel_for2d(B, C, [&](size_t b, size_t c) {
-            const float* in_ptr_nc = in_ptr_f32 + (b * C * ID * IH * IW + c * ID * IH * IW);
-            float* out_ptr_nc = out_ptr_f32 + (b * C * OD * OH * OW + c * OD * OH * OW);
-            
-            // Use the same algorithm as original code
-            switch (spatialDimSize) {
-            case 1:
-                for (int i = 0; i < OW; i++) {
-                    float src0 = in_ptr_nc[indexPtr[0][i]];
-                    float src1 = in_ptr_nc[indexPtr[1][i]];
-                    out_ptr_nc[i] = src0 * weightPtr[0][i] + src1 * weightPtr[1][i];
+    // Optimized implementation for float32
+    if (m_attrs.inPrc == ov::element::f32) {
+        const auto* in_f32 = reinterpret_cast<const float*>(in_ptr_);
+        auto* out_f32 = reinterpret_cast<float*>(out_ptr_);
+        
+        if (m_attrs.layout == InterpolateLayoutType::planar) {
+            parallel_for2d(B, C, [&](size_t b, size_t c) {
+                const float* in_nc = in_f32 + (b * C * ID * IH * IW + c * ID * IH * IW);
+                float* out_nc = out_f32 + (b * C * OD * OH * OW + c * OD * OH * OW);
+                
+                const int total_points = OD * OH * OW;
+                
+                // Optimized loop with reduced branching
+                switch (spatialDimSize) {
+                    case 1: {
+                        // 1D interpolation - optimized for cache locality
+                        for (int i = 0; i < total_points; i++) {
+                            const float src0 = in_nc[indexPtr[0][i]];
+                            const float src1 = in_nc[indexPtr[1][i]];
+                            out_nc[i] = src0 * weightPtr[0][i] + src1 * weightPtr[1][i];
+                        }
+                        break;
+                    }
+                    case 2: {
+                        // 2D interpolation - bilinear with optimized memory access
+                        for (int i = 0; i < total_points; i++) {
+                            const float src00 = in_nc[indexPtr[0][i]];
+                            const float src01 = in_nc[indexPtr[1][i]];
+                            const float src10 = in_nc[indexPtr[2][i]];
+                            const float src11 = in_nc[indexPtr[3][i]];
+                            
+                            const float wt = weightPtr[2][i];
+                            const float wb = weightPtr[3][i];
+                            const float wl = weightPtr[0][i];
+                            const float wr = weightPtr[1][i];
+                            
+                            out_nc[i] = src00 * wt * wl + src01 * wt * wr +
+                                       src10 * wb * wl + src11 * wb * wr;
+                        }
+                        break;
+                    }
+                    case 3: {
+                        // 3D interpolation - trilinear with optimized computation
+                        for (int i = 0; i < total_points; i++) {
+                            const float src000 = in_nc[indexPtr[0][i]];
+                            const float src001 = in_nc[indexPtr[1][i]];
+                            const float src010 = in_nc[indexPtr[2][i]];
+                            const float src011 = in_nc[indexPtr[3][i]];
+                            const float src100 = in_nc[indexPtr[4][i]];
+                            const float src101 = in_nc[indexPtr[5][i]];
+                            const float src110 = in_nc[indexPtr[6][i]];
+                            const float src111 = in_nc[indexPtr[7][i]];
+                            
+                            const float wf = weightPtr[4][i];
+                            const float we = weightPtr[5][i];
+                            const float wt = weightPtr[2][i];
+                            const float wb = weightPtr[3][i];
+                            const float wl = weightPtr[0][i];
+                            const float wr = weightPtr[1][i];
+                            
+                            // Pre-compute intermediate values for better performance
+                            const float interp_front = wt * (wl * src000 + wr * src001) +
+                                                      wb * (wl * src010 + wr * src011);
+                            const float interp_back = wt * (wl * src100 + wr * src101) +
+                                                     wb * (wl * src110 + wr * src111);
+                            
+                            out_nc[i] = wf * interp_front + we * interp_back;
+                        }
+                        break;
+                    }
                 }
-                break;
-            case 2:
-                for (int i = 0; i < OH * OW; i++) {
-                    float src00 = in_ptr_nc[indexPtr[0][i]];
-                    float src01 = in_ptr_nc[indexPtr[1][i]];
-                    float src10 = in_ptr_nc[indexPtr[2][i]];
-                    float src11 = in_ptr_nc[indexPtr[3][i]];
+            });
+        } else {
+            OPENVINO_THROW("Non-planar layouts not yet implemented in RefInterpolateExecutor");
+        }
+    } else {
+        // Generic implementation for other data types
+        const bool is_float_output = isFloatCompatible(m_attrs.outPrc);
+        
+        auto pixel_to_float = [&](const uint8_t* ptr) -> float {
+            if (srcDataSize == 4) {
+                return *reinterpret_cast<const float*>(ptr);
+            } else if (srcDataSize == 2) {
+                return static_cast<float>(*reinterpret_cast<const uint16_t*>(ptr));
+            } else {
+                return static_cast<float>(*ptr);
+            }
+        };
+        
+        auto float_to_pixel = [&](float val, uint8_t* ptr) {
+            if (!is_float_output) {
+                val = std::round(val);
+            }
+            
+            if (srcDataSize == 4) {
+                *reinterpret_cast<float*>(ptr) = val;
+            } else if (srcDataSize == 2) {
+                *reinterpret_cast<uint16_t*>(ptr) = static_cast<uint16_t>(
+                    std::max(0.0f, std::min(65535.0f, val)));
+            } else {
+                *ptr = static_cast<uint8_t>(std::max(0.0f, std::min(255.0f, val)));
+            }
+        };
+        
+        if (m_attrs.layout == InterpolateLayoutType::planar) {
+            parallel_for2d(B, C, [&](size_t b, size_t c) {
+                const uint8_t* in_nc = in_ptr_ + (b * C * ID * IH * IW + c * ID * IH * IW) * srcDataSize;
+                uint8_t* out_nc = out_ptr_ + (b * C * OD * OH * OW + c * OD * OH * OW) * srcDataSize;
+                
+                const int total_points = OD * OH * OW;
+                
+                for (int i = 0; i < total_points; i++) {
+                    float result = 0.0f;
                     
-                    out_ptr_nc[i] = src00 * weightPtr[2][i] * weightPtr[0][i] + 
+                    switch (spatialDimSize) {
+                        case 1: {
+                            const float src0 = pixel_to_float(in_nc + indexPtr[0][i] * srcDataSize);
+                            const float src1 = pixel_to_float(in_nc + indexPtr[1][i] * srcDataSize);
+                            result = src0 * weightPtr[0][i] + src1 * weightPtr[1][i];
+                            break;
+                        }
+                        case 2: {
+                            const float src00 = pixel_to_float(in_nc + indexPtr[0][i] * srcDataSize);
+                            const float src01 = pixel_to_float(in_nc + indexPtr[1][i] * srcDataSize);
+                            const float src10 = pixel_to_float(in_nc + indexPtr[2][i] * srcDataSize);
+                            const float src11 = pixel_to_float(in_nc + indexPtr[3][i] * srcDataSize);
+                            
+                            result = src00 * weightPtr[2][i] * weightPtr[0][i] + 
                                     src01 * weightPtr[2][i] * weightPtr[1][i] +
                                     src10 * weightPtr[3][i] * weightPtr[0][i] + 
                                     src11 * weightPtr[3][i] * weightPtr[1][i];
-                }
-                break;
-            case 3:
-                for (int i = 0; i < OD * OH * OW; i++) {
-                    float src000 = in_ptr_nc[indexPtr[0][i]];
-                    float src001 = in_ptr_nc[indexPtr[1][i]];
-                    float src010 = in_ptr_nc[indexPtr[2][i]];
-                    float src011 = in_ptr_nc[indexPtr[3][i]];
-                    float src100 = in_ptr_nc[indexPtr[4][i]];
-                    float src101 = in_ptr_nc[indexPtr[5][i]];
-                    float src110 = in_ptr_nc[indexPtr[6][i]];
-                    float src111 = in_ptr_nc[indexPtr[7][i]];
+                            break;
+                        }
+                        case 3: {
+                            const float src000 = pixel_to_float(in_nc + indexPtr[0][i] * srcDataSize);
+                            const float src001 = pixel_to_float(in_nc + indexPtr[1][i] * srcDataSize);
+                            const float src010 = pixel_to_float(in_nc + indexPtr[2][i] * srcDataSize);
+                            const float src011 = pixel_to_float(in_nc + indexPtr[3][i] * srcDataSize);
+                            const float src100 = pixel_to_float(in_nc + indexPtr[4][i] * srcDataSize);
+                            const float src101 = pixel_to_float(in_nc + indexPtr[5][i] * srcDataSize);
+                            const float src110 = pixel_to_float(in_nc + indexPtr[6][i] * srcDataSize);
+                            const float src111 = pixel_to_float(in_nc + indexPtr[7][i] * srcDataSize);
+                            
+                            result = 
+                                weightPtr[4][i] * (weightPtr[2][i] * (weightPtr[0][i] * src000 + weightPtr[1][i] * src001) +
+                                                   weightPtr[3][i] * (weightPtr[0][i] * src010 + weightPtr[1][i] * src011)) +
+                                weightPtr[5][i] * (weightPtr[2][i] * (weightPtr[0][i] * src100 + weightPtr[1][i] * src101) +
+                                                   weightPtr[3][i] * (weightPtr[0][i] * src110 + weightPtr[1][i] * src111));
+                            break;
+                        }
+                    }
                     
-                    out_ptr_nc[i] = 
-                        weightPtr[4][i] * (weightPtr[2][i] * (weightPtr[0][i] * src000 + weightPtr[1][i] * src001) +
-                                           weightPtr[3][i] * (weightPtr[0][i] * src010 + weightPtr[1][i] * src011)) +
-                        weightPtr[5][i] * (weightPtr[2][i] * (weightPtr[0][i] * src100 + weightPtr[1][i] * src101) +
-                                           weightPtr[3][i] * (weightPtr[0][i] * src110 + weightPtr[1][i] * src111));
+                    float_to_pixel(result, out_nc + i * srcDataSize);
                 }
-                break;
-            }
-        });
-    } else {
-        // For non-planar layouts, assume it's similar to by_channel
-        // This needs to be implemented based on the specific layout
-        OPENVINO_THROW("Non-planar layouts not yet implemented in RefInterpolateExecutor");
+            });
+        } else {
+            OPENVINO_THROW("Non-planar layouts not yet implemented in RefInterpolateExecutor");
+        }
     }
 }
 
@@ -929,139 +1067,292 @@ void RefInterpolateExecutor::pillowRef(const uint8_t* in_ptr_, uint8_t* out_ptr_
     offset += 2 * OW;
     auto* indexY = static_cast<int*>(&auxTable[offset]);
 
-    // workBuffer needed when both pass is true
     bool xPass = IW != OW;
     bool yPass = IH != OH;
 
-    auto bc_loop = [&](size_t b, size_t c) {
-        const uint8_t* in_ptr_nc = in_ptr_ + (IW * IH * C * b + IW * IH * c) * srcDataSize;
-        uint8_t* out_ptr_nc = out_ptr_ + (OW * OH * C * b + OW * OH * c) * srcDataSize;
-        uint8_t* xpass_out_ptr_nc = nullptr;
-        const uint8_t* ypass_in_ptr_nc = nullptr;
+    // Fast path for direct copy
+    if (!xPass && !yPass) {
+        const size_t copy_size = static_cast<size_t>(B) * C * OH * OW * srcDataSize;
+        cpu_memcpy(out_ptr_, in_ptr_, copy_size);
+        return;
+    }
+
+    // Pre-calculate strides for better cache locality
+    const size_t input_channel_stride = IH * IW * srcDataSize;
+    const size_t output_channel_stride = OH * OW * srcDataSize;
+    const size_t input_batch_stride = C * input_channel_stride;
+    const size_t output_batch_stride = C * output_channel_stride;
+    const size_t temp_channel_stride = IH * OW * srcDataSize;
+    const size_t temp_batch_stride = C * temp_channel_stride;
+
+    // Optimized for float32 (most common case)
+    if (m_attrs.inPrc == ov::element::f32) {
+        const auto* in_f32 = reinterpret_cast<const float*>(in_ptr_);
+        auto* out_f32 = reinterpret_cast<float*>(out_ptr_);
         
         if (xPass && yPass) {
-            // Always use simple indexing for working buffer
-            xpass_out_ptr_nc = &pillow_working_buf[(OW * IH * C * b + OW * IH * c) * srcDataSize];
-            ypass_in_ptr_nc = &pillow_working_buf[(OW * IH * C * b + OW * IH * c) * srcDataSize];
-        } else if (xPass && !yPass) {
-            xpass_out_ptr_nc = out_ptr_nc;
-        } else if (!xPass && yPass) {
-            ypass_in_ptr_nc = in_ptr_nc;
-        } else if (!xPass && !yPass) {
-            cpu_memcpy(out_ptr_nc, in_ptr_nc, OH * OW * srcDataSize);
-            return;
-        }
-        
-        float result = 0;
-        int f = 0;
-        int filterS = 0;
-        int filterL = 0;
-        float* weight = nullptr;
-        
-        if (xPass) {
-            for (size_t ih = 0; ih < static_cast<size_t>(IH); ih++) {
-                for (size_t ow = 0; ow < static_cast<size_t>(OW); ow++) {
-                    filterS = indexX[ow * 2];
-                    filterL = indexX[ow * 2 + 1];
-                    weight = (&weightX[ow * filterLenX]);
-                    result = 0.f;
-                    
-                    if (m_attrs.inPrc == ov::element::f32) {
-                        auto* in_f32 = reinterpret_cast<const float*>(in_ptr_nc);
-                        for (f = 0; f < filterL; f++) {
-                            int idx = f + filterS;
-                            if (idx >= 0 && idx < IW) {
-                                float pixel = in_f32[ih * IW + idx];
-                                result += pixel * weight[f];
-                            }
-                        }
-                        reinterpret_cast<float*>(xpass_out_ptr_nc)[ih * OW + ow] = result;
-                    } else {
-                        // Handle other data types
-                        for (f = 0; f < filterL; f++) {
-                            int idx = f + filterS;
-                            if (idx >= 0 && idx < IW) {
-                                size_t offset = (ih * IW + idx) * srcDataSize;
-                                float pixel = 0;
-                                // Simple conversion for now - can be expanded for other types
-                                if (srcDataSize == 4) {
-                                    pixel = *reinterpret_cast<const float*>(&in_ptr_nc[offset]);
-                                } else if (srcDataSize == 1) {
-                                    pixel = static_cast<float>(in_ptr_nc[offset]);
-                                }
-                                result += pixel * weight[f];
-                            }
-                        }
-                        
-                        if (!isFloatCompatible(m_attrs.outPrc)) {
-                            result = std::round(result);
-                        }
-                        
-                        size_t out_idx = (ih * OW + ow) * srcDataSize;
-                        if (srcDataSize == 4) {
-                            *reinterpret_cast<float*>(&xpass_out_ptr_nc[out_idx]) = result;
-                        } else if (srcDataSize == 1) {
-                            xpass_out_ptr_nc[out_idx] = static_cast<uint8_t>(std::max(0.f, std::min(255.f, result)));
-                        }
-                    }
-                }
-            }
-        }
-        
-        if (yPass) {
-            for (size_t oh = 0; oh < static_cast<size_t>(OH); oh++) {
-                filterS = indexY[oh * 2];
-                filterL = indexY[oh * 2 + 1];
-                weight = (&weightY[oh * filterLenY]);
+            // Two-pass with optimized buffer management
+            std::vector<float> temp_buffer(B * C * IH * OW);
+            
+            // X-pass: horizontal interpolation
+            parallel_for2d(B, C, [&](size_t b, size_t c) {
+                const float* src = in_f32 + b * C * IH * IW + c * IH * IW;
+                float* temp = temp_buffer.data() + b * C * IH * OW + c * IH * OW;
                 
-                for (size_t ow = 0; ow < static_cast<size_t>(OW); ow++) {
-                    result = 0.f;
+                for (int ih = 0; ih < IH; ih++) {
+                    const float* src_row = src + ih * IW;
+                    float* temp_row = temp + ih * OW;
                     
-                    if (m_attrs.inPrc == ov::element::f32) {
-                        auto* in_f32 = reinterpret_cast<const float*>(ypass_in_ptr_nc);
-                        for (f = 0; f < filterL; f++) {
-                            int idx = f + filterS;
-                            if (idx >= 0 && idx < IH) {
-                                float pixel = in_f32[idx * OW + ow];
-                                result += pixel * weight[f];
-                            }
-                        }
-                        reinterpret_cast<float*>(out_ptr_nc)[oh * OW + ow] = result;
-                    } else {
-                        for (f = 0; f < filterL; f++) {
-                            int idx = f + filterS;
-                            if (idx >= 0 && idx < IH) {
-                                size_t offset = (idx * OW + ow) * srcDataSize;
-                                float pixel = 0;
-                                if (srcDataSize == 4) {
-                                    pixel = *reinterpret_cast<const float*>(&ypass_in_ptr_nc[offset]);
-                                } else if (srcDataSize == 1) {
-                                    pixel = static_cast<float>(ypass_in_ptr_nc[offset]);
+                    for (int ow = 0; ow < OW; ow++) {
+                        const int filterS = indexX[ow * 2];
+                        const int filterL = indexX[ow * 2 + 1];
+                        const float* weight = &weightX[ow * filterLenX];
+                        
+                        float result = 0.0f;
+                        
+                        // Unroll small filter lengths for better performance
+                        switch (filterL) {
+                            case 1:
+                                result = src_row[filterS] * weight[0];
+                                break;
+                            case 2:
+                                result = src_row[filterS] * weight[0] + 
+                                        src_row[filterS + 1] * weight[1];
+                                break;
+                            case 3:
+                                result = src_row[filterS] * weight[0] + 
+                                        src_row[filterS + 1] * weight[1] + 
+                                        src_row[filterS + 2] * weight[2];
+                                break;
+                            case 4:
+                                result = src_row[filterS] * weight[0] + 
+                                        src_row[filterS + 1] * weight[1] + 
+                                        src_row[filterS + 2] * weight[2] + 
+                                        src_row[filterS + 3] * weight[3];
+                                break;
+                            default:
+                                // General case - bounds checking eliminated in preprocessing
+                                for (int f = 0; f < filterL; f++) {
+                                    result += src_row[filterS + f] * weight[f];
                                 }
-                                result += pixel * weight[f];
-                            }
+                                break;
                         }
                         
-                        if (!isFloatCompatible(m_attrs.outPrc)) {
-                            result = std::round(result);
-                        }
-                        
-                        size_t out_idx = (oh * OW + ow) * srcDataSize;
-                        if (srcDataSize == 4) {
-                            *reinterpret_cast<float*>(&out_ptr_nc[out_idx]) = result;
-                        } else if (srcDataSize == 1) {
-                            out_ptr_nc[out_idx] = static_cast<uint8_t>(std::max(0.f, std::min(255.f, result)));
-                        }
+                        temp_row[ow] = result;
                     }
                 }
-            }
+            });
+            
+            // Y-pass: vertical interpolation
+            parallel_for2d(B, C, [&](size_t b, size_t c) {
+                const float* temp = temp_buffer.data() + b * C * IH * OW + c * IH * OW;
+                float* dst = out_f32 + b * C * OH * OW + c * OH * OW;
+                
+                for (int oh = 0; oh < OH; oh++) {
+                    const int filterS = indexY[oh * 2];
+                    const int filterL = indexY[oh * 2 + 1];
+                    const float* weight = &weightY[oh * filterLenY];
+                    float* dst_row = dst + oh * OW;
+                    
+                    for (int ow = 0; ow < OW; ow++) {
+                        float result = 0.0f;
+                        
+                        // Unroll small filter lengths
+                        switch (filterL) {
+                            case 1:
+                                result = temp[filterS * OW + ow] * weight[0];
+                                break;
+                            case 2:
+                                result = temp[filterS * OW + ow] * weight[0] + 
+                                        temp[(filterS + 1) * OW + ow] * weight[1];
+                                break;
+                            case 3:
+                                result = temp[filterS * OW + ow] * weight[0] + 
+                                        temp[(filterS + 1) * OW + ow] * weight[1] + 
+                                        temp[(filterS + 2) * OW + ow] * weight[2];
+                                break;
+                            case 4:
+                                result = temp[filterS * OW + ow] * weight[0] + 
+                                        temp[(filterS + 1) * OW + ow] * weight[1] + 
+                                        temp[(filterS + 2) * OW + ow] * weight[2] + 
+                                        temp[(filterS + 3) * OW + ow] * weight[3];
+                                break;
+                            default:
+                                for (int f = 0; f < filterL; f++) {
+                                    result += temp[(filterS + f) * OW + ow] * weight[f];
+                                }
+                                break;
+                        }
+                        
+                        dst_row[ow] = result;
+                    }
+                }
+            });
+        } else if (xPass) {
+            // X-pass only
+            parallel_for2d(B, C, [&](size_t b, size_t c) {
+                const float* src = in_f32 + b * C * IH * IW + c * IH * IW;
+                float* dst = out_f32 + b * C * OH * OW + c * OH * OW;
+                
+                for (int ih = 0; ih < IH; ih++) {
+                    const float* src_row = src + ih * IW;
+                    float* dst_row = dst + ih * OW;
+                    
+                    for (int ow = 0; ow < OW; ow++) {
+                        const int filterS = indexX[ow * 2];
+                        const int filterL = indexX[ow * 2 + 1];
+                        const float* weight = &weightX[ow * filterLenX];
+                        
+                        float result = 0.0f;
+                        for (int f = 0; f < filterL; f++) {
+                            result += src_row[filterS + f] * weight[f];
+                        }
+                        
+                        dst_row[ow] = result;
+                    }
+                }
+            });
+        } else if (yPass) {
+            // Y-pass only
+            parallel_for2d(B, C, [&](size_t b, size_t c) {
+                const float* src = in_f32 + b * C * IH * IW + c * IH * IW;
+                float* dst = out_f32 + b * C * OH * OW + c * OH * OW;
+                
+                for (int oh = 0; oh < OH; oh++) {
+                    const int filterS = indexY[oh * 2];
+                    const int filterL = indexY[oh * 2 + 1];
+                    const float* weight = &weightY[oh * filterLenY];
+                    float* dst_row = dst + oh * OW;
+                    
+                    for (int ow = 0; ow < OW; ow++) {
+                        float result = 0.0f;
+                        for (int f = 0; f < filterL; f++) {
+                            result += src[(filterS + f) * IW + ow] * weight[f];
+                        }
+                        dst_row[ow] = result;
+                    }
+                }
+            });
         }
-    };
-
-    // Simple sequential execution for debugging
-    for (int b = 0; b < B; b++) {
-        for (int c = 0; c < C; c++) {
-            bc_loop(b, c);
+    } else {
+        // Generic implementation for other data types (optimized)
+        const bool is_float_output = isFloatCompatible(m_attrs.outPrc);
+        
+        // Inline functions for type conversion
+        auto pixel_to_float = [&](const uint8_t* ptr) -> float {
+            if (srcDataSize == 4) {
+                return *reinterpret_cast<const float*>(ptr);
+            } else if (srcDataSize == 2) {
+                return static_cast<float>(*reinterpret_cast<const uint16_t*>(ptr));
+            } else {
+                return static_cast<float>(*ptr);
+            }
+        };
+        
+        auto float_to_pixel = [&](float val, uint8_t* ptr) {
+            if (!is_float_output) {
+                val = std::round(val);
+            }
+            
+            if (srcDataSize == 4) {
+                *reinterpret_cast<float*>(ptr) = val;
+            } else if (srcDataSize == 2) {
+                *reinterpret_cast<uint16_t*>(ptr) = static_cast<uint16_t>(
+                    std::max(0.0f, std::min(65535.0f, val)));
+            } else {
+                *ptr = static_cast<uint8_t>(std::max(0.0f, std::min(255.0f, val)));
+            }
+        };
+        
+        if (xPass && yPass) {
+            // Two-pass with temporary buffer
+            parallel_for2d(B, C, [&](size_t b, size_t c) {
+                const uint8_t* src = in_ptr_ + b * input_batch_stride + c * input_channel_stride;
+                uint8_t* dst = out_ptr_ + b * output_batch_stride + c * output_channel_stride;
+                uint8_t* temp = &pillow_working_buf[b * temp_batch_stride + c * temp_channel_stride];
+                
+                // X-pass
+                for (int ih = 0; ih < IH; ih++) {
+                    for (int ow = 0; ow < OW; ow++) {
+                        const int filterS = indexX[ow * 2];
+                        const int filterL = indexX[ow * 2 + 1];
+                        const float* weight = &weightX[ow * filterLenX];
+                        
+                        float result = 0.0f;
+                        for (int f = 0; f < filterL; f++) {
+                            const uint8_t* pixel_ptr = src + (ih * IW + filterS + f) * srcDataSize;
+                            result += pixel_to_float(pixel_ptr) * weight[f];
+                        }
+                        
+                        uint8_t* out_pixel = temp + (ih * OW + ow) * srcDataSize;
+                        float_to_pixel(result, out_pixel);
+                    }
+                }
+                
+                // Y-pass
+                for (int oh = 0; oh < OH; oh++) {
+                    const int filterS = indexY[oh * 2];
+                    const int filterL = indexY[oh * 2 + 1];
+                    const float* weight = &weightY[oh * filterLenY];
+                    
+                    for (int ow = 0; ow < OW; ow++) {
+                        float result = 0.0f;
+                        for (int f = 0; f < filterL; f++) {
+                            const uint8_t* pixel_ptr = temp + ((filterS + f) * OW + ow) * srcDataSize;
+                            result += pixel_to_float(pixel_ptr) * weight[f];
+                        }
+                        
+                        uint8_t* out_pixel = dst + (oh * OW + ow) * srcDataSize;
+                        float_to_pixel(result, out_pixel);
+                    }
+                }
+            });
+        } else if (xPass) {
+            // X-pass only
+            parallel_for2d(B, C, [&](size_t b, size_t c) {
+                const uint8_t* src = in_ptr_ + b * input_batch_stride + c * input_channel_stride;
+                uint8_t* dst = out_ptr_ + b * output_batch_stride + c * output_channel_stride;
+                
+                for (int ih = 0; ih < IH; ih++) {
+                    for (int ow = 0; ow < OW; ow++) {
+                        const int filterS = indexX[ow * 2];
+                        const int filterL = indexX[ow * 2 + 1];
+                        const float* weight = &weightX[ow * filterLenX];
+                        
+                        float result = 0.0f;
+                        for (int f = 0; f < filterL; f++) {
+                            const uint8_t* pixel_ptr = src + (ih * IW + filterS + f) * srcDataSize;
+                            result += pixel_to_float(pixel_ptr) * weight[f];
+                        }
+                        
+                        uint8_t* out_pixel = dst + (ih * OW + ow) * srcDataSize;
+                        float_to_pixel(result, out_pixel);
+                    }
+                }
+            });
+        } else if (yPass) {
+            // Y-pass only
+            parallel_for2d(B, C, [&](size_t b, size_t c) {
+                const uint8_t* src = in_ptr_ + b * input_batch_stride + c * input_channel_stride;
+                uint8_t* dst = out_ptr_ + b * output_batch_stride + c * output_channel_stride;
+                
+                for (int oh = 0; oh < OH; oh++) {
+                    const int filterS = indexY[oh * 2];
+                    const int filterL = indexY[oh * 2 + 1];
+                    const float* weight = &weightY[oh * filterLenY];
+                    
+                    for (int ow = 0; ow < OW; ow++) {
+                        float result = 0.0f;
+                        for (int f = 0; f < filterL; f++) {
+                            const uint8_t* pixel_ptr = src + ((filterS + f) * IW + ow) * srcDataSize;
+                            result += pixel_to_float(pixel_ptr) * weight[f];
+                        }
+                        
+                        uint8_t* out_pixel = dst + (oh * OW + ow) * srcDataSize;
+                        float_to_pixel(result, out_pixel);
+                    }
+                }
+            });
         }
     }
 }
