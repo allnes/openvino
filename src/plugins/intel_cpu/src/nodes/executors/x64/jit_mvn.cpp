@@ -3,31 +3,30 @@
 //
 
 #include "jit_mvn.hpp"
-#include "nodes/executors/common/ref_mvn.hpp"
-#include "post_ops.hpp"
 
-#include <any>
-#include "utils/cpu_utils.hpp"
-#include <cpu/x64/cpu_isa_traits.hpp>
-#include <memory>
-#include <common/primitive_hashing_utils.hpp>
-#include "openvino/core/parallel.hpp"
-
-#include "emitters/plugin/x64/jit_emitter.hpp"
-#include "emitters/plugin/x64/utils.hpp"
-#include "nodes/kernels/x64/mlp_utils.hpp"
-#include "nodes/kernels/x64/jit_kernel_base.hpp"
-#include "utils/debug_capabilities.h"
 #include <cpu/x64/xbyak/xbyak.h>
 
+#include <any>
 #include <common/c_types_map.hpp>
+#include <common/primitive_hashing_utils.hpp>
+#include <cpu/x64/cpu_isa_traits.hpp>
 #include <functional>
+#include <memory>
 
 #include "cpu/x64/injectors/jit_uni_depthwise_injector.hpp"
 #include "cpu/x64/injectors/jit_uni_eltwise_injector.hpp"
 #include "cpu/x64/injectors/jit_uni_quantization_injector.hpp"
 #include "cpu/x64/jit_generator.hpp"
+#include "emitters/plugin/x64/jit_emitter.hpp"
 #include "emitters/plugin/x64/jit_load_store_emitters.hpp"
+#include "emitters/plugin/x64/utils.hpp"
+#include "nodes/executors/common/ref_mvn.hpp"
+#include "nodes/kernels/x64/jit_kernel_base.hpp"
+#include "nodes/kernels/x64/mlp_utils.hpp"
+#include "openvino/core/parallel.hpp"
+#include "post_ops.hpp"
+#include "utils/cpu_utils.hpp"
+#include "utils/debug_capabilities.h"
 
 using namespace dnnl;
 using namespace dnnl::impl;
@@ -80,11 +79,11 @@ bool MVNKey::operator==(const MVNKey& rhs) const {
 
 }  // namespace
 
-
-MVNJitExecutor::MVNJitExecutor(const MVNAttrs& mvnAttrs,
-                               const MemoryArgs& memory, 
-                               const ExecutorContext::CPtr& context) 
-    : attrs(mvnAttrs), memoryArgs(memory), context(context), shape5D(mvnAttrs.shape5D) {
+MVNJitExecutor::MVNJitExecutor(const MVNAttrs& mvnAttrs, const MemoryArgs& memory, const ExecutorContext::CPtr& context)
+    : attrs(mvnAttrs),
+      memoryArgs(memory),
+      context(context),
+      shape5D(mvnAttrs.shape5D) {
     legacyJitExecutor = std::make_shared<legacy::MVNJitExecutorLagacy>(attrs, dnnl::primitive_attr());
 }
 
@@ -94,10 +93,10 @@ bool MVNJitExecutor::init(const MVNAttrs& mvnAttrs,
                           const dnnl::primitive_attr& attr) {
     shape5D = mvnAttrs.shape5D;
     attrs = mvnAttrs;
-    
+
     // Extract post-ops data from MVNAttrs
     postOpsDataPtrs.clear();
-    
+
     // MVNAttrs.postOps contains the post-ops data pointers
     // Each element is a std::any containing a const void* pointer
     for (const auto& postOp : attrs.postOps) {
@@ -106,14 +105,14 @@ bool MVNJitExecutor::init(const MVNAttrs& mvnAttrs,
             postOpsDataPtrs.push_back(std::any_cast<const void*>(postOp));
         }
     }
-    
+
     // Create a key for caching
     MVNKey key{attrs, attr};
-    
+
     auto builder = [&](const MVNKey& key) -> std::shared_ptr<legacy::MVNJitExecutorLagacy> {
         return std::make_shared<legacy::MVNJitExecutorLagacy>(key.mvnAttrs, key.attr);
     };
-    
+
     // Use context's cache if available
     if (context) {
         auto cache = context->getRuntimeCache();
@@ -123,7 +122,7 @@ bool MVNJitExecutor::init(const MVNAttrs& mvnAttrs,
         // Fallback if no context available
         legacyJitExecutor = builder(key);
     }
-    
+
     return true;
 }
 
@@ -131,13 +130,13 @@ void MVNJitExecutor::executeImpl(const MemoryArgs& memory) {
     // Extract memory pointers from MemoryArgs
     const auto* src_data = memory.at(ARG_SRC)->getDataAs<const uint8_t>();
     auto* dst_data = memory.at(ARG_DST)->getDataAs<uint8_t>();
-    
+
     // Pass post-ops data to the legacy executor
     const void* post_ops_data = nullptr;
     if (!postOpsDataPtrs.empty()) {
         post_ops_data = postOpsDataPtrs.data();
     }
-    
+
     // Call legacy executor with proper parameters
     legacyJitExecutor->exec(src_data, dst_data, post_ops_data, shape5D);
 }
@@ -146,8 +145,8 @@ bool MVNJitExecutor::canReuseShapeAgnosticKernel(const VectorDims& newShape5D) c
     // Shape-agnostic kernel optimization
     // Reuses kernel if the shape is the same or only batch size changed
     if (shape5D[0] != newShape5D[0]) {
-        if (shape5D[1] == newShape5D[1] && shape5D[2] == newShape5D[2] && 
-            shape5D[3] == newShape5D[3] && shape5D[4] == newShape5D[4]) {
+        if (shape5D[1] == newShape5D[1] && shape5D[2] == newShape5D[2] && shape5D[3] == newShape5D[3] &&
+            shape5D[4] == newShape5D[4]) {
             shape5D = newShape5D;
             return true;
         }

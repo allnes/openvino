@@ -7,23 +7,23 @@
 #include <cmath>
 #include <vector>
 
+#include "nodes/common/cpu_convert.h"
 #include "openvino/core/parallel.hpp"
 #include "utils/bfloat16.hpp"
 #include "utils/general_utils.h"
-#include "nodes/common/cpu_convert.h"
 
 namespace ov::intel_cpu {
 
-MVNRefExecutor::MVNRefExecutor(const MVNAttrs& mvnAttrs,
-                               const MemoryArgs& memory,
-                               const ExecutorContext::CPtr& context)
-    : attrs(mvnAttrs), memoryArgs(memory), context(context) {
+MVNRefExecutor::MVNRefExecutor(const MVNAttrs& mvnAttrs, const MemoryArgs& memory, const ExecutorContext::CPtr& context)
+    : attrs(mvnAttrs),
+      memoryArgs(memory),
+      context(context) {
     // Initialize the reference implementation
     auto srcDesc = memory.at(ARG_SRC_0)->getDescPtr();
     auto dstDesc = memory.at(ARG_DST)->getDescPtr();
     std::vector<MemoryDescPtr> srcDescs = {srcDesc};
     std::vector<MemoryDescPtr> dstDescs = {dstDesc};
-    
+
     dnnl::primitive_attr attr;
     init(mvnAttrs, srcDescs, dstDescs, attr);
 }
@@ -38,10 +38,10 @@ bool MVNRefExecutor::init(const MVNAttrs& mvnAttrs,
                           const std::vector<MemoryDescPtr>& dstDescs,
                           const dnnl::primitive_attr& attr) {
     attrs = mvnAttrs;
-    
+
     auto srcDesc = srcDescs[0];
     auto dstDesc = dstDescs[0];
-    
+
     if (!srcDesc || !dstDesc)
         return false;
 
@@ -49,20 +49,20 @@ bool MVNRefExecutor::init(const MVNAttrs& mvnAttrs,
     shape5D = attrs.shape5D;
     if (shape5D.size() != 5 || shape5D.empty())
         return false;
-        
+
     src_data_size = srcDesc->getPrecision().size();
     dst_data_size = dstDesc->getPrecision().size();
-    
+
     return true;
 }
 
 void MVNRefExecutor::executeImpl(const MemoryArgs& memory) {
     const auto src = memory.at(ARG_SRC_0);
     const auto dst = memory.at(ARG_DST);
-    
+
     const uint8_t* src_data = src->getDataAs<const uint8_t>();
     uint8_t* dst_data = dst->getDataAs<uint8_t>();
-    
+
     mvn_ref(src_data, dst_data, attrs.shape5D);
 }
 
@@ -73,13 +73,13 @@ void MVNRefExecutor::mvn_ref(const uint8_t* src_data, uint8_t* dst_data, const V
     const size_t H = shape5d[3];
     const size_t W = shape5d[4];
     const size_t total_size = N * C * D * H * W;
-    
+
     // Check if we need conversion or can work directly with the data
     const float* src_data_ptr = nullptr;
     float* dst_data_ptr = nullptr;
     std::vector<float> src_float;
     std::vector<float> dst_float;
-    
+
     if (attrs.src_prc == ov::element::f32) {
         // No conversion needed for input
         src_data_ptr = reinterpret_cast<const float*>(src_data);
@@ -89,7 +89,7 @@ void MVNRefExecutor::mvn_ref(const uint8_t* src_data, uint8_t* dst_data, const V
         cpu_convert(src_data, src_float.data(), attrs.src_prc, ov::element::f32, total_size);
         src_data_ptr = src_float.data();
     }
-    
+
     if (attrs.dst_prc == ov::element::f32) {
         // No conversion needed for output
         dst_data_ptr = reinterpret_cast<float*>(dst_data);
@@ -102,11 +102,11 @@ void MVNRefExecutor::mvn_ref(const uint8_t* src_data, uint8_t* dst_data, const V
     if (attrs.execAcrossChannels_) {
         parallel_for(N, [&](int b) {
             const size_t data_size = C * D * H * W;
-            
+
             // Pre-calculate strides for better optimization
             const size_t spatial_size = D * H * W;
             const size_t HW = H * W;
-            
+
             // Calculate mean
             double mean = 0;
             if (attrs.layout == mvn_planar || attrs.layout == mvn_block) {
@@ -176,9 +176,8 @@ void MVNRefExecutor::mvn_ref(const uint8_t* src_data, uint8_t* dst_data, const V
                 }
                 variance /= data_size;
 
-                double sigma = attrs.epsMode_ == INSIDE_SQRT
-                    ? std::sqrt(variance + attrs.epsValue_)
-                    : std::sqrt(variance) + attrs.epsValue_;
+                double sigma = attrs.epsMode_ == INSIDE_SQRT ? std::sqrt(variance + attrs.epsValue_)
+                                                             : std::sqrt(variance) + attrs.epsValue_;
                 const double inv_sigma = 1.0 / sigma;
 
                 // Normalize
@@ -250,7 +249,7 @@ void MVNRefExecutor::mvn_ref(const uint8_t* src_data, uint8_t* dst_data, const V
         parallel_for2d(N, C, [&](int b, int c) {
             const size_t data_size = D * H * W;
             const size_t HW = H * W;
-            
+
             // Calculate mean
             double mean = 0;
             if (attrs.layout == mvn_planar || attrs.layout == mvn_block) {
@@ -310,9 +309,8 @@ void MVNRefExecutor::mvn_ref(const uint8_t* src_data, uint8_t* dst_data, const V
                 }
                 variance /= data_size;
 
-                double sigma = attrs.epsMode_ == INSIDE_SQRT
-                    ? std::sqrt(variance + attrs.epsValue_)
-                    : std::sqrt(variance) + attrs.epsValue_;
+                double sigma = attrs.epsMode_ == INSIDE_SQRT ? std::sqrt(variance + attrs.epsValue_)
+                                                             : std::sqrt(variance) + attrs.epsValue_;
                 const double inv_sigma = 1.0 / sigma;
 
                 // Normalize
@@ -371,7 +369,7 @@ void MVNRefExecutor::mvn_ref(const uint8_t* src_data, uint8_t* dst_data, const V
             }
         });
     }
-    
+
     // Convert output back to destination precision if needed
     if (attrs.dst_prc != ov::element::f32) {
         cpu_convert(dst_float.data(), dst_data, ov::element::f32, attrs.dst_prc, total_size);

@@ -6,23 +6,23 @@
 #include <vector>
 
 #include "mvn_config.hpp"
+#include "nodes/executors/debug_messages.hpp"
 #include "nodes/executors/executor.hpp"
 #include "nodes/executors/executor_implementation.hpp"
-#include "nodes/executors/implementations.hpp"
 #include "nodes/executors/implementation_utils.hpp"
+#include "nodes/executors/implementations.hpp"
 #include "nodes/executors/precision_matcher.hpp"
 #include "nodes/executors/type_mask.hpp"
 #include "openvino/core/type/element_type.hpp"
 #include "utils/arch_macros.h"
 #include "utils/debug_capabilities.h"
-#include "nodes/executors/debug_messages.hpp"
 
 #if defined(OPENVINO_ARCH_X86_64)
-#include "nodes/executors/x64/jit_mvn.hpp"
+#    include "nodes/executors/x64/jit_mvn.hpp"
 #endif
 
 #if defined(OV_CPU_WITH_ACL)
-#include "nodes/executors/acl/acl_mvn.hpp"
+#    include "nodes/executors/acl/acl_mvn.hpp"
 #endif
 
 #include "nodes/executors/common/ref_mvn.hpp"
@@ -43,24 +43,27 @@ static const MappingNotation mvnMappingNotation{ARG_SRC, ARG_DST};
 // static const LayoutConfig mvnBlockedC16LayoutConfig{LayoutType::nCsp16c, LayoutType::nCsp16c};
 
 // Type mapping for MVN - supports f32, bf16, f16, i8, u8
-static const TypeMapping mvnTypeMapping {
+static const TypeMapping mvnTypeMapping{
     // {src, dst}                                   pt<src, dst>
-    {{_f32, _f32},   pt(bypass(), bypass())},
+    {{_f32, _f32}, pt(bypass(), bypass())},
     {{_bf16, _bf16}, pt(bypass(), bypass())},
-    {{_f16, _f16},   pt(bypass(), bypass())},
-    {{_i8, _f32},    pt(bypass(), bypass())},  // i8 input -> f32 output
-    {{_u8, _f32},    pt(bypass(), bypass())},  // u8 input -> f32 output
-    {{_i8, _i8},     pt(bypass(), bypass())},  // i8 input -> i8 output
-    {{_u8, _u8},     pt(bypass(), bypass())},  // u8 input -> u8 output
+    {{_f16, _f16}, pt(bypass(), bypass())},
+    {{_i8, _f32}, pt(bypass(), bypass())},  // i8 input -> f32 output
+    {{_u8, _f32}, pt(bypass(), bypass())},  // u8 input -> f32 output
+    {{_i8, _i8}, pt(bypass(), bypass())},   // i8 input -> i8 output
+    {{_u8, _u8}, pt(bypass(), bypass())},   // u8 input -> u8 output
     // Fallback to f32 for any unsupported type configuration
-    {{_any, _any},   pt(just<ov::element::f32>(), just<ov::element::f32>())},
+    {{_any, _any}, pt(just<ov::element::f32>(), just<ov::element::f32>())},
 };
 
 // Accept the input/output layouts as-is without conversion
 static LayoutType getLayoutType(const MemoryDescPtr& desc) {
-    if (desc->hasLayoutType(LayoutType::nspc)) return LayoutType::nspc;
-    if (desc->hasLayoutType(LayoutType::nCsp16c)) return LayoutType::nCsp16c;
-    if (desc->hasLayoutType(LayoutType::nCsp8c)) return LayoutType::nCsp8c;
+    if (desc->hasLayoutType(LayoutType::nspc))
+        return LayoutType::nspc;
+    if (desc->hasLayoutType(LayoutType::nCsp16c))
+        return LayoutType::nCsp16c;
+    if (desc->hasLayoutType(LayoutType::nCsp8c))
+        return LayoutType::nCsp8c;
     return LayoutType::ncsp;
 }
 

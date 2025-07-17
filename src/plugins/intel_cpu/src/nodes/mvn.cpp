@@ -27,8 +27,8 @@
 #include "nodes/common/blocked_desc_creator.h"
 #include "nodes/executors/executor.hpp"
 #include "nodes/executors/executor_factory.hpp"
-#include "nodes/executors/mvn_config.hpp"
 #include "nodes/executors/memory_arguments.hpp"
+#include "nodes/executors/mvn_config.hpp"
 #include "nodes/node_config.h"
 #include "onednn/iml_type_mapper.h"
 #include "openvino/core/except.hpp"
@@ -185,65 +185,71 @@ void MVN::initSupportedPrimitiveDescriptors() {
             break;
         }
     }
-    
+
     // Create initial memory descriptors
     const auto& creatorsMap = BlockedDescCreator::getCommonCreators();
     auto srcDesc = creatorsMap.at(LayoutType::ncsp)->createSharedDesc(inputPrecision, getInputShapeAtPort(0));
     auto dstDesc = creatorsMap.at(LayoutType::ncsp)->createSharedDesc(outputPrecision, getOutputShapeAtPort(0));
-    
+
     // Prepare memory descriptor args for executor factory
     MemoryDescArgs descs;
     descs[ARG_SRC_0] = srcDesc;
     descs[ARG_DST] = dstDesc;
-    
+
     // Set minimal required fields in mvnAttrs for getProperMemoryDescriptors
     mvnAttrs.src_prc = inputPrecision;
     mvnAttrs.dst_prc = outputPrecision;
     mvnAttrs.layout = MVNLayoutType::mvn_planar;  // Initial layout, will be updated in prepareParams
-    
+
     // Create planar configuration
     auto planarSrcDesc = creatorsMap.at(LayoutType::ncsp)->createSharedDesc(inputPrecision, getInputShapeAtPort(0));
     auto planarDstDesc = creatorsMap.at(LayoutType::ncsp)->createSharedDesc(outputPrecision, getOutputShapeAtPort(0));
-    
+
     // Create channel-last configuration
     auto nspcSrcDesc = creatorsMap.at(LayoutType::nspc)->createSharedDesc(inputPrecision, getInputShapeAtPort(0));
     auto nspcDstDesc = creatorsMap.at(LayoutType::nspc)->createSharedDesc(outputPrecision, getOutputShapeAtPort(0));
-    
+
     // Create configurations
-    std::vector<std::pair<MemoryDescPtr, MemoryDescPtr>> configurations = {
-        {planarSrcDesc, planarDstDesc},
-        {nspcSrcDesc, nspcDstDesc}
-    };
-    
+    std::vector<std::pair<MemoryDescPtr, MemoryDescPtr>> configurations = {{planarSrcDesc, planarDstDesc},
+                                                                           {nspcSrcDesc, nspcDstDesc}};
+
     // Add blocked layout configurations for 4D and 5D tensors
     if (getInputShapeAtPort(0).getRank() == 4 && creatorsMap.count(LayoutType::nCsp8c)) {
-        auto blocked8SrcDesc = creatorsMap.at(LayoutType::nCsp8c)->createSharedDesc(inputPrecision, getInputShapeAtPort(0));
-        auto blocked8DstDesc = creatorsMap.at(LayoutType::nCsp8c)->createSharedDesc(outputPrecision, getOutputShapeAtPort(0));
+        auto blocked8SrcDesc =
+            creatorsMap.at(LayoutType::nCsp8c)->createSharedDesc(inputPrecision, getInputShapeAtPort(0));
+        auto blocked8DstDesc =
+            creatorsMap.at(LayoutType::nCsp8c)->createSharedDesc(outputPrecision, getOutputShapeAtPort(0));
         configurations.push_back({blocked8SrcDesc, blocked8DstDesc});
     }
     if (getInputShapeAtPort(0).getRank() == 4 && creatorsMap.count(LayoutType::nCsp16c)) {
-        auto blocked16SrcDesc = creatorsMap.at(LayoutType::nCsp16c)->createSharedDesc(inputPrecision, getInputShapeAtPort(0));
-        auto blocked16DstDesc = creatorsMap.at(LayoutType::nCsp16c)->createSharedDesc(outputPrecision, getOutputShapeAtPort(0));
+        auto blocked16SrcDesc =
+            creatorsMap.at(LayoutType::nCsp16c)->createSharedDesc(inputPrecision, getInputShapeAtPort(0));
+        auto blocked16DstDesc =
+            creatorsMap.at(LayoutType::nCsp16c)->createSharedDesc(outputPrecision, getOutputShapeAtPort(0));
         configurations.push_back({blocked16SrcDesc, blocked16DstDesc});
     }
     if (getInputShapeAtPort(0).getRank() == 5 && creatorsMap.count(LayoutType::nCsp8c)) {
-        auto blocked8SrcDesc = creatorsMap.at(LayoutType::nCsp8c)->createSharedDesc(inputPrecision, getInputShapeAtPort(0));
-        auto blocked8DstDesc = creatorsMap.at(LayoutType::nCsp8c)->createSharedDesc(outputPrecision, getOutputShapeAtPort(0));
+        auto blocked8SrcDesc =
+            creatorsMap.at(LayoutType::nCsp8c)->createSharedDesc(inputPrecision, getInputShapeAtPort(0));
+        auto blocked8DstDesc =
+            creatorsMap.at(LayoutType::nCsp8c)->createSharedDesc(outputPrecision, getOutputShapeAtPort(0));
         configurations.push_back({blocked8SrcDesc, blocked8DstDesc});
     }
     if (getInputShapeAtPort(0).getRank() == 5 && creatorsMap.count(LayoutType::nCsp16c)) {
-        auto blocked16SrcDesc = creatorsMap.at(LayoutType::nCsp16c)->createSharedDesc(inputPrecision, getInputShapeAtPort(0));
-        auto blocked16DstDesc = creatorsMap.at(LayoutType::nCsp16c)->createSharedDesc(outputPrecision, getOutputShapeAtPort(0));
+        auto blocked16SrcDesc =
+            creatorsMap.at(LayoutType::nCsp16c)->createSharedDesc(inputPrecision, getInputShapeAtPort(0));
+        auto blocked16DstDesc =
+            creatorsMap.at(LayoutType::nCsp16c)->createSharedDesc(outputPrecision, getOutputShapeAtPort(0));
         configurations.push_back({blocked16SrcDesc, blocked16DstDesc});
     }
-    
+
     // TODO [DS]: inplace
     bool canBeInplace = !isDynamicNode() && (inputPrecision.size() == outputPrecision.size()) &&
                         (getParentEdgeAt(0)->getParent()->getChildEdges().size() == 1) &&
                         !getParentEdgeAt(0)->getParent()->isConstant();
 
     const size_t inputsNum = getParentEdges().size();
-    
+
     // Create supported primitive descriptors for each layout configuration
     for (const auto& config : configurations) {
         NodeConfig nodeConfig;
@@ -254,14 +260,15 @@ void MVN::initSupportedPrimitiveDescriptors() {
         nodeConfig.inConfs[0].inPlace(-1);
         nodeConfig.outConfs[0].inPlace(canBeInplace ? 0 : -1);
         if (inputsNum == 2) {
-            nodeConfig.inConfs[1].setMemDesc(std::make_shared<CpuBlockedMemoryDesc>(ov::element::i32, getInputShapeAtPort(1)));
+            nodeConfig.inConfs[1].setMemDesc(
+                std::make_shared<CpuBlockedMemoryDesc>(ov::element::i32, getInputShapeAtPort(1)));
             nodeConfig.inConfs[1].constant(true);
         }
-        
+
         // Use the layout-specific descriptors
         nodeConfig.inConfs[0].setMemDesc(config.first);
         nodeConfig.outConfs[0].setMemDesc(config.second);
-        
+
         supportedPrimitiveDescriptors.emplace_back(nodeConfig, impl_desc_type::undef);
     }
 }
@@ -283,7 +290,6 @@ void MVN::prepareParams() {
     transformTo5DCase(in_dims);
     mvnAttrs.shape5D = shape5D;
 
-
     auto* selectedPD = getSelectedPrimitiveDescriptor();
     mvnAttrs.src_prc = selectedPD->getConfig().inConfs[0].getMemDesc()->getPrecision();
     mvnAttrs.dst_prc = selectedPD->getConfig().outConfs[0].getMemDesc()->getPrecision();
@@ -299,7 +305,7 @@ void MVN::prepareParams() {
     MemoryArgs memoryArgs;
     memoryArgs[ARG_SRC_0] = getSrcMemoryAtPort(0);
     memoryArgs[ARG_DST] = getDstMemoryAtPort(0);
-    
+
     MemoryDescArgs descs;
     descs[ARG_SRC_0] = getSrcMemoryAtPort(0)->getDescPtr();
     descs[ARG_DST] = getDstMemoryAtPort(0)->getDescPtr();
@@ -307,7 +313,7 @@ void MVN::prepareParams() {
     // Set post-ops in mvnAttrs
     dnnl::primitive_attr attr;
     setPostOps(attr, true);
-    
+
     // Pass post-ops data pointers through MVNAttrs
     // This allows the executor to access the actual post-ops data
     mvnAttrs.postOps.clear();
@@ -315,20 +321,21 @@ void MVN::prepareParams() {
         mvnAttrs.postOps.push_back(ptr);
     }
 
-    auto factory = std::make_shared<ExecutorFactory<MVNAttrs>>(mvnAttrs,
-                                                       std::make_shared<ExecutorContext>(context, getImplPriority()),
-                                                       descs);
-    
+    auto factory =
+        std::make_shared<ExecutorFactory<MVNAttrs>>(mvnAttrs,
+                                                    std::make_shared<ExecutorContext>(context, getImplPriority()),
+                                                    descs);
+
     auto execPtr = factory->make(memoryArgs);
     if (!execPtr) {
         THROW_CPU_NODE_ERR("Failed to create MVN executor");
     }
-    
+
     executorPtr = execPtr;
-    
+
     // Update executor with memory arguments
     executorPtr->update(memoryArgs);
-    
+
     selectedPD->setImplementationType(executorPtr->implType());
 }
 
@@ -408,7 +415,7 @@ void MVN::execute([[maybe_unused]] const dnnl::stream& strm) {
         MemoryArgs memoryArgs;
         memoryArgs[ARG_SRC_0] = getSrcMemoryAtPort(0);
         memoryArgs[ARG_DST] = getDstMemoryAtPort(0);
-        
+
         executorPtr->execute(memoryArgs);
     } else {
         THROW_CPU_NODE_ERR("Primitive wasn't created");
