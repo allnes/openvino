@@ -5,6 +5,7 @@
 #include "jit_mvn.hpp"
 
 #include <any>
+#include "common/primitive_attr.hpp"
 #include <common/primitive_hashing_utils.hpp>
 #include <common/utils.hpp>
 #include <cstddef>
@@ -25,7 +26,6 @@ using namespace dnnl::impl;
 using namespace dnnl::impl::cpu::x64;
 using namespace dnnl::impl::utils;
 using namespace Xbyak;
-using namespace ov;
 
 namespace ov::intel_cpu {
 
