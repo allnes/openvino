@@ -68,21 +68,6 @@ using namespace Xbyak;
 
 namespace ov::intel_cpu::legacy {
 
-size_t getSpatialDimsNum(const size_t rank) {
-    switch (rank) {
-    case 1:
-    case 3:
-        return 1;
-    case 2:
-    case 4:
-        return 2;
-    case 5:
-        return 3;
-    default:
-        OPENVINO_THROW("Can't define number spatial");
-    }
-}
-
 struct InterpolateKey {
     InterpolateAttrs nodeAttrs;
     VectorDims srcDims;
@@ -2113,11 +2098,12 @@ void InterpolateJitExecutor::pillowCGathered(const uint8_t* in_ptr_,
     });
 }
 
+
 InterpolateJitExecutor::InterpolateJitExecutor(const InterpolateAttrs& interpAttrs,
-                                                const VectorDims& srcDims,
-                                                const VectorDims& dstDims,
-                                                const std::vector<float>& dataScales,
-                                                [[maybe_unused]] const dnnl::primitive_attr& attr)
+                                                            const VectorDims& srcDims,
+                                                            const VectorDims& dstDims,
+                                                            const std::vector<float>& dataScales,
+                                                            [[maybe_unused]] const dnnl::primitive_attr& attr)
     : InterpolateExecutorBase(interpAttrs, srcDims, dstDims, dataScales) {
     auto jcp = jit_interpolate_config_params();
     jcp.mode = mode;
@@ -2162,210 +2148,6 @@ InterpolateJitExecutor::InterpolateJitExecutor(const InterpolateAttrs& interpAtt
     } else {
         OPENVINO_THROW("Can't compile InterpolateJitExecutor");
     }
-}
-
-// Private method implementations from original Interpolate class
-void InterpolateJitExecutor::NNCGathered(const uint8_t* in_ptr_,
-                                         uint8_t* out_ptr_,
-                                         const void* post_ops_data_,
-                                         int B,
-                                         int C,
-                                         int ID,
-                                         int IH,
-                                         int IW,
-                                         int OD,
-                                         int OH,
-                                         int OW) {
-    auto* index_d = static_cast<int*>(auxTable.data());
-    auto* index_h = static_cast<int*>(&auxTable[OD]);
-    auto* index_w = static_cast<int*>(&auxTable[OD + OH]);
-
-    bool is_nhwc = (configured_for_layout == by_channel);
-
-    for (int b = 0; b < B; b++) {
-        if (is_nhwc) {
-            const uint8_t* in_ptr = in_ptr_ + (IW * IH * ID * C * b) * srcDataSize;
-            uint8_t* out_ptr = out_ptr_ + (OW * OH * OD * C * b) * dstDataSize;
-            std::vector<int> index_w_kernel(OW);
-            for (int ox = 0; ox < OW; ox++) {
-                index_w_kernel[ox] = index_w[ox] * C * srcDataSize;
-            }
-            parallel_for2d(OD, OH, [&](size_t d, size_t h) {
-                // kernel for C * OW
-                uint8_t* out_ptr_dh = out_ptr + (C * OW * OH * d + C * OW * h) * dstDataSize;
-                const uint8_t* in_ptr_dh = in_ptr + (C * IW * IH * index_d[d] + C * IW * index_h[h]) * srcDataSize;
-                auto arg = jit_interpolate_call_args();
-                arg.dst = out_ptr_dh;
-                arg.src_ptr[0] = in_ptr_dh;
-                arg.index = static_cast<int*>(index_w_kernel.data());
-                arg.work_amount = C;
-                arg.oc_off = 0;
-                arg.post_op_data = post_ops_data_;
-                (*interpolateKernel)(&arg);
-            });
-        } else {  // for blk
-            int blk_size = mayiuse(cpu::x64::avx512_core) ? 16 : 8;
-            int CB = div_up(C, blk_size);
-            const uint8_t* in_ptr = in_ptr_ + (IW * IH * ID * CB * blk_size * b) * srcDataSize;
-            uint8_t* out_ptr = out_ptr_ + (OW * OH * OD * CB * blk_size * b) * dstDataSize;
-            std::vector<int> index_w_kernel(OW);
-            for (int ox = 0; ox < OW; ox++) {
-                index_w_kernel[ox] = index_w[ox] * blk_size * srcDataSize;
-            }
-            parallel_for2d(CB, OD, [&](size_t cb, size_t d) {
-                uint8_t* out_ptr_cbd = out_ptr + (blk_size * OW * OH * OD * cb + blk_size * OW * OH * d) * dstDataSize;
-                const uint8_t* in_ptr_cbd =
-                    in_ptr + (blk_size * IW * IH * ID * cb + blk_size * IW * IH * index_d[d]) * srcDataSize;
-                auto arg = jit_interpolate_call_args();
-                for (int h = 0; h < OH; h++) {  // kernel for blk_size * OW
-                    arg.dst = out_ptr_cbd + blk_size * OW * h * dstDataSize;
-                    arg.src_ptr[0] = in_ptr_cbd + blk_size * IW * index_h[h] * srcDataSize;
-                    arg.index = static_cast<int*>(index_w_kernel.data());
-                    arg.work_amount = static_cast<size_t>(OW);
-                    arg.oc_off = cb * blk_size * sizeof(float);
-                    arg.post_op_data = post_ops_data_;
-                    (*interpolateKernel)(&arg);
-                }
-            });
-        }
-    }  // batch end
-}
-
-void InterpolateJitExecutor::NNPlanar(const uint8_t* in_ptr_,
-                                      uint8_t* out_ptr_,
-                                      const void* post_ops_data_,
-                                      int B,
-                                      int C,
-                                      int ID,
-                                      int IH,
-                                      int IW,
-                                      int OD,
-                                      int OH,
-                                      int OW) {
-    auto* index_d = static_cast<int*>(auxTable.data());
-    auto* index_h = static_cast<int*>(&auxTable[OD]);
-    auto* index_w = static_cast<int*>(&auxTable[OD + OH]);
-
-    for (int b = 0; b < B; b++) {
-        parallel_for(C, [&](size_t c) {
-            const uint8_t* in_ptr_nc = in_ptr_ + (IW * IH * ID * C * b + IW * IH * ID * c) * srcDataSize;
-            uint8_t* out_ptr_nc = out_ptr_ + (OW * OH * OD * C * b + OW * OH * OD * c) * dstDataSize;
-
-            for (int d = 0; d < OD; d++) {
-                uint8_t* out_ptr_ncd = out_ptr_nc + (OW * OH * d) * dstDataSize;
-                const uint8_t* in_ptr_ncd = in_ptr_nc + (IW * IH * index_d[d]) * srcDataSize;
-                auto arg = jit_interpolate_call_args();
-                for (int h = 0; h < OH; h++) {
-                    arg.dst = out_ptr_ncd + OW * h * dstDataSize;
-                    arg.src_ptr[0] = in_ptr_ncd + IW * index_h[h] * srcDataSize;
-                    arg.index = index_w;
-                    arg.work_amount = static_cast<size_t>(OW);
-                    arg.oc_off = static_cast<size_t>(c * sizeof(float));
-                    arg.post_op_data = post_ops_data_;
-                    (*interpolateKernel)(&arg);
-                }
-            }
-        });
-    }
-}
-
-void InterpolateJitExecutor::linearOnnxPlanar(const uint8_t* in_ptr_,
-                                              uint8_t* out_ptr_,
-                                              const void* post_ops_data_,
-                                              int B,
-                                              int C,
-                                              int ID,
-                                              int IH,
-                                              int IW,
-                                              int OD,
-                                              int OH,
-                                              int OW) {
-    auto* index_d = static_cast<int*>(auxTable.data());
-    auto* index_h = static_cast<int*>(&auxTable[2 * OD]);
-    auto* index_w = static_cast<int*>(&auxTable[2 * OD + 2 * OH]);
-    auto* weight_d = static_cast<float*>(&auxTable[2 * OD + 2 * OH + 2 * OW]);
-    auto* weight_h = static_cast<float*>(&auxTable[2 * OD + 2 * OH + 2 * OW + 2 * OD]);
-    auto* weight_w = static_cast<float*>(&auxTable[2 * OD + 2 * OH + 2 * OW + 2 * OD + 2 * OH]);
-
-    for (int b = 0; b < B; b++) {
-        parallel_for(C, [&](size_t c) {
-            const uint8_t* in_ptr_nc = in_ptr_ + (IW * IH * ID * C * b + IW * IH * ID * c) * srcDataSize;
-            uint8_t* out_ptr_nc = out_ptr_ + (OW * OH * OD * C * b + OW * OH * OD * c) * dstDataSize;
-
-            for (int d = 0; d < OD; d++) {
-                uint8_t* out_ptr_ncd = out_ptr_nc + (OW * OH * d) * dstDataSize;
-                const uint8_t* in_ptr_ncd0 = in_ptr_nc + (IW * IH * index_d[2 * d + 0]) * srcDataSize;
-                const uint8_t* in_ptr_ncd1 = in_ptr_nc + (IW * IH * index_d[2 * d + 1]) * srcDataSize;
-                auto arg = jit_interpolate_call_args();
-                for (int h = 0; h < OH; h++) {
-                    arg.dst = out_ptr_ncd + OW * h * dstDataSize;
-                    arg.src_ptr[0] = in_ptr_ncd0 + IW * index_h[2 * h + 0] * srcDataSize;
-                    arg.src_ptr[1] = in_ptr_ncd0 + IW * index_h[2 * h + 1] * srcDataSize;
-                    arg.src_ptr[2] = in_ptr_ncd1 + IW * index_h[2 * h + 0] * srcDataSize;
-                    arg.src_ptr[3] = in_ptr_ncd1 + IW * index_h[2 * h + 1] * srcDataSize;
-                    arg.weight_ptr[0] = static_cast<float*>(&weight_h[2 * h]);
-                    arg.weight_ptr[1] = static_cast<float*>(&weight_d[2 * d]);
-                    arg.index = index_w;
-                    float* weight_w_ptr = static_cast<float*>(&weight_w[0]);
-                    arg.weight_ptr[2] = weight_w_ptr;
-                    arg.work_amount = static_cast<size_t>(OW);
-                    arg.oc_off = static_cast<size_t>(c * sizeof(float));
-                    arg.post_op_data = post_ops_data_;
-                    (*interpolateKernel)(&arg);
-                }
-            }
-        });
-    }
-}
-
-void InterpolateJitExecutor::linearOnnxCGathered(const uint8_t* in_ptr_,
-                                                 uint8_t* out_ptr_,
-                                                 const void* post_ops_data_,
-                                                 int B,
-                                                 int C,
-                                                 int ID,
-                                                 int IH,
-                                                 int IW,
-                                                 int OD,
-                                                 int OH,
-                                                 int OW) {
-    // Implementation would go here - too long to include in this response
-}
-
-void InterpolateJitExecutor::cubicCGathered(const uint8_t* in_ptr_,
-                                            uint8_t* out_ptr_,
-                                            const void* post_ops_data_,
-                                            int B,
-                                            int C,
-                                            int IH,
-                                            int IW,
-                                            int OH,
-                                            int OW) {
-    // Implementation would go here - too long to include in this response
-}
-
-void InterpolateJitExecutor::cubicPlanar(const uint8_t* in_ptr_,
-                                         uint8_t* out_ptr_,
-                                         const void* post_ops_data_,
-                                         int B,
-                                         int C,
-                                         int IH,
-                                         int IW,
-                                         int OH,
-                                         int OW) {
-    // Implementation would go here - too long to include in this response
-}
-
-void InterpolateJitExecutor::pillowCGathered(const uint8_t* in_ptr_,
-                                             uint8_t* out_ptr_,
-                                             const void* post_ops_data_,
-                                             int B,
-                                             int C,
-                                             int IH,
-                                             int IW,
-                                             int OH,
-                                             int OW) {
-    // Implementation would go here - too long to include in this response
 }
 
 void InterpolateJitExecutor::exec(const uint8_t* in_ptr_, uint8_t* out_ptr_, const void* post_ops_data_) {
@@ -2418,5 +2200,6 @@ void InterpolateJitExecutor::exec(const uint8_t* in_ptr_, uint8_t* out_ptr_, con
     }
     }
 }
+
 
 }

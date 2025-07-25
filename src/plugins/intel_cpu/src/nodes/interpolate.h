@@ -5,7 +5,6 @@
 #pragma once
 
 #include <cassert>
-#include <common/primitive_attr.hpp>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -15,7 +14,6 @@
 
 #include "cpu_types.h"
 #include "executors/interpolate_config.hpp"
-#include "executors/interpolate_list.hpp"
 #include "executors/executor.hpp"
 #include "executors/executor_factory.hpp"
 #include "executors/memory_arguments.hpp"
@@ -100,6 +98,8 @@ public:
     bool canFuse(const NodePtr& node) const override;
 
     static bool isSupportedOperation(const std::shared_ptr<const ov::Node>& op, std::string& errorMessage) noexcept;
+    
+    ExecutorFactoryPtr<InterpolateAttrs> createExecutorFactory(const MemoryDescArgs& descs, const InterpolateAttrs& attrs);
 
     bool needShapeInfer() const override;
     bool needPrepareParams() const override;
@@ -113,222 +113,7 @@ private:
     InterpolateAttrs interpAttrs;
     size_t dataRank = 0;
 
-    class InterpolateExecutorBase {
-    public:
-        InterpolateExecutorBase(const InterpolateAttrs& interpAttrs,
-                                const VectorDims& srcDims,
-                                const VectorDims& dstDims,
-                                const std::vector<float>& dataScales);
-
-        virtual void exec(const uint8_t* in_ptr_, uint8_t* out_ptr_, const void* post_ops_data_) = 0;
-        virtual ~InterpolateExecutorBase() = default;
-        [[nodiscard]] VectorDims getSrcDimPad5d() const {
-            return srcDimPad5d;
-        }
-
-    private:
-        void buildTblNN(const VectorDims& srcDimPad5d,
-                        const VectorDims& dstDim5d,
-                        const std::vector<float>& dataScales,
-                        InterpolateLayoutType layout,
-                        InterpolateNearestMode nearestMode);
-        void buildTblLinearOnnx(const VectorDims& srcDimPad5d,
-                                const VectorDims& dstDim5d,
-                                const std::vector<float>& dataScales,
-                                InterpolateLayoutType layout);
-        void buildTblLinear(const VectorDims& srcDimPad5d,
-                            const VectorDims& dstDim5d,
-                            const std::vector<float>& dataScales,
-                            int kernel_width,
-                            bool antialias);
-        void buildTblCubic(const VectorDims& srcDimPad5d,
-                           const VectorDims& dstDim5d,
-                           const std::vector<float>& dataScales,
-                           float cubicCoeff,
-                           InterpolateLayoutType layout);
-        void buildTblPillow(const VectorDims& srcDimPad5d,
-                            const VectorDims& dstDim5d,
-                            const std::vector<float>& dataScales,
-                            float cubicCoeff,
-                            InterpolateLayoutType layout);
-
-        [[nodiscard]] float coordTransToInput(int outCoord, float scale, int inShape, int outShape) const;
-        static int nearestRound(float origin, bool isDownsample, InterpolateNearestMode nearestMode);
-        void linearOnnxCF(int outCoord,
-                          float scale,
-                          int inShape,
-                          int outShape,
-                          int& index0,
-                          int& index1,
-                          float& weight0,
-                          float& weight1);
-        static std::vector<float> getCubicCoeffs(float mantissa, float a);
-        static float getPillowBilinearCoeffs(float m);
-        static float getPillowBicubicCoeffs(float m);
-        inline void create_pillow_working_buf(InterpolateLayoutType layout);
-
-    protected:
-        InterpolateMode mode;
-        InterpolateCoordTransMode coordTransMode;
-        InterpolateLayoutType configured_for_layout;
-        VectorDims srcDimPad5d, dstDim5d;
-        ov::element::Type inputPrec, outputPrec;
-        size_t srcDataSize, dstDataSize;
-        size_t dataRank;
-        int spatialDimSize;
-        std::vector<int> auxTable;
-        std::vector<uint8_t> pillow_working_buf;
-        size_t m_threads_num = 0lu;
-    };
-    std::shared_ptr<InterpolateExecutorBase> execPtr = nullptr;
-
-    class InterpolateJitExecutor : public InterpolateExecutorBase {
-    public:
-        InterpolateJitExecutor(const InterpolateAttrs& interpAttrs,
-                               const VectorDims& srcDims,
-                               const VectorDims& dstDims,
-                               const std::vector<float>& dataScales,
-                               const dnnl::primitive_attr& attr);
-
-        void exec(const uint8_t* in_ptr_, uint8_t* out_ptr_, const void* post_ops_data_) override;
-
-    private:
-        // nearest neighbor
-        void NNPlanar(const uint8_t* in_ptr_,
-                      uint8_t* out_ptr_,
-                      const void* post_ops_data_,
-                      int B,
-                      int C,
-                      int ID,
-                      int IH,
-                      int IW,
-                      int OD,
-                      int OH,
-                      int OW);
-        void NNCGathered(const uint8_t* in_ptr_,
-                         uint8_t* out_ptr_,
-                         const void* post_ops_data_,
-                         int B,
-                         int C,
-                         int ID,
-                         int IH,
-                         int IW,
-                         int OD,
-                         int OH,
-                         int OW);
-
-        // onnx linear
-        void linearOnnxPlanar(const uint8_t* in_ptr_,
-                              uint8_t* out_ptr_,
-                              const void* post_ops_data_,
-                              int B,
-                              int C,
-                              int ID,
-                              int IH,
-                              int IW,
-                              int OD,
-                              int OH,
-                              int OW);
-        void linearOnnxCGathered(const uint8_t* in_ptr_,
-                                 uint8_t* out_ptr_,
-                                 const void* post_ops_data_,
-                                 int B,
-                                 int C,
-                                 int ID,
-                                 int IH,
-                                 int IW,
-                                 int OD,
-                                 int OH,
-                                 int OW);
-
-        // cubic
-        void cubicPlanar(const uint8_t* in_ptr_,
-                         uint8_t* out_ptr_,
-                         const void* post_ops_data_,
-                         int B,
-                         int C,
-                         int IH,
-                         int IW,
-                         int OH,
-                         int OW);
-        void cubicCGathered(const uint8_t* in_ptr_,
-                            uint8_t* out_ptr_,
-                            const void* post_ops_data_,
-                            int B,
-                            int C,
-                            int IH,
-                            int IW,
-                            int OH,
-                            int OW);
-
-        // pillow bilinear and pillow bicubic
-        void pillowCGathered(const uint8_t* in_ptr_,
-                             uint8_t* out_ptr_,
-                             const void* post_ops_data_,
-                             int B,
-                             int C,
-                             int IH,
-                             int IW,
-                             int OH,
-                             int OW);
-
-        std::shared_ptr<jit_uni_interpolate_kernel> interpolateKernel = nullptr;
-    };
-
-    class InterpolateRefExecutor : public InterpolateExecutorBase {
-    public:
-        InterpolateRefExecutor(const InterpolateAttrs& interpAttrs,
-                               const VectorDims& srcDims,
-                               const VectorDims& dstDims,
-                               const std::vector<float>& _dataScales)
-            : InterpolateExecutorBase(interpAttrs, srcDims, dstDims, _dataScales),
-              antialias(interpAttrs.antialias),
-              dataScales(_dataScales),
-              refInterpAttrs(interpAttrs) {}
-
-        void exec(const uint8_t* in_ptr_, uint8_t* out_ptr_, const void* post_ops_data_) override;
-
-    private:
-        void
-        NNRef(const uint8_t* in_ptr_, uint8_t* out_ptr_, int B, int C, int ID, int IH, int IW, int OD, int OH, int OW);
-        void linearOnnxRef(const uint8_t* in_ptr_,
-                           uint8_t* out_ptr_,
-                           int B,
-                           int C,
-                           int ID,
-                           int IH,
-                           int IW,
-                           int OD,
-                           int OH,
-                           int OW);
-
-        void cubicRef(const uint8_t* in_ptr_, uint8_t* out_ptr_, int B, int C, int IH, int IW, int OH, int OW);
-        void linearInterpolation(const uint8_t* in_ptr_,
-                                 uint8_t* out_ptr_,
-                                 int B,
-                                 int C,
-                                 int ID,
-                                 int IH,
-                                 int IW,
-                                 float fx,
-                                 float fy,
-                                 float fz,
-                                 int OD,
-                                 int OH,
-                                 int OW,
-                                 int kernel_width,
-                                 bool antialias);
-        void pillowRef(const uint8_t* in_ptr_, uint8_t* out_ptr_, int B, int C, int IH, int IW, int OH, int OW);
-        void
-        pillowRefNCHWAsNHWC(const uint8_t* in_ptr_, uint8_t* out_ptr_, int B, int C, int IH, int IW, int OH, int OW);
-
-        static float getValue(const uint8_t* base, size_t offset, ov::element::Type prec);
-        static void setValue(uint8_t* base, size_t offset, float value, ov::element::Type prec);
-
-        bool antialias;
-        std::vector<float> dataScales;
-        InterpolateAttrs refInterpAttrs;
-    };
+    // Legacy executor classes removed - using new executor factory pattern
 
     void setPostOps(dnnl::primitive_attr& attr, const VectorDims& dims);
 
@@ -353,9 +138,7 @@ private:
 
     VectorDims lastOutputDims;
 
-    bool canUseAclExecutor = false;
-    ExecutorPtr aclExecPtr = nullptr;
-    InterpolateExecutorFactoryPtr factory;
+    std::shared_ptr<Executor> executorPtr = nullptr;
 };
 
 }  // namespace ov::intel_cpu::node

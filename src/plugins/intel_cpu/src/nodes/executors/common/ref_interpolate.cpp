@@ -17,62 +17,6 @@
 namespace ov {
 namespace intel_cpu {
 
-namespace {
-// Helper functions
-static inline bool isFloatCompatible(ov::element::Type prc) {
-    return prc == ov::element::f32 || prc == ov::element::bf16 || 
-           prc == ov::element::f16 || prc == ov::element::f64;
-}
-
-static VectorDims getPaddedInputShape(const VectorDims& srcDims,
-                                     const std::vector<int>& padBegin,
-                                     const std::vector<int>& padEnd) {
-    VectorDims paddedShape;
-    for (size_t i = 0; i < srcDims.size(); i++) {
-        paddedShape.push_back(srcDims[i] + padBegin[i] + padEnd[i]);
-    }
-    return paddedShape;
-}
-
-template <typename T>
-inline T rnd_up(const T a, const T b) {
-    return (a + b - 1) / b * b;
-}
-
-static size_t getSpatialDimsNum(size_t rank) {
-    switch (rank) {
-        case 1:
-        case 3:
-            return 1;
-        case 2:
-        case 4:
-            return 2;
-        case 5:
-            return 3;
-        default:
-            OPENVINO_THROW("Unsupported tensor rank: ", rank);
-    }
-}
-
-static VectorDims to5Dim(const VectorDims& dims) {
-    VectorDims dims5(5, 1);
-    size_t rank = dims.size();
-    
-    dims5[4] = dims[rank - 1];  // width
-    if (rank > 1) dims5[3] = dims[rank - 2];  // height
-    if (rank > 2) dims5[0] = dims[0];  // batch
-    if (rank > 3) dims5[1] = dims[1];  // channels
-    if (rank > 4) dims5[2] = dims[2];  // depth
-    
-    if (rank == 3) {  // nhw -> ncw
-        dims5[1] = dims5[3];
-        dims5[3] = 1;
-    }
-    
-    return dims5;
-}
-}  // namespace
-
 RefInterpolateExecutor::RefInterpolateExecutor(const InterpolateAttrs& attrs,
                                              const PostOpsPtr& postOps,
                                              const MemoryArgs& memory,

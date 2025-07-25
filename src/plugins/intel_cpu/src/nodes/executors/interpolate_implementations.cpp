@@ -9,9 +9,15 @@
 #include "nodes/executors/executor_config.hpp"
 #include "utils/debug_capabilities.h"
 #include "utils/general_utils.h"
+#include "utils/arch_macros.h"
+#include "openvino/core/type/element_type.hpp"
 
 #if defined(OV_CPU_WITH_ACL)
 #include "nodes/executors/acl/acl_interpolate.hpp"
+#endif
+
+#if defined(OPENVINO_ARCH_X86_64)
+#include "nodes/executors/x64/jit_interpolate.hpp"
 #endif
 
 // Reference implementation should always be available
@@ -138,11 +144,29 @@ static bool isACLInterpolateSupported(const executor::Config<InterpolateAttrs>& 
 }
 #endif
 
+using namespace ov::element;
+using namespace executor;
+
+// Define shorthands for executor functions
+using InterpolateExecutorCreator = std::function<ExecutorPtr(const InterpolateAttrs&,
+                                                             const MemoryArgs&,
+                                                             const ExecutorContext::CPtr)>;
+
+template<typename T, typename Attrs>
+struct InterpolateCreateDefault {
+    ExecutorPtr operator()(const Attrs& attrs,
+                          const MemoryArgs& memory,
+                          const ExecutorContext::CPtr context) const {
+        return std::make_shared<T>(attrs, nullptr, memory, context);
+    }
+};
+
 template <>
 const std::vector<ExecutorImplementation<InterpolateAttrs>>& getImplementations() {
     static const std::vector<ExecutorImplementation<InterpolateAttrs>> interpolateImplementations {
+        // clang-format off
 #if defined(OV_CPU_WITH_ACL)
-        ExecutorImplementation<InterpolateAttrs>(
+        OV_CPU_INSTANCE_ACL(
             "interpolate_acl",
             ExecutorType::Acl,
             OperationType::Interpolate,
@@ -151,22 +175,27 @@ const std::vector<ExecutorImplementation<InterpolateAttrs>>& getImplementations(
             [](const executor::Config<InterpolateAttrs>& config) -> bool {
                 return isACLInterpolateSupported(config);
             },
-            // createOptimalConfig
-            [](const executor::Config<InterpolateAttrs>& config) -> std::optional<executor::Config<InterpolateAttrs>> {
-                return std::nullopt;  // No optimal config changes needed
-            },
-            // Shape acceptance
+            HasNoOptimalConfig<InterpolateAttrs>{},
             AcceptsAnyShape<InterpolateAttrs>{},
-            // Create function
-            [](const InterpolateAttrs& attrs,
-               const MemoryArgs& memory,
-               const ExecutorContext::CPtr context) -> ExecutorPtr {
-                PostOpsPtr postOps = nullptr;
-                return std::make_shared<ACLInterpolateExecutor>(attrs, postOps, memory, context);
-            }
-        ),
+            InterpolateCreateDefault<ACLInterpolateExecutor, InterpolateAttrs>{}
+        )
 #endif
-        ExecutorImplementation<InterpolateAttrs>(
+#if defined(OPENVINO_ARCH_X86_64)
+        OV_CPU_INSTANCE_X64(
+            "interpolate_jit",
+            ExecutorType::jit_x64, 
+            OperationType::Interpolate,
+            ShapeTolerance::Agnostic,
+            // Predicate function
+            [](const executor::Config<InterpolateAttrs>& config) -> bool {
+                return jitInterpolateSupported(config.attrs, config.descs);
+            },
+            HasNoOptimalConfig<InterpolateAttrs>{},
+            AcceptsAnyShape<InterpolateAttrs>{},
+            InterpolateCreateDefault<JitInterpolateExecutor, InterpolateAttrs>{}
+        )
+#endif
+        OV_CPU_INSTANCE_COMMON(
             "interpolate_ref",
             ExecutorType::Common,
             OperationType::Interpolate,
@@ -175,20 +204,11 @@ const std::vector<ExecutorImplementation<InterpolateAttrs>>& getImplementations(
             [](const executor::Config<InterpolateAttrs>& config) -> bool {
                 return true;
             },
-            // createOptimalConfig
-            [](const executor::Config<InterpolateAttrs>& config) -> std::optional<executor::Config<InterpolateAttrs>> {
-                return std::nullopt;  // No optimal config changes needed
-            },
-            // Shape acceptance
+            HasNoOptimalConfig<InterpolateAttrs>{},
             AcceptsAnyShape<InterpolateAttrs>{},
-            // Create function
-            [](const InterpolateAttrs& attrs,
-               const MemoryArgs& memory,
-               const ExecutorContext::CPtr context) -> ExecutorPtr {
-                PostOpsPtr postOps = nullptr;
-                return std::make_shared<RefInterpolateExecutor>(attrs, postOps, memory, context);
-            }
+            InterpolateCreateDefault<RefInterpolateExecutor, InterpolateAttrs>{}
         )
+        // clang-format on
     };
     
     return interpolateImplementations;

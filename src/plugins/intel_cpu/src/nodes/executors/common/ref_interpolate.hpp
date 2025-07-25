@@ -5,6 +5,7 @@
 #pragma once
 
 #include "nodes/executors/executor.hpp"
+#include "nodes/executors/executor_factory.hpp"
 #include "nodes/executors/interpolate_config.hpp"
 #include "nodes/executors/memory_arguments.hpp"
 #include "post_ops.hpp"
@@ -13,8 +14,6 @@ namespace ov {
 namespace intel_cpu {
 
 using PostOpsPtr = std::shared_ptr<PostOps>;
-
-static constexpr int CUBIC_GRID_LEN = 4;
 
 class RefInterpolateExecutor : public Executor {
 public:

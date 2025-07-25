@@ -3,344 +3,218 @@
 //
 
 #include "jit_interpolate.hpp"
+#include "jit_interpolate_legacy.hpp"
+#include "nodes/interpolate.h"
+#include "memory_desc/cpu_memory_desc.h"
+#include "cpu/x64/cpu_isa_traits.hpp"
+#include "utils/debug_capabilities.h"
+#include "cpu_types.h"
+#include "common/dnnl_thread.hpp"
+#include "dnnl_postops_composer.h"
+#include "memory_desc/dnnl_memory_desc.h"
+#include "dnnl_extension_utils.h"
+#include "cpu_memory.h"
 
-#if defined(OPENVINO_ARCH_X86_64)
+namespace ov {
+namespace intel_cpu {
 
-using namespace dnnl::impl;
-using namespace dnnl::impl::cpu;
-using namespace dnnl::impl::cpu::x64;
-using namespace dnnl::impl::utils;
-using namespace Xbyak;
+using namespace node;
 
-namespace ov::intel_cpu::node {
-
-bool isFloatCompatible(ov::element::Type prc) {
-    return one_of(prc, ov::element::f32, ov::element::bf16, ov::element::f16, ov::element::f64);
-}
-
-template <cpu_isa_t isa>
-jit_uni_interpolate_kernel_f32<isa>::jit_uni_interpolate_kernel_f32(jit_interpolate_config_params jcp, const dnnl_primitive_attr& attr)
-    : jit_uni_interpolate_kernel(jcp, attr), jit_generator(jit_name()) {}
-
-template <cpu_isa_t isa>
-void jit_uni_interpolate_kernel_f32<isa>::create_ker() {
-    jit_generator::create_kernel();
-    ker_ = (decltype(ker_))jit_ker();
-}
-
-template <cpu_isa_t isa>
-void jit_uni_interpolate_kernel_f32<isa>::generate() {
-    // TODO: Move actual JIT implementation from interpolate.cpp
-    // This is a placeholder that will be filled with the actual JIT code
+JitInterpolateExecutor::JitInterpolateExecutor(const InterpolateAttrs& attrs,
+                                               const PostOpsPtr& postOps,
+                                               const MemoryArgs& memory,
+                                               const ExecutorContext::CPtr context)
+    : attrs(attrs), postOps(postOps), memoryArgs(memory), context(context), legacyExecutor(nullptr, [](void*){}) {
     
-    // For now, we'll add a basic structure
-    this->preamble();
+    // Determine implementation type based on available ISA
+    if (dnnl::impl::cpu::x64::mayiuse(dnnl::impl::cpu::x64::avx512_core)) {
+        m_implType = impl_desc_type::jit_avx512;
+    } else if (dnnl::impl::cpu::x64::mayiuse(dnnl::impl::cpu::x64::avx2)) {
+        m_implType = impl_desc_type::jit_avx2;
+    } else if (dnnl::impl::cpu::x64::mayiuse(dnnl::impl::cpu::x64::sse41)) {
+        m_implType = impl_desc_type::jit_sse42;
+    } else {
+        m_implType = impl_desc_type::jit_uni;
+    }
     
-    // Basic JIT code structure will be moved here from interpolate.cpp
-    // Including all the switch statements and method calls
+    // Extract dimensions from memory descriptors
+    const auto& srcDesc = memory.at(ARG_SRC)->getDescPtr();
+    const auto& dstDesc = memory.at(ARG_DST)->getDescPtr();
     
-    this->postamble();
+    srcDims = srcDesc->getShape().getStaticDims();
+    dstDims = dstDesc->getShape().getStaticDims();
+    
+    // Apply NCHWAsNHWC transformation if needed (following upstream master pattern)
+    if (attrs.NCHWAsNHWC && srcDesc->hasLayoutType(LayoutType::ncsp)) {
+        auto logicalShapeAlign = [](VectorDims& Dims) {
+            size_t C = Dims[3];
+            Dims[3] = Dims[2];
+            Dims[2] = Dims[1];
+            Dims[1] = C;
+        };
+        logicalShapeAlign(srcDims);
+        logicalShapeAlign(dstDims);
+    }
+    
+    // Calculate data scales if not provided
+    if (attrs.dataScales.empty()) {
+        dataScales.resize(srcDims.size());
+        for (size_t i = 0; i < srcDims.size(); i++) {
+            dataScales[i] = static_cast<float>(dstDims[i]) / static_cast<float>(srcDims[i]);
+        }
+    } else {
+        dataScales = attrs.dataScales;
+    }
+    
+    // Create primitive attributes for legacy executor
+    dnnl::primitive_attr attr;
+    setPostOps(attr, false);
+    
+    // Create legacy executor with transformed dimensions
+    auto* legacyExec = new legacy::InterpolateJitExecutor(
+        attrs, 
+        srcDims, 
+        dstDims, 
+        dataScales,
+        attr
+    );
+    
+    legacyExecutor = std::unique_ptr<void, void(*)(void*)>(
+        legacyExec, 
+        [](void* p) { delete static_cast<legacy::InterpolateJitExecutor*>(p); }
+    );
 }
 
-// Implementation placeholders for the main methods
-template <cpu_isa_t isa>
-void jit_uni_interpolate_kernel_f32<isa>::nn_planar() {
-    // TODO: Move implementation from interpolate.cpp
+bool JitInterpolateExecutor::update(const MemoryArgs& memory) {
+    // For now, we don't support dynamic shapes, so return false
+    return false;
 }
 
-template <cpu_isa_t isa>
-void jit_uni_interpolate_kernel_f32<isa>::nn_blk() {
-    // TODO: Move implementation from interpolate.cpp
+void JitInterpolateExecutor::execute(const MemoryArgs& memory) {
+    const auto& srcMem = memory.at(ARG_SRC);
+    const auto& dstMem = memory.at(ARG_DST);
+    
+    const uint8_t* srcData = srcMem->getDataAs<const uint8_t>();
+    uint8_t* dstData = dstMem->getDataAs<uint8_t>();
+    
+    // Prepare PostOps data following MVN pattern
+    const void* postOpsData = postOpsPtrArray.empty() ? nullptr : 
+        static_cast<const void*>(postOpsPtrArray.data());
+    
+    // Call legacy executor
+    auto* executor = static_cast<legacy::InterpolateJitExecutor*>(legacyExecutor.get());
+    executor->exec(srcData, dstData, postOpsData);
 }
 
-template <cpu_isa_t isa>
-void jit_uni_interpolate_kernel_f32<isa>::nn_by_channel() {
-    // TODO: Move implementation from interpolate.cpp
+void JitInterpolateExecutor::setPostOps(dnnl::primitive_attr& attr, bool /*initWeights*/) {
+    if (!postOps || postOps->empty()) {
+        return;
+    }
+    
+    // Use DnnlPostOpsComposer to convert PostOps to dnnl format
+    VectorDims outputDims = dstDims;
+    size_t idxOC = attrs.layout == InterpolateLayoutType::by_channel ? outputDims.size() - 1 : 1;
+    
+    const bool isINT8 =
+        (attrs.inPrc == ov::element::i8 || attrs.inPrc == ov::element::u8) && attrs.outPrc == ov::element::i8;
+    const auto outDataType = DnnlExtensionUtils::ElementTypeToDataType(attrs.outPrc);
+    
+    // Create memory args for post-ops composer
+    MemoryArgs postOpsMemoryArgs = memoryArgs;
+    // Create a dummy empty bias memory descriptor if not present
+    if (postOpsMemoryArgs.count(ARG_BIAS) == 0) {
+        auto biasDesc = std::make_shared<CpuBlockedMemoryDesc>(ov::element::f32, Shape{});
+        postOpsMemoryArgs[ARG_BIAS] = std::make_shared<Memory>(context->getEngine(), biasDesc);
+    }
+    
+    DnnlPostOpsComposer composer(*postOps,
+                                 context->getEngine(),
+                                 outputDims,
+                                 idxOC,
+                                 isINT8,
+                                 1 << 0,  // weight scale mask per channel
+                                 postOpsMemoryArgs,
+                                 outDataType,
+                                 {},     // legacy DQ scales
+                                 true,   // use legacy post ops for compatibility
+                                 true);  // use legacy zero points
+    
+    auto primAttrs = composer.compose();
+    attr = primAttrs.attr;
+    
+    // Clear previous data
+    postOpsDataPtrs.clear();
+    postOpsDataBuffer.clear();
+    postOpsPtrArray.clear();
+    postOpsMemory.clear();
+    
+    // Collect all post-ops data memory from DnnlPostOpsComposer
+    for (const auto& cpuArg : primAttrs.cpuArgs) {
+        // Check if this is post-op data
+        if (cpuArg.first >= DNNL_ARG_ATTR_MULTIPLE_POST_OP(0)) {
+            // Keep the memory alive by storing the MemoryPtr
+            postOpsMemory.push_back(cpuArg.second);
+            
+            const auto* memPtr = cpuArg.second.get();
+            if (memPtr && memPtr->getData()) {
+                postOpsDataPtrs.push_back(memPtr->getData());
+            }
+        }
+    }
+    
+    // Create the pointer array that legacy executor expects
+    if (!postOpsDataPtrs.empty()) {
+        postOpsPtrArray.clear();
+        
+        // For each post-op data pointer, add it to the array
+        for (const auto& ptr : postOpsDataPtrs) {
+            postOpsPtrArray.push_back(const_cast<void*>(ptr));
+        }
+    }
 }
 
-template <cpu_isa_t isa>
-void jit_uni_interpolate_kernel_f32<isa>::linear_onnx_c_gathered() {
-    // TODO: Move implementation from interpolate.cpp
+bool jitInterpolateSupported(const InterpolateAttrs& config, const MemoryDescArgs& descs) {
+    // Check if x64 JIT is available
+    if (!dnnl::impl::cpu::x64::mayiuse(dnnl::impl::cpu::x64::sse41)) {
+        return false;
+    }
+    
+    // Check supported modes - only linear mode is not supported by JIT
+    // The legacy JIT implementation supports: nearest, linear_onnx, cubic, bilinear_pillow, bicubic_pillow
+    if (config.mode == InterpolateMode::linear) {
+        return false;  // Not supported by JIT (assertion in legacy implementation)
+    }
+    
+    // Check rank
+    const auto& srcDesc = descs.at(ARG_SRC);
+    const auto dataRank = srcDesc->getShape().getRank();
+    
+    if (!one_of(dataRank, 4u, 5u) && !dnnl::impl::cpu::x64::mayiuse(dnnl::impl::cpu::x64::avx2)) {
+        return false;
+    }
+    
+    // Check precision
+    const auto srcPrecision = srcDesc->getPrecision();
+    const auto dstPrecision = descs.at(ARG_DST)->getPrecision();
+    
+    if (srcPrecision != dstPrecision) {
+        return false;
+    }
+    
+    if (!one_of(srcPrecision, ov::element::f32, ov::element::bf16, ov::element::f16,
+                ov::element::i8, ov::element::u8)) {
+        return false;
+    }
+    
+    // Check layout
+    if (config.layout != InterpolateLayoutType::planar && 
+        config.layout != InterpolateLayoutType::block &&
+        config.layout != InterpolateLayoutType::by_channel) {
+        return false;
+    }
+    
+    return true;
 }
 
-template <cpu_isa_t isa>
-void jit_uni_interpolate_kernel_f32<isa>::linear_onnx_planar() {
-    // TODO: Move implementation from interpolate.cpp
-}
-
-template <cpu_isa_t isa>
-void jit_uni_interpolate_kernel_f32<isa>::linear_onnx_worker_1d() {
-    // TODO: Move implementation from interpolate.cpp
-}
-
-template <cpu_isa_t isa>
-void jit_uni_interpolate_kernel_f32<isa>::linear_onnx_worker_2d() {
-    // TODO: Move implementation from interpolate.cpp
-}
-
-template <cpu_isa_t isa>
-void jit_uni_interpolate_kernel_f32<isa>::cubic_planar() {
-    // TODO: Move implementation from interpolate.cpp
-}
-
-template <cpu_isa_t isa>
-void jit_uni_interpolate_kernel_f32<isa>::cubic_c_gathered() {
-    // TODO: Move implementation from interpolate.cpp
-}
-
-template <cpu_isa_t isa>
-void jit_uni_interpolate_kernel_f32<isa>::pillow_by_channel() {
-    // TODO: Move implementation from interpolate.cpp
-}
-
-template <cpu_isa_t isa>
-void jit_uni_interpolate_kernel_f32<isa>::apply_post_ops() {
-    // TODO: Move implementation from interpolate.cpp
-}
-
-template <cpu_isa_t isa>
-void jit_uni_interpolate_kernel_f32<isa>::prepare_cubic_planar_table() {
-    // TODO: Move implementation from interpolate.cpp
-}
-
-// Helper methods placeholders
-template <cpu_isa_t isa>
-void jit_uni_interpolate_kernel_f32<isa>::load_scalar(Vmm vmm_dst, const Xbyak::Address& op, ov::element::Type src_prc) {
-    // TODO: Move implementation from interpolate.cpp
-}
-
-template <cpu_isa_t isa>
-void jit_uni_interpolate_kernel_f32<isa>::store_scalar(const Xbyak::Address& op, Vmm vmm_src, ov::element::Type dst_prc) {
-    // TODO: Move implementation from interpolate.cpp
-}
-
-template <cpu_isa_t isa>
-void jit_uni_interpolate_kernel_f32<isa>::load_vector(Vmm vmm_dst, const Xbyak::Address& op, ov::element::Type src_prc, int load_size) {
-    // TODO: Move implementation from interpolate.cpp
-}
-
-template <cpu_isa_t isa>
-void jit_uni_interpolate_kernel_f32<isa>::store_vector(const Xbyak::Address& op, Vmm vmm_src, ov::element::Type dst_prc, int store_size) {
-    // TODO: Move implementation from interpolate.cpp
-}
-
-// Uni-functions placeholders
-template <cpu_isa_t isa>
-void jit_uni_interpolate_kernel_f32<isa>::uni_vpxor(const Vmm& x1, const Vmm& x2, const Vmm& op) {
-    // TODO: Move implementation from interpolate.cpp
-}
-
-template <cpu_isa_t isa>
-void jit_uni_interpolate_kernel_f32<isa>::uni_vmovss(const Vmm& x, const Xbyak::Address& op) {
-    // TODO: Move implementation from interpolate.cpp
-}
-
-template <cpu_isa_t isa>
-void jit_uni_interpolate_kernel_f32<isa>::uni_vmovd(const Vmm& x, const Xbyak::Reg32& reg) {
-    // TODO: Move implementation from interpolate.cpp
-}
-
-template <cpu_isa_t isa>
-void jit_uni_interpolate_kernel_f32<isa>::uni_vmovq(const Vmm& x, const Xbyak::Reg64& reg) {
-    // TODO: Move implementation from interpolate.cpp
-}
-
-template <cpu_isa_t isa>
-void jit_uni_interpolate_kernel_f32<isa>::uni_vpbroadcastd(const Vmm& x, const Xbyak::Address& op) {
-    // TODO: Move implementation from interpolate.cpp
-}
-
-template <cpu_isa_t isa>
-void jit_uni_interpolate_kernel_f32<isa>::uni_vpbroadcastd(const Vmm& x, const Xbyak::Reg32& reg) {
-    // TODO: Move implementation from interpolate.cpp
-}
-
-template <cpu_isa_t isa>
-void jit_uni_interpolate_kernel_f32<isa>::uni_vbroadcastss(const Vmm& x, const Xbyak::Address& op) {
-    // TODO: Move implementation from interpolate.cpp
-}
-
-template <cpu_isa_t isa>
-void jit_uni_interpolate_kernel_f32<isa>::uni_vbroadcastss(const Vmm& x, const Xbyak::Xmm& x2) {
-    // TODO: Move implementation from interpolate.cpp
-}
-
-// More uni-functions will be added as needed...
-template <cpu_isa_t isa>
-void jit_uni_interpolate_kernel_f32<isa>::uni_vfmadd213ps(const Vmm& x1, const Vmm& x2, const Vmm& op) {
-    // TODO: Move implementation from interpolate.cpp
-}
-
-template <cpu_isa_t isa>
-void jit_uni_interpolate_kernel_f32<isa>::uni_vfmadd231ps(const Vmm& x1, const Vmm& x2, const Vmm& op) {
-    // TODO: Move implementation from interpolate.cpp
-}
-
-template <cpu_isa_t isa>
-void jit_uni_interpolate_kernel_f32<isa>::uni_vfmsub213ps(const Vmm& x1, const Vmm& x2, const Vmm& op) {
-    // TODO: Move implementation from interpolate.cpp
-}
-
-template <cpu_isa_t isa>
-void jit_uni_interpolate_kernel_f32<isa>::uni_vfnmadd213ps(const Vmm& x1, const Vmm& x2, const Vmm& op) {
-    // TODO: Move implementation from interpolate.cpp
-}
-
-template <cpu_isa_t isa>
-void jit_uni_interpolate_kernel_f32<isa>::uni_vfnmadd231ps(const Vmm& x1, const Vmm& x2, const Vmm& op) {
-    // TODO: Move implementation from interpolate.cpp
-}
-
-template <cpu_isa_t isa>
-void jit_uni_interpolate_kernel_f32<isa>::uni_vaddps(const Vmm& x1, const Vmm& x2, const Vmm& op) {
-    // TODO: Move implementation from interpolate.cpp
-}
-
-template <cpu_isa_t isa>
-void jit_uni_interpolate_kernel_f32<isa>::uni_vsubps(const Vmm& x1, const Vmm& x2, const Vmm& op) {
-    // TODO: Move implementation from interpolate.cpp
-}
-
-template <cpu_isa_t isa>
-void jit_uni_interpolate_kernel_f32<isa>::uni_vmulps(const Vmm& x1, const Vmm& x2, const Vmm& op) {
-    // TODO: Move implementation from interpolate.cpp
-}
-
-template <cpu_isa_t isa>
-void jit_uni_interpolate_kernel_f32<isa>::uni_vblendvps(const Vmm& x1, const Vmm& x2, const Vmm& op, const Vmm& mask) {
-    // TODO: Move implementation from interpolate.cpp
-}
-
-template <cpu_isa_t isa>
-void jit_uni_interpolate_kernel_f32<isa>::uni_vcmpps(const Vmm& x1, const Vmm& x2, const Vmm& op, const unsigned char imm) {
-    // TODO: Move implementation from interpolate.cpp
-}
-
-template <cpu_isa_t isa>
-void jit_uni_interpolate_kernel_f32<isa>::uni_vcvtps2dq(const Vmm& x1, const Vmm& x2) {
-    // TODO: Move implementation from interpolate.cpp
-}
-
-template <cpu_isa_t isa>
-void jit_uni_interpolate_kernel_f32<isa>::uni_vcvtdq2ps(const Vmm& x1, const Vmm& x2) {
-    // TODO: Move implementation from interpolate.cpp
-}
-
-template <cpu_isa_t isa>
-void jit_uni_interpolate_kernel_f32<isa>::uni_vpackssdw(const Vmm& x1, const Vmm& x2, const Vmm& op) {
-    // TODO: Move implementation from interpolate.cpp
-}
-
-template <cpu_isa_t isa>
-void jit_uni_interpolate_kernel_f32<isa>::uni_vpackuswb(const Vmm& x1, const Vmm& x2, const Vmm& op) {
-    // TODO: Move implementation from interpolate.cpp
-}
-
-template <cpu_isa_t isa>
-void jit_uni_interpolate_kernel_f32<isa>::uni_vpmaxsd(const Vmm& x1, const Vmm& x2, const Vmm& op) {
-    // TODO: Move implementation from interpolate.cpp
-}
-
-template <cpu_isa_t isa>
-void jit_uni_interpolate_kernel_f32<isa>::uni_vpminsd(const Vmm& x1, const Vmm& x2, const Vmm& op) {
-    // TODO: Move implementation from interpolate.cpp
-}
-
-template <cpu_isa_t isa>
-void jit_uni_interpolate_kernel_f32<isa>::uni_vpsubd(const Vmm& x1, const Vmm& x2, const Vmm& op) {
-    // TODO: Move implementation from interpolate.cpp
-}
-
-template <cpu_isa_t isa>
-void jit_uni_interpolate_kernel_f32<isa>::uni_vpaddd(const Vmm& x1, const Vmm& x2, const Vmm& op) {
-    // TODO: Move implementation from interpolate.cpp
-}
-
-template <cpu_isa_t isa>
-void jit_uni_interpolate_kernel_f32<isa>::uni_vpmulld(const Vmm& x1, const Vmm& x2, const Vmm& op) {
-    // TODO: Move implementation from interpolate.cpp
-}
-
-template <cpu_isa_t isa>
-void jit_uni_interpolate_kernel_f32<isa>::uni_vpslld(const Vmm& x1, const Vmm& x2, const unsigned char imm) {
-    // TODO: Move implementation from interpolate.cpp
-}
-
-template <cpu_isa_t isa>
-void jit_uni_interpolate_kernel_f32<isa>::uni_vpsrld(const Vmm& x1, const Vmm& x2, const unsigned char imm) {
-    // TODO: Move implementation from interpolate.cpp
-}
-
-template <cpu_isa_t isa>
-void jit_uni_interpolate_kernel_f32<isa>::uni_vpand(const Vmm& x1, const Vmm& x2, const Vmm& op) {
-    // TODO: Move implementation from interpolate.cpp
-}
-
-template <cpu_isa_t isa>
-void jit_uni_interpolate_kernel_f32<isa>::uni_vpor(const Vmm& x1, const Vmm& x2, const Vmm& op) {
-    // TODO: Move implementation from interpolate.cpp
-}
-
-template <cpu_isa_t isa>
-void jit_uni_interpolate_kernel_f32<isa>::uni_vpxor(const Vmm& x1, const Vmm& x2, const Vmm& op) {
-    // TODO: Move implementation from interpolate.cpp
-}
-
-template <cpu_isa_t isa>
-void jit_uni_interpolate_kernel_f32<isa>::uni_vpshufd(const Vmm& x1, const Vmm& x2, const unsigned char imm) {
-    // TODO: Move implementation from interpolate.cpp
-}
-
-template <cpu_isa_t isa>
-void jit_uni_interpolate_kernel_f32<isa>::uni_vmovups(const Vmm& x, const Xbyak::Address& op) {
-    // TODO: Move implementation from interpolate.cpp
-}
-
-template <cpu_isa_t isa>
-void jit_uni_interpolate_kernel_f32<isa>::uni_vmovups(const Xbyak::Address& op, const Vmm& x) {
-    // TODO: Move implementation from interpolate.cpp
-}
-
-template <cpu_isa_t isa>
-void jit_uni_interpolate_kernel_f32<isa>::uni_vmovdqu(const Vmm& x, const Xbyak::Address& op) {
-    // TODO: Move implementation from interpolate.cpp
-}
-
-template <cpu_isa_t isa>
-void jit_uni_interpolate_kernel_f32<isa>::uni_vmovdqu(const Xbyak::Address& op, const Vmm& x) {
-    // TODO: Move implementation from interpolate.cpp
-}
-
-template <cpu_isa_t isa>
-void jit_uni_interpolate_kernel_f32<isa>::uni_vmovq(const Vmm& x, const Vmm& x2) {
-    // TODO: Move implementation from interpolate.cpp
-}
-
-template <cpu_isa_t isa>
-void jit_uni_interpolate_kernel_f32<isa>::uni_vmovd(const Vmm& x, const Vmm& x2) {
-    // TODO: Move implementation from interpolate.cpp
-}
-
-template <cpu_isa_t isa>
-void jit_uni_interpolate_kernel_f32<isa>::uni_vshufps(const Vmm& x1, const Vmm& x2, const Vmm& op, const unsigned char imm) {
-    // TODO: Move implementation from interpolate.cpp
-}
-
-template <cpu_isa_t isa>
-void jit_uni_interpolate_kernel_f32<isa>::uni_vzeroupper() {
-    // TODO: Move implementation from interpolate.cpp
-}
-
-template <cpu_isa_t isa>
-void jit_uni_interpolate_kernel_f32<isa>::uni_vzeroupper_safe() {
-    // TODO: Move implementation from interpolate.cpp
-}
-
-// Template instantiations
-template class jit_uni_interpolate_kernel_f32<sse41>;
-template class jit_uni_interpolate_kernel_f32<avx2>;
-template class jit_uni_interpolate_kernel_f32<avx512_core>;
-
-} // namespace ov::intel_cpu::node
-
-#endif // OPENVINO_ARCH_X86_64
+}  // namespace intel_cpu
+}  // namespace ov

@@ -160,7 +160,5 @@ const uint8_t* ACLInterpolateExecutor::padPreprocess(const MemoryCPtr& src, cons
     return m_padded_input.data();
 }
 
-
-
 }  // namespace intel_cpu
 }  // namespace ov

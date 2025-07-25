@@ -7,6 +7,7 @@
 #include "arm_compute/runtime/NEON/functions/NEScale.h"
 #include "arm_compute/runtime/Tensor.h"
 #include "nodes/executors/executor.hpp"
+#include "nodes/executors/executor_factory.hpp"
 #include "nodes/executors/interpolate_config.hpp"
 #include "nodes/executors/memory_arguments.hpp"
 #include "post_ops.hpp"
