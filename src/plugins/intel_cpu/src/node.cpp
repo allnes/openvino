@@ -663,24 +663,48 @@ std::string Node::getPrimitiveDescriptorType() const {
     // add I8 since I8 is special placeholder. The real calc precision might be quite complex and in most cases
     // it is mixed precision.
     if (selectedPrimitiveDesc) {
+        ov::element::Type actualPrecision;
         if (!selectedPrimitiveDesc->getConfig().inConfs.empty()) {
-            if (selectedPrimitiveDesc->getConfig().inConfs[0].getMemDesc()->getPrecision() != ov::element::u8) {
-                str_type +=
-                    "_" +
-                    static_cast<std::string>(
-                        selectedPrimitiveDesc->getConfig().inConfs[0].getMemDesc()->getPrecision().get_type_name());
-            } else {
-                str_type += "_I8";
-            }
+            actualPrecision = selectedPrimitiveDesc->getConfig().inConfs[0].getMemDesc()->getPrecision();
         } else {
-            if (selectedPrimitiveDesc->getConfig().outConfs[0].getMemDesc()->getPrecision() != ov::element::u8) {
-                str_type +=
-                    "_" +
-                    static_cast<std::string>(
-                        selectedPrimitiveDesc->getConfig().outConfs[0].getMemDesc()->getPrecision().get_type_name());
-            } else {
-                str_type += "_I8";
+            actualPrecision = selectedPrimitiveDesc->getConfig().outConfs[0].getMemDesc()->getPrecision();
+        }
+
+        // Determine the precision to append based on inference precision hint (similar to test framework logic)
+        auto getExecPrecision = [&]() -> ov::element::Type {
+            // inference_precision affects only floating point type networks
+            if (!actualPrecision.is_real()) {
+                if (actualPrecision == ov::element::u8) {
+                    // Node::getPrimitiveDescriptorType() returns i8 for u8
+                    return ov::element::i8;
+                }
+                if (actualPrecision == ov::element::u32) {
+                    // Node::getPrimitiveDescriptorType() returns i32 for u32
+                    return ov::element::i32;
+                }
+                return actualPrecision;
             }
+
+            // For floating point types, check if inference precision hint is set
+            const auto& config = context->getConfig();
+            if (!config.inferencePrecisionSetExplicitly) {
+                return actualPrecision;
+            }
+
+            const auto inferencePrecision = config.inferencePrecision;
+            // currently plugin only allows to change precision from higher to lower (i.e. f32 -> f16 or f32 -> bf16)
+            if (actualPrecision.bitwidth() < inferencePrecision.bitwidth()) {
+                return actualPrecision;
+            }
+
+            return inferencePrecision;
+        };
+
+        const auto execPrecision = getExecPrecision();
+        if (execPrecision != ov::element::u8) {
+            str_type += "_" + static_cast<std::string>(execPrecision.get_type_name());
+        } else {
+            str_type += "_I8";
         }
     }
 

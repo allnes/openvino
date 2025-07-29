@@ -28,7 +28,7 @@ public:
     void execute(const MemoryArgs& memory) override;
     
     impl_desc_type implType() const override {
-        return impl_desc_type::acl;
+        return m_implType;
     }
 
 private:
@@ -38,6 +38,7 @@ private:
     arm_compute::Tensor srcTensor, dstTensor;
     std::unique_ptr<arm_compute::NEScale> acl_scale;
     std::vector<uint8_t> m_padded_input;
+    const impl_desc_type m_implType = impl_desc_type::acl;
     const uint8_t* padPreprocess(const MemoryCPtr& src, const MemoryPtr& dst);
 };
 

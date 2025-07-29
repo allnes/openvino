@@ -8,6 +8,7 @@
 #include "memory_desc/cpu_memory_desc.h"
 #include "cpu/x64/cpu_isa_traits.hpp"
 #include "utils/debug_capabilities.h"
+#include "utils/general_utils.h"
 #include "cpu_types.h"
 #include "common/dnnl_thread.hpp"
 #include "dnnl_postops_composer.h"
@@ -45,6 +46,7 @@ JitInterpolateExecutor::JitInterpolateExecutor(const InterpolateAttrs& attrs,
     dstDims = dstDesc->getShape().getStaticDims();
     
     // Apply NCHWAsNHWC transformation if needed (following upstream master pattern)
+    // Note: NCHWAsNHWC is false when hasPad is true (see interpolate.cpp line 2137)
     if (attrs.NCHWAsNHWC && srcDesc->hasLayoutType(LayoutType::ncsp)) {
         auto logicalShapeAlign = [](VectorDims& Dims) {
             size_t C = Dims[3];
@@ -56,13 +58,20 @@ JitInterpolateExecutor::JitInterpolateExecutor(const InterpolateAttrs& attrs,
         logicalShapeAlign(dstDims);
     }
     
-    // Calculate data scales if not provided
+    // Note: Do NOT apply padding to srcDims here - InterpolateExecutorBase constructor
+    // will call getPaddedInputShape() to apply padding when creating srcDimPad5d
+    
+    // Use dataScales from attrs if provided, otherwise calculate them
+    // Note: attrs.dataScales are pre-calculated with padded dimensions by the node
     if (attrs.dataScales.empty()) {
+        // This should not happen as the node always provides dataScales, but handle it just in case
+        // Calculate scales from unpadded dimensions (padding will be applied by base class)
         dataScales.resize(srcDims.size());
         for (size_t i = 0; i < srcDims.size(); i++) {
             dataScales[i] = static_cast<float>(dstDims[i]) / static_cast<float>(srcDims[i]);
         }
     } else {
+        // Use pre-calculated scales
         dataScales = attrs.dataScales;
     }
     
@@ -71,9 +80,10 @@ JitInterpolateExecutor::JitInterpolateExecutor(const InterpolateAttrs& attrs,
     setPostOps(attr, false);
     
     // Create legacy executor with transformed dimensions
+    // Note: Legacy executor's base class will apply padding internally via getPaddedInputShape()
     auto* legacyExec = new legacy::InterpolateJitExecutor(
         attrs, 
-        srcDims, 
+        srcDims,  // Unpadded dims - base class will pad them
         dstDims, 
         dataScales,
         attr
@@ -189,7 +199,7 @@ bool jitInterpolateSupported(const InterpolateAttrs& config, const MemoryDescArg
     const auto& srcDesc = descs.at(ARG_SRC);
     const auto dataRank = srcDesc->getShape().getRank();
     
-    if (!one_of(dataRank, 4u, 5u) && !dnnl::impl::cpu::x64::mayiuse(dnnl::impl::cpu::x64::avx2)) {
+    if (!any_of(dataRank, 4u, 5u) && !dnnl::impl::cpu::x64::mayiuse(dnnl::impl::cpu::x64::avx2)) {
         return false;
     }
     
@@ -201,7 +211,7 @@ bool jitInterpolateSupported(const InterpolateAttrs& config, const MemoryDescArg
         return false;
     }
     
-    if (!one_of(srcPrecision, ov::element::f32, ov::element::bf16, ov::element::f16,
+    if (!any_of(srcPrecision, ov::element::f32, ov::element::bf16, ov::element::f16,
                 ov::element::i8, ov::element::u8)) {
         return false;
     }

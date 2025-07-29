@@ -11,6 +11,7 @@
 #include "utils/general_utils.h"
 #include "utils/arch_macros.h"
 #include "openvino/core/type/element_type.hpp"
+#include "post_ops.hpp"
 
 #if defined(OV_CPU_WITH_ACL)
 #include "nodes/executors/acl/acl_interpolate.hpp"
@@ -121,10 +122,10 @@ static bool isACLInterpolateSupported(const executor::Config<InterpolateAttrs>& 
     }
     
     if (attrs.shapeCalcMode == InterpolateShapeCalcMode::scales &&
-        one_of(attrs.coordTransMode,
+        any_of(attrs.coordTransMode,
                InterpolateCoordTransMode::half_pixel,
                InterpolateCoordTransMode::asymmetric) &&
-        one_of(attrs.mode, InterpolateMode::linear, InterpolateMode::linear_onnx)) {
+        any_of(attrs.mode, InterpolateMode::linear, InterpolateMode::linear_onnx)) {
         DEBUG_LOG("ACL Interpolate does not support scales mode with linear/linear_onnx and half_pixel/asymmetric");
         return false;
     }
@@ -157,7 +158,9 @@ struct InterpolateCreateDefault {
     ExecutorPtr operator()(const Attrs& attrs,
                           const MemoryArgs& memory,
                           const ExecutorContext::CPtr context) const {
-        return std::make_shared<T>(attrs, nullptr, memory, context);
+        // Create PostOpsPtr from attrs.postOps
+        PostOpsPtr postOpsPtr = attrs.postOps.empty() ? nullptr : std::make_shared<PostOps>(attrs.postOps);
+        return std::make_shared<T>(attrs, postOpsPtr, memory, context);
     }
 };
 

@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <cstring>
 #include <memory>
 #include <numeric>
 #include <vector>
@@ -21,6 +22,9 @@
 #include "openvino/core/except.hpp"
 #include "utils/debug_capabilities.h"
 #include "utils/general_utils.h"
+#include "utils/cpu_utils.hpp"
+#include "common/primitive_hashing_utils.hpp"
+#include "cpu_types.h"
 
 namespace ov {
 namespace intel_cpu {
@@ -33,6 +37,8 @@ ACLInterpolateExecutor::ACLInterpolateExecutor(const InterpolateAttrs& attrs,
     // Initialize ACL components based on attrs and memory descriptors
     const auto& srcDesc = memory.at(ARG_SRC)->getDescPtr();
     const auto& dstDesc = memory.at(ARG_DST)->getDescPtr();
+    
+    // Always use generic ACL type - test framework will append precision
     
     const auto& srcDims = srcDesc->getShape().getStaticDims();
     const auto& dstDims = dstDesc->getShape().getStaticDims();
@@ -142,20 +148,51 @@ void ACLInterpolateExecutor::execute(const MemoryArgs& memory) {
 const uint8_t* ACLInterpolateExecutor::padPreprocess(const MemoryCPtr& src, const MemoryPtr& dst) {
     const auto& srcDims = src->getStaticDims();
     const auto& srcPrec = src->getPrecision();
+    const uint8_t* src_data = src->getDataAs<const uint8_t>();
     
-    VectorDims inDimsPad;
-    for (size_t i = 0; i < srcDims.size(); i++) {
-        inDimsPad.push_back(srcDims[i] + m_attrs.padBegin[i] + m_attrs.padEnd[i]);
-    }
+    VectorDims inDimsPad = getPaddedInputShape(srcDims, m_attrs.padBegin, m_attrs.padEnd);
     
     size_t padded_size = std::accumulate(inDimsPad.begin(), inDimsPad.end(), 
                                         srcPrec.size(), std::multiplies<size_t>());
     
-    m_padded_input.resize(padded_size);
+    m_padded_input.resize(padded_size, 0);
     
-    // Simplified padding - just copy with padding
-    // Real implementation would handle different data types and padding modes
-    std::fill(m_padded_input.begin(), m_padded_input.end(), 0);
+    // Convert to 5D for unified processing
+    const auto srcDim5d = to5Dim(srcDims);
+    const auto srcDimPad5d = to5Dim(inDimsPad);
+    const auto srcDataSize = srcPrec.size();
+    size_t dimSize = srcDims.size();
+    
+    int padB0 = (dimSize > 2) ? m_attrs.padBegin[0] : 0;
+    int padB1 = (dimSize > 2) ? m_attrs.padBegin[1] : 0;
+    int padB2 = (dimSize == 5) ? m_attrs.padBegin[dimSize - 3] : 0;
+    int padB3 = m_attrs.padBegin[dimSize - 2];
+    int padB4 = m_attrs.padBegin[dimSize - 1];
+    
+    // Calculate strides for source and padded tensors
+    std::vector<size_t> srcStrides(5), padStrides(5);
+    srcStrides[4] = 1;
+    padStrides[4] = 1;
+    for (int i = 3; i >= 0; i--) {
+        srcStrides[i] = srcStrides[i + 1] * srcDim5d[i + 1];
+        padStrides[i] = padStrides[i + 1] * srcDimPad5d[i + 1];
+    }
+    
+    // Copy data with padding
+    for (int n = 0; n < srcDim5d[0]; n++) {
+        for (int c = 0; c < srcDim5d[1]; c++) {
+            for (int d = 0; d < srcDim5d[2]; d++) {
+                for (int h = 0; h < srcDim5d[3]; h++) {
+                    const uint8_t* src_ptr = src_data + (n * srcStrides[0] + c * srcStrides[1] + 
+                                                        d * srcStrides[2] + h * srcStrides[3]) * srcDataSize;
+                    uint8_t* dst_ptr = m_padded_input.data() + ((n + padB0) * padStrides[0] + (c + padB1) * padStrides[1] +
+                                                                (d + padB2) * padStrides[2] + (h + padB3) * padStrides[3] + 
+                                                                padB4) * srcDataSize;
+                    std::memcpy(dst_ptr, src_ptr, srcDim5d[4] * srcDataSize);
+                }
+            }
+        }
+    }
     
     return m_padded_input.data();
 }

@@ -32,10 +32,7 @@
 #include "nodes/common/blocked_desc_creator.h"
 #include "nodes/executors/executor.hpp"
 #include "nodes/executors/memory_arguments.hpp"
-#include "nodes/executors/x64/jit_interpolate.hpp"
-#include "nodes/executors/common/ref_interpolate.hpp"
-// #include "nodes/executors/interpolate.hpp"
-// #include "nodes/executors/interpolate_list.hpp"
+#include "nodes/executors/executor_factory.hpp"
 #include "nodes/node_config.h"
 #include "onednn/iml_type_mapper.h"
 #include "openvino/core/enum_names.hpp"
@@ -2132,6 +2129,9 @@ void Interpolate::getSupportedDescriptors() {
             break;
         }
     }
+    // Set hasPad in interpAttrs so executors know if padding is needed
+    interpAttrs.hasPad = hasPad;
+    
     // correct pad
     if (hasPad) {
         interpAttrs.NCHWAsNHWC = false;
@@ -2479,74 +2479,55 @@ void Interpolate::prepareParams() {
         (getOutputShapeAtPort(0).getRank() > 2 && (dataScales[0] != 1.F || dataScales[1] != 1.F))) {
         CPU_NODE_THROW("only supports resize on spatial dimensions(depth, height and width)");
     }
-
-    // TODO: Move ACL executor creation to executor factory pattern
-    // For now, comment out ACL-specific code
-    /*
-    if (canUseAclExecutor) {
-        interpAttrs.dataScales = dataScales;
-
-        std::vector<MemoryDescPtr> srcMemoryDescs;
-        for (size_t i = 0; i < getParentEdges().size(); i++) {
-            srcMemoryDescs.push_back(getSrcMemoryAtPort(i)->getDescPtr());
-        }
-        std::vector<MemoryDescPtr> dstMemoryDescs;
-        dstMemoryDescs.push_back(getDstMemoryAtPort(0)->getDescPtr());
-
-        auto* selectedPD = getSelectedPrimitiveDescriptor();
-        executorPtr = selectedPD->getExecutorFactoryAs<InterpolateExecutorFactory>()->makeExecutor(interpAttrs,
-                                                                                                  srcMemoryDescs,
-                                                                                                  dstMemoryDescs,
-                                                                                                  {});
-        selectedPD->setImplementationType(executorPtr->getImplType());
-
-        return;
-    }
-    */
+    
+    // Set dataScales in interpAttrs so they are passed to the executor
+    interpAttrs.dataScales = dataScales;
+    
+    // Set hasPad in interpAttrs so executors know if padding is needed
+    interpAttrs.hasPad = hasPad;
 
     InterpolateKey key = {interpAttrs, srcDims, dstDims, dataScales, dnnl::primitive_attr()};
     setPostOps(key.attr, dstDims);
+    
+    // Set post-ops in interpAttrs so they are passed to the executor
+    if (!fusedWith.empty()) {
+        interpAttrs.postOps = getPostOps(fusedWith);
+    }
 
     auto buildExecutor = [&](const InterpolateKey& key) -> std::shared_ptr<Executor> {
-        std::shared_ptr<Executor> executor;
-        bool isNearestLinearOrCubic = key.nodeAttrs.mode == InterpolateMode::nearest ||
-                                      key.nodeAttrs.mode == InterpolateMode::linear_onnx ||
-                                      key.nodeAttrs.mode == InterpolateMode::cubic;
-        bool isPlanarLayourAndSse41 = key.nodeAttrs.layout != InterpolateLayoutType::planar && mayiuse(cpu::x64::sse41);
-        bool isAvx2AndF32 = mayiuse(cpu::x64::avx2) && key.nodeAttrs.inPrc == ov::element::f32;
-        bool isPillowMode = key.nodeAttrs.mode == InterpolateMode::bilinear_pillow ||
-                            key.nodeAttrs.mode == InterpolateMode::bicubic_pillow;
-        bool isByChannelLayout = key.nodeAttrs.layout == InterpolateLayoutType::by_channel;
-        bool isNearestLinearOrCubicSupported = isNearestLinearOrCubic && (isPlanarLayourAndSse41 || isAvx2AndF32);
-        bool isPillowModeSupported = isPillowMode && isByChannelLayout;
-
-        // Create MemoryArgs for the new executor pattern
-        MemoryArgs memArgs;
-        memArgs[ARG_SRC] = getSrcMemoryAtPort(DATA_ID);
-        memArgs[ARG_DST] = getDstMemoryAtPort(0);
+        // Create MemoryDescArgs for the factory
+        MemoryDescArgs descs;
+        descs[ARG_SRC] = getSrcMemoryAtPort(DATA_ID)->getDescPtr();
+        descs[ARG_DST] = getDstMemoryAtPort(0)->getDescPtr();
         
         // Create ExecutorContext
         auto execContext = std::make_shared<ExecutorContext>(context, getImplPriority());
         
-        if ((isNearestLinearOrCubicSupported || isPillowModeSupported) && mayiuse(cpu::x64::sse41)) {
-            // Use new JitInterpolateExecutor
-            executor = std::make_shared<JitInterpolateExecutor>(key.nodeAttrs,
-                                                                nullptr, // postOps - will be set later
-                                                                memArgs,
-                                                                execContext);
-        } else {
-            // Use new RefInterpolateExecutor
-            executor = std::make_shared<RefInterpolateExecutor>(key.nodeAttrs,
-                                                                nullptr, // postOps
-                                                                memArgs,
-                                                                execContext);
-        }
+        // Create executor factory to select the best implementation
+        auto factory = std::make_shared<ExecutorFactory<InterpolateAttrs>>(key.nodeAttrs, execContext, descs);
+        
+        // Create MemoryArgs for the executor
+        MemoryArgs memArgs;
+        memArgs[ARG_SRC] = getSrcMemoryAtPort(DATA_ID);
+        memArgs[ARG_DST] = getDstMemoryAtPort(0);
+        
+        // Create the executor using factory
+        auto executor = factory->make(memArgs);
+        
         return executor;
     };
 
     auto cache = context->getParamsCache();
     auto result = cache->getOrCreate(key, buildExecutor);
     executorPtr = result.first;
+    
+    // Set implementation type for test framework
+    if (executorPtr) {
+        auto selectedPD = getSelectedPrimitiveDescriptor();
+        if (selectedPD) {
+            selectedPD->setImplementationType(executorPtr->implType());
+        }
+    }
 
     lastOutputDims = dstDimsOrign;
 }
