@@ -31,6 +31,7 @@
 
 #if defined(OV_CPU_WITH_ACL)
 #    include "nodes/executors/acl/acl_conv.hpp"
+#    include "nodes/executors/acl/acl_conv3d.hpp"
 #endif
 
 namespace ov::intel_cpu {
@@ -101,6 +102,17 @@ struct CreateOptimalConfigAclLowp {
 template <>
 const std::vector<ExecutorImplementation<ConvAttrs>>& getImplementations() {
     static const std::vector<ExecutorImplementation<ConvAttrs>> convolutionImplementations {
+        OV_CPU_INSTANCE_ACL(
+            "convolution_acl_3d", ExecutorType::Acl, OperationType::Convolution,
+            // supports
+            [](const ConvConfig& config, [[maybe_unused]] const MemoryFormatFilter& memoryFormatFilter) -> bool {
+                return ACLConv3DExecutor::supports(config);
+            },
+            // Prefer channels-last for src/dst, keep weights/bias in default layout
+            CreateOptimalConfigDefault{{LayoutType::nspc, LayoutType::ncsp, LayoutType::ncsp, LayoutType::nspc}},
+            AcceptsAnyShape<ConvAttrs>,
+            CreateDefault<ACLConv3DExecutor, ConvAttrs>{}
+            )
         OV_CPU_INSTANCE_DNNL_X64(
             "convolution_dnnl_nspc_nspc", ExecutorType::Dnnl, OperationType::Convolution,
             // supports
@@ -284,6 +296,19 @@ const std::vector<ExecutorImplementation<ConvAttrs>>& getImplementations() {
             CreateOptimalConfigAclLowp{{LayoutType::ncsp, LayoutType::ncsp, LayoutType::ncsp, LayoutType::ncsp}},
             AcceptsAnyShape<ConvAttrs>,
             CreateDefault<ACLConvolutionExecutor, ConvAttrs>{}
+            )
+        OV_CPU_INSTANCE_ACL(
+            "convolution_acl_3d", ExecutorType::Acl, OperationType::Convolution,
+            // supports
+            [](const ConvConfig& config, [[maybe_unused]] const MemoryFormatFilter& memoryFormatFilter) -> bool {
+                // Prefer ACL for 3D FP16/FP32 when available
+                VERIFY(ACLConv3DExecutor::supports(config), UNSUPPORTED_BY_EXECUTOR);
+                return true;
+            },
+            // Keep current layouts, rely on runtime layout conversion if needed
+            CreateOptimalConfigDefault{{LayoutType::ncsp, LayoutType::ncsp, LayoutType::ncsp, LayoutType::ncsp}},
+            AcceptsAnyShape<ConvAttrs>,
+            CreateDefault<ACLConv3DExecutor, ConvAttrs>{}
             )
     };
 
