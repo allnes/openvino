@@ -272,6 +272,7 @@
 #    include "transformations/cpu_opset/arm/pass/convert_reduce_no_keep_dims.hpp"
 #    include "transformations/cpu_opset/arm/pass/deconv_1d_decomposition.hpp"
 #    include "transformations/cpu_opset/arm/pass/deconv_3d_decomposition.hpp"
+#    include "transformations/cpu_opset/arm/pass/deconv_3d_force_fp32.hpp"
 #    include "transformations/cpu_opset/common/op/sdpa.hpp"
 #    include "transformations/cpu_opset/common/pass/decompose_integer_divide.hpp"
 #else
@@ -663,7 +664,11 @@ void Transformations::PreLpt(const std::vector<ov::element::Type>& defaultPrecis
     CPU_REGISTER_PASS_ARM(manager, ConvertGroupConv1D);
     CPU_REGISTER_PASS_ARM(manager, ConvertGroupConvolution);
     CPU_REGISTER_PASS_ARM(manager, Deconv1DDecomposition);
+    // Enable Deconv3D decomposition: offload to Conv3D (ACL) via zero-insertion path for stride=2, k=2/3
     CPU_REGISTER_PASS_ARM(manager, Deconv3DDecomposition);
+    // Force 3D Deconv to FP32 on ARM to avoid ref_f16 fallback and enable oneDNN path
+    // Disabled for now: showed regression on M2
+    // CPU_REGISTER_PASS_ARM(manager, Deconv3DForceFP32);
     // The plugin computes Divide in floating point precision.
     // To preserve correct math for integer division we need to insert explicit Floor operation.
     CPU_REGISTER_PASS_ARM(manager, DecomposeIntegerDivide);

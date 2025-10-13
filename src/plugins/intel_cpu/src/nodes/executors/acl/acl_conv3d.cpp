@@ -16,6 +16,7 @@
 #include "memory_desc/cpu_memory_desc.h"
 #include "nodes/executors/debug_messages.hpp"
 #include "nodes/executors/implementation_utils.hpp"
+#include "post_ops.hpp"
 
 namespace ov::intel_cpu {
 
@@ -51,11 +52,21 @@ ACLConv3DExecutor::ACLConv3DExecutor(const ConvAttrs& attrs,
     arm_compute::Padding3D padding3d{pad_left, pad_right, pad_top, pad_bottom, pad_front, pad_back};
     arm_compute::Size3D dilation3d{dx, dy, dz};
 
-    // Activation and fast-math are not used in NEConv3D; pass defaults
+    // Map single Activation post-op if present
+    arm_compute::ActivationLayerInfo act_info;
+    if (attrs.postOps.size() == 1) {
+        if (const auto* const activation = std::any_cast<ActivationPostOp>(attrs.postOps.data())) {
+            act_info = getActivationLayerInfo(convertToEltwiseAlgorithm(activation->type()),
+                                              activation->alpha(),
+                                              activation->beta(),
+                                              activation->gamma());
+        }
+    }
+
     // Use FLOOR rounding to match existing 2D path
     m_conv3d_info = arm_compute::Conv3dInfo(stride3d,
                                             padding3d,
-                                            arm_compute::ActivationLayerInfo(),
+                                            act_info,
                                             dilation3d,
                                             arm_compute::DimensionRoundingType::FLOOR,
                                             false);

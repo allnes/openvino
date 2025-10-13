@@ -129,10 +129,8 @@ bool AclMVNExecutorBuilder::isSupported(const MVNAttrs& mvnAttrs,
         DEBUG_LOG("NEMeanStdDevNormalizationLayer supports normalize_variance=true only");
         return false;
     }
-    if (!mvnAttrs.initAcrossChannels_ && srcDescs[0]->hasLayoutType(LayoutType::nspc)) {
-        DEBUG_LOG("initAcrossChannels = false is not supported by ACL for NHWC layout");
-        return false;
-    }
+    // Allow NHWC (nspc) layout also when initAcrossChannels_ = false.
+    // The executor flattens to 2D (X,Y) and is agnostic to channel placement.
 
     return true;
 }

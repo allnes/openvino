@@ -59,6 +59,7 @@
 
 #if defined(OV_CPU_WITH_ACL)
 #    include "nodes/executors/acl/acl_deconv.hpp"
+#    include "nodes/executors/acl/acl_deconv3d.hpp"
 #    include "utils/debug_capabilities.h"
 #endif
 
@@ -632,7 +633,13 @@ void Deconvolution::getSupportedDescriptors() {
             dstMemoryDescs.push_back(config.outConfs[i].getMemDesc()->clone());
         }
 
-        return AclDeconvExecutorBuilder::customIsSupported(deconvAttrs, srcMemoryDescs, dstMemoryDescs);
+        // Prefer 3D ACL check first for 5D cases
+        if (AclDeconv3DExecutor::customIsSupported3D(deconvAttrs, srcMemoryDescs, dstMemoryDescs))
+            return true;
+        // Fallback to 2D ACL
+        if (AclDeconvExecutorBuilder::customIsSupported(deconvAttrs, srcMemoryDescs, dstMemoryDescs))
+            return true;
+        return false;
     };
     useACL = checkDesc(LayoutType::nspc) || checkDesc(LayoutType::ncsp);
     if (useACL) {
@@ -1348,6 +1355,8 @@ void Deconvolution::initSupportedPrimitiveDescriptors() {
     };
     pushDesc(LayoutType::nspc);
     pushDesc(LayoutType::ncsp);
+    // Also append default (DNNL) descriptors as a safe fallback if ACL executor cannot be created at runtime
+    Node::initSupportedPrimitiveDescriptors();
 }
 
 }  // namespace ov::intel_cpu::node

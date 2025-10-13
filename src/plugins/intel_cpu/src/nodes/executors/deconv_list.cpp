@@ -12,6 +12,7 @@
 #    include <memory>
 
 #    include "nodes/executors/acl/acl_deconv.hpp"
+#    include "nodes/executors/acl/acl_deconv3d.hpp"
 #    include "nodes/executors/executor.hpp"
 #endif
 
@@ -19,6 +20,8 @@ namespace ov::intel_cpu {
 
 const std::vector<DeconvExecutorDesc>& getDeconvExecutorsList() {
     static std::vector<DeconvExecutorDesc> descs = {
+        // Prefer 3D executor when supported, then fallback to 2D ACL path
+        OV_CPU_INSTANCE_ACL(ExecutorType::Acl, std::make_shared<AclDeconv3DExecutorBuilder>())
         OV_CPU_INSTANCE_ACL(ExecutorType::Acl, std::make_shared<AclDeconvExecutorBuilder>())};
 
     return descs;
