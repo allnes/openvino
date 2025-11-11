@@ -20,6 +20,7 @@
 #include "openvino/op/group_conv.hpp"
 #include "openvino/op/util/attr_types.hpp"
 #include "openvino/op/util/convolution_base.hpp"
+#include "shape_inference/shape_inference.hpp"
 #include "shape_inference/shape_inference_cpu.hpp"
 #include "shape_inference/shape_inference_status.hpp"
 #include "utils/general_utils.h"
@@ -118,7 +119,9 @@ ShapeInferPtr ConvolutionShapeInferFactory::makeShapeInfer() const {
             is_grouped);
     }
 
-    OPENVINO_THROW("Unexpected operation type in the Convolution shape inference factory");
+    // Fallback to the generic nGraph-driven shape inference if op type is not supported by the
+    // optimized path (e.g., internal or fused ops that still share Convolution execution kernel).
+    return make_shape_inference(m_op);
 }
 
 }  // namespace ov::intel_cpu::node

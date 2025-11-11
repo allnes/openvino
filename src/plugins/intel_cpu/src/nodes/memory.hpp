@@ -39,6 +39,8 @@ class MemoryStatesRegister {
 public:
     using InputNodesMap = std::unordered_map<std::string, MemoryStateNode*>;
     using OutputNodesMap = std::unordered_map<std::string, MemoryNode*>;
+    using InputVarNodesMap = std::unordered_map<const ov::op::util::Variable*, MemoryStateNode*>;
+    using OutputVarNodesMap = std::unordered_map<const ov::op::util::Variable*, MemoryNode*>;
 
     void registerOutput(MemoryOutputBase* node);
     void registerInput(MemoryInputBase* node);
@@ -49,11 +51,13 @@ public:
     }
 
 private:
-    MemoryInputBase* getMemoryInputByName(const std::string& name);
-    MemoryOutputBase* getMemoryOutputByName(const std::string& name);
+    MemoryInputBase* getMemoryInput(const std::string& name, const ov::op::util::Variable* variable);
+    MemoryOutputBase* getMemoryOutput(const std::string& name, const ov::op::util::Variable* variable);
 
     InputNodesMap memory_inputs;
     OutputNodesMap memory_outputs;
+    InputVarNodesMap memory_inputs_by_var;
+    OutputVarNodesMap memory_outputs_by_var;
 };
 
 class MemoryOutputBase : public Node, public MemoryNode {

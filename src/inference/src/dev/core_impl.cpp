@@ -846,7 +846,6 @@ ov::SoPtr<ov::ICompiledModel> ov::CoreImpl::compile_model(const std::shared_ptr<
     auto config_with_batch = config;
     // if auto-batching is applicable, the below function will patch the device name and config accordingly:
     const auto model = apply_auto_batching(model_, patched_device_name, config_with_batch);
-
     auto parsed = parse_device_name_into_config(patched_device_name,
                                                 m_core_config,
                                                 config_with_batch,

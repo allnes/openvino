@@ -4,6 +4,7 @@
 
 
 #include <gtest/gtest.h>
+#include <cstdlib>
 #include <thread>
 
 #include "behavior/ov_plugin/caching_tests.hpp"
@@ -203,8 +204,12 @@ void CompileModelCacheTestBase::TearDown() {
     inferRequest = {};
     compiledModel = {};
 
-    ov::test::utils::removeFilesWithExt<opt::FORCE>(m_cacheFolderName, "blob");
-    ov::test::utils::removeDir(m_cacheFolderName);
+    const bool keep_cache =
+        std::getenv("OV_KEEP_CACHE_DIR") != nullptr && std::string(std::getenv("OV_KEEP_CACHE_DIR")) == "1";
+    if (!keep_cache) {
+        ov::test::utils::removeFilesWithExt<opt::FORCE>(m_cacheFolderName, "blob");
+        ov::test::utils::removeDir(m_cacheFolderName);
+    }
     core->set_property(ov::cache_dir());
     try {
         core->set_property(targetDevice, ov::cache_dir());

@@ -7,7 +7,7 @@
 #include <algorithm>
 #include <cassert>
 #include <cstddef>
-#include <memory>
+#include <fstream>
 #include <oneapi/dnnl/dnnl.hpp>
 #include <oneapi/dnnl/dnnl_common.hpp>
 #include <optional>
@@ -54,6 +54,17 @@ using namespace dnnl;
 namespace ov::intel_cpu::node {
 
 namespace {
+void append_cache_debug(const std::string& msg) {
+#if defined(__ANDROID__)
+    (void)msg;
+#else
+    std::ofstream log("/data/local/tmp/ov_cache_debug.log", std::ios::app);
+    if (log.is_open()) {
+        log << msg << std::endl;
+    }
+#endif
+}
+
 class MemoryStub : public IMemory {
 public:
     class MemoryBlockStub : public IMemoryBlockObserver {
@@ -538,21 +549,38 @@ bool MemoryInputBase::isExecutable() const {
 
 void MemoryStatesRegister::registerInput(MemoryInputBase* node) {
     OPENVINO_ASSERT(node, "Unexpected null MemoryInput pointer");
-    // in case of output already registered
-    auto* sibling = getMemoryOutputByName(node->getId());
+    auto var = node->getVariable();
+    const auto& var_id = var ? var->get_info().variable_id : std::string("null");
+    append_cache_debug("[memory] registerInput id='" + node->getId() + "' var=" + var_id);
+    const auto variable = node->getVariable().get();
+    auto* sibling = getMemoryOutput(node->getId(), variable);
     if (sibling != nullptr) {
         node->registerOutputNode(sibling);
     }
-    memory_inputs[node->getId()] = node;
+    if (variable) {
+        memory_inputs_by_var[variable] = node;
+    }
+    if (!node->getId().empty()) {
+        memory_inputs[node->getId()] = node;
+    }
 }
 
 void MemoryStatesRegister::registerOutput(MemoryOutputBase* node) {
     OPENVINO_ASSERT(node, "Unexpected null MemoryOutput pointer");
-    auto* sibling = getMemoryInputByName(node->getId());
+    auto var = node->getVariable();
+    const auto& var_id = var ? var->get_info().variable_id : std::string("null");
+    append_cache_debug("[memory] registerOutput id='" + node->getId() + "' var=" + var_id);
+    const auto variable = node->getVariable().get();
+    auto* sibling = getMemoryInput(node->getId(), variable);
     if (sibling != nullptr) {
         node->registerInputNode(sibling);
     }
-    memory_outputs[node->getId()] = node;
+    if (variable) {
+        memory_outputs_by_var[variable] = node;
+    }
+    if (!node->getId().empty()) {
+        memory_outputs[node->getId()] = node;
+    }
 }
 
 void MemoryStatesRegister::remove(MemoryNode* node) {
@@ -565,22 +593,47 @@ void MemoryStatesRegister::remove(MemoryNode* node) {
     ov::util::erase_if(memory_outputs, [&](const OutputNodesMap::value_type& it) {
         return it.second == node;
     });
+    const auto variable = node->getVariable().get();
+    if (variable) {
+        memory_inputs_by_var.erase(variable);
+        memory_outputs_by_var.erase(variable);
+    }
 }
 
-MemoryInputBase* MemoryStatesRegister::getMemoryInputByName(const std::string& name) {
-    auto it = memory_inputs.find(name);
-    if (it == memory_inputs.end()) {
-        return nullptr;
+MemoryInputBase* MemoryStatesRegister::getMemoryInput(const std::string& name,
+                                                      const ov::op::util::Variable* variable) {
+    if (variable) {
+        auto it = memory_inputs_by_var.find(variable);
+        if (it != memory_inputs_by_var.end()) {
+            return static_cast<MemoryInputBase*>(it->second);
+        }
     }
-    return static_cast<MemoryInputBase*>(it->second);
+
+    if (!name.empty()) {
+        auto it = memory_inputs.find(name);
+        if (it != memory_inputs.end()) {
+            return static_cast<MemoryInputBase*>(it->second);
+        }
+    }
+    return nullptr;
 }
 
-MemoryOutputBase* MemoryStatesRegister::getMemoryOutputByName(const std::string& name) {
-    auto it = memory_outputs.find(name);
-    if (it == memory_outputs.end()) {
-        return nullptr;
+MemoryOutputBase* MemoryStatesRegister::getMemoryOutput(const std::string& name,
+                                                        const ov::op::util::Variable* variable) {
+    if (variable) {
+        auto it = memory_outputs_by_var.find(variable);
+        if (it != memory_outputs_by_var.end()) {
+            return static_cast<MemoryOutputBase*>(it->second);
+        }
     }
-    return static_cast<MemoryOutputBase*>(it->second);
+
+    if (!name.empty()) {
+        auto it = memory_outputs.find(name);
+        if (it != memory_outputs.end()) {
+            return static_cast<MemoryOutputBase*>(it->second);
+        }
+    }
+    return nullptr;
 }
 
 void MemoryInputBase::assignState(MemStatePtr newState) {

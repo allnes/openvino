@@ -15,6 +15,7 @@
 #include <cstdlib>
 #include <deque>
 #include <exception>
+#include <fstream>
 #include <functional>
 #include <iterator>
 #include <limits>
@@ -76,6 +77,10 @@
 #include "utils/verbose.h"
 #include "weights_cache.hpp"
 
+#if defined(__ANDROID__)
+#    include <android/log.h>
+#endif
+
 #if (OV_THREAD == OV_THREAD_TBB || OV_THREAD == OV_THREAD_TBB_AUTO || OV_THREAD == OV_THREAD_TBB_ADAPTIVE || \
      OV_THREAD == OV_THREAD_OMP)
 #    include <atomic>
@@ -99,6 +104,18 @@
 using namespace dnnl;
 
 namespace ov::intel_cpu {
+namespace {
+void append_cache_debug(const std::string& msg) {
+#if defined(__ANDROID__)
+    (void)msg;
+#else
+    std::ofstream log("/data/local/tmp/ov_cache_debug.log", std::ios::app);
+    if (log.is_open()) {
+        log << msg << std::endl;
+    }
+#endif
+}
+}  // namespace
 
 Graph::~Graph() {
     CPU_DEBUG_CAP_ENABLE(summary_perf(*this));
@@ -222,6 +239,9 @@ void Graph::Replicate(const std::shared_ptr<const ov::Model>& model,
     outputNodes.resize(model->get_results().size());
 
     for (const auto& op : model->get_ordered_ops()) {
+        if (ov::is_type<ov::op::v3::Assign>(op) || ov::is_type<ov::op::v6::Assign>(op)) {
+            append_cache_debug("[graph] Assign node=" + op->get_friendly_name());
+        }
         const NodePtr node = createNode(op);
 
         AddNode(node);

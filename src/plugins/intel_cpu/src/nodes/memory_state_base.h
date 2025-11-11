@@ -10,6 +10,7 @@
 
 #include "memory_state.h"
 #include "openvino/core/any.hpp"
+#include "openvino/op/util/variable.hpp"
 
 namespace ov::intel_cpu::node {
 
@@ -21,9 +22,13 @@ public:
     [[nodiscard]] const std::string& getId() const {
         return m_id;
     }
+    [[nodiscard]] const std::shared_ptr<ov::op::util::Variable>& getVariable() const {
+        return m_variable;
+    }
 
 private:
     std::string m_id;
+    std::shared_ptr<ov::op::util::Variable> m_variable;
 };
 
 class MemoryStateNode : public MemoryNode {

@@ -69,7 +69,8 @@ std::string ModelCache::compute_hash(const std::shared_ptr<const ov::Model>& mod
     // 1. Calculate hash on function, skipping weights if model path is provided
     ov::pass::Manager m;
     m.register_pass<ov::pass::Hash>(seed, !model_path.empty());
-    m.run_passes(std::const_pointer_cast<ov::Model>(model));
+    auto hash_model = model->clone();
+    m.run_passes(hash_model);
 
     // 2. Compute hash on serialized data and options
     for (const auto& [name, option] : compileOptions) {

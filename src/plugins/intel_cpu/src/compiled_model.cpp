@@ -37,6 +37,7 @@
 #include "sub_memory_manager.hpp"
 #include "utils/debug_capabilities.h"
 #include "utils/general_utils.h"
+#include "utils/graph_serializer/android_sinks.hpp"
 #include "utils/graph_serializer/serializer.hpp"
 #include "utils/memory_stats_dump.hpp"
 
@@ -413,8 +414,9 @@ ov::Any CompiledModel::get_property(const std::string& name) const {
 }
 
 void CompiledModel::export_model(std::ostream& modelStream) const {
+    const auto model_for_cache = android_cache::prepare_model_for_cache(m_model);
     ModelSerializer serializer(modelStream, m_cfg.cacheEncrypt, m_cfg.m_cache_mode == ov::CacheMode::OPTIMIZE_SIZE);
-    serializer << m_model;
+    serializer << model_for_cache;
 }
 
 void CompiledModel::release_memory() {

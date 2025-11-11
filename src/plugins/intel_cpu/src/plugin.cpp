@@ -13,6 +13,7 @@
 #include <string>
 #include <tuple>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 #if defined(__APPLE__)
@@ -36,6 +37,7 @@
 #include "openvino/core/version.hpp"
 #include "openvino/itt.hpp"
 #include "openvino/op/convolution.hpp"
+#include "openvino/op/sink.hpp"
 #include "openvino/op/paged_attention.hpp"
 #include "openvino/op/scaled_dot_product_attention.hpp"
 #include "openvino/runtime/aligned_buffer.hpp"
@@ -57,6 +59,7 @@
 #include "utils/codec_xor.hpp"
 #include "utils/debug_capabilities.h"
 #include "utils/denormals.hpp"
+#include "utils/graph_serializer/android_sinks.hpp"
 #include "utils/graph_serializer/deserializer.hpp"
 #include "utils/graph_serializer/serializer.hpp"
 #include "utils/precision_support.h"
@@ -64,6 +67,42 @@
 #include "xbyak/xbyak_util.h"
 
 using namespace ov::threading;
+
+namespace {
+
+void append_cache_debug(const std::string& msg) {
+#if defined(__ANDROID__)
+    (void)msg;
+#else
+    std::ofstream log("/data/local/tmp/ov_cache_debug.log", std::ios::app);
+    if (log.is_open()) {
+        log << msg << std::endl;
+    }
+#endif
+}
+
+void ensure_sinks_registered(const std::shared_ptr<ov::Model>& model) {
+    std::unordered_set<const ov::Node*> registered;
+    registered.reserve(model->get_sinks().size());
+    for (const auto& sink : model->get_sinks()) {
+        registered.insert(sink.get());
+    }
+
+    ov::SinkVector missing;
+    for (const auto& node : model->get_ops()) {
+        if (const auto& sink = std::dynamic_pointer_cast<ov::op::Sink>(node)) {
+            if (registered.insert(sink.get()).second) {
+                missing.push_back(sink);
+            }
+        }
+    }
+
+    if (!missing.empty()) {
+        model->add_sinks(missing);
+    }
+}
+
+}  // namespace
 
 namespace ov::intel_cpu {
 
@@ -350,7 +389,9 @@ std::shared_ptr<ov::ICompiledModel> Plugin::compile_model(const std::shared_ptr<
     }
 
     const auto& config = orig_config;
-    const std::shared_ptr<ov::Model> cloned_model = model->clone();
+    auto model_with_sinks = std::const_pointer_cast<ov::Model>(model);
+    ensure_sinks_registered(model_with_sinks);
+    const std::shared_ptr<ov::Model> cloned_model = model_with_sinks->clone();
     Config::ModelType modelType = getModelType(model);
     DEBUG_LOG(PrintableModel(*cloned_model, "org_"));
 
@@ -781,6 +822,16 @@ std::shared_ptr<ov::ICompiledModel> Plugin::deserialize_model(ModelDeserializer&
                                                               const ov::AnyMap& config) const {
     std::shared_ptr<ov::Model> model;
     deserializer >> model;
+    ensure_sinks_registered(model);
+    android_cache::restore_sinks_from_cache(model);
+    size_t assign_count = 0;
+    for (const auto& node : model->get_ops()) {
+        if (ov::is_type<ov::op::v3::Assign>(node) || ov::is_type<ov::op::v6::Assign>(node)) {
+            ++assign_count;
+        }
+    }
+    append_cache_debug("[deserialize] sinks=" + std::to_string(model->get_sinks().size()) +
+                       " assign_ops=" + std::to_string(assign_count));
 
     auto _config = config;
     Config conf = engConfig;
