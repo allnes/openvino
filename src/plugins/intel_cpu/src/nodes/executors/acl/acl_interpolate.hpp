@@ -36,19 +36,7 @@ private:
     std::unique_ptr<arm_compute::NEScale> acl_scale;
 };
 
-class ACLInterpolateExecutorBuilder : public InterpolateExecutorBuilder {
-public:
-    [[nodiscard]] bool isSupported(const InterpolateAttrs& interpolateAttrs,
-                                   const std::vector<MemoryDescPtr>& srcDescs,
-                                   const std::vector<MemoryDescPtr>& dstDescs) const override;
-
-    [[nodiscard]] InterpolateExecutorPtr makeExecutor(const ExecutorContext::CPtr context) const override {
-        return std::make_shared<ACLInterpolateExecutor>(context);
-    }
-
-private:
-    static bool isSupportedConfiguration(const InterpolateAttrs& interpolateAttrs,
-                                         const std::vector<MemoryDescPtr>& srcDescs,
-                                         const std::vector<MemoryDescPtr>& dstDescs);
-};
+bool acl_interpolate_is_supported(const InterpolateAttrs& interpolateAttrs,
+                                  const std::vector<MemoryDescPtr>& srcDescs,
+                                  const std::vector<MemoryDescPtr>& dstDescs);
 }  // namespace ov::intel_cpu

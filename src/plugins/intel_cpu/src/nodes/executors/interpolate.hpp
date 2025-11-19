@@ -22,6 +22,8 @@
 #include "openvino/core/type/element_type.hpp"
 
 static constexpr int MAX_INPUT_INTERPOLATE = 8;
+static constexpr float PILLOW_BILINEAR_WINDOW_SCALE = 1.0F;
+static constexpr float PILLOW_BICUBIC_WINDOW_SCALE = 2.0F;
 
 namespace ov::intel_cpu {
 
@@ -123,6 +125,17 @@ static inline float triangleCoeff(float x) {
     return (std::max)(0.0F, 1 - std::abs(x));
 }
 
+static inline int applyPadOffset(int idx, int pad, int limit) {
+    int shifted = idx + pad;
+    if (shifted < 0) {
+        return 0;
+    }
+    if (shifted >= limit) {
+        return limit - 1;
+    }
+    return shifted;
+}
+
 class InterpolateExecutor {
 public:
     static constexpr size_t DATA_ID = 0;
@@ -167,6 +180,11 @@ private:
                        const std::vector<float>& dataScales,
                        float cubicCoeff,
                        InterpolateLayoutType layout);
+    void buildTblPillow(const VectorDims& srcDimPad5d,
+                        const VectorDims& dstDim5d,
+                        const std::vector<float>& dataScales,
+                        float cubicCoeff,
+                        InterpolateLayoutType layout);
 
     [[nodiscard]] float coordTransToInput(int outCoord, float scale, int inShape, int outShape) const;
     [[nodiscard]] static int nearestRound(float origin, bool isDownsample, InterpolateNearestMode nearestMode);
@@ -177,31 +195,31 @@ private:
                       int& index0,
                       int& index1,
                       float& weight0,
-                      float& weight1);
+                      float& weight1,
+                      bool allowHalo);
     static std::vector<float> getCubicCoeffs(float mantissa, float a);
+    static float getPillowBilinearCoeffs(float m);
+    static float getPillowBicubicCoeffs(float m);
+    void create_pillow_working_buf(InterpolateLayoutType layout);
 
 protected:
     InterpolateAttrs interpAttrs;
     VectorDims srcDimPad5d, dstDim5d;
+    VectorDims srcDim5d;
+    VectorDims padBegin5d;
+    VectorDims padEnd5d;
     size_t srcDataSize = 0UL, dstDataSize = 0UL;
     int spatialDimSize = 0;
     size_t dataRank = 0UL;
     std::vector<int> indexTable;
+    std::vector<uint8_t> m_srcPadded;
+    std::vector<int> pillowTable;
+    std::vector<uint8_t> pillow_working_buf;
+    size_t m_threads_num = 0;
     const ExecutorContext::CPtr _context;
 };
 
 using InterpolateExecutorPtr = std::shared_ptr<InterpolateExecutor>;
 using InterpolateExecutorCPtr = std::shared_ptr<const InterpolateExecutor>;
 
-class InterpolateExecutorBuilder {
-public:
-    virtual ~InterpolateExecutorBuilder() = default;
-    [[nodiscard]] virtual bool isSupported(const InterpolateAttrs& InterpolateAttrs,
-                                           const std::vector<MemoryDescPtr>& srcDescs,
-                                           const std::vector<MemoryDescPtr>& dstDescs) const = 0;
-    [[nodiscard]] virtual InterpolateExecutorPtr makeExecutor(ExecutorContext::CPtr context) const = 0;
-};
-
-using InterpolateExecutorBuilderPtr = std::shared_ptr<InterpolateExecutorBuilder>;
-using InterpolateExecutorBuilderCPtr = std::shared_ptr<const InterpolateExecutorBuilder>;
 }  // namespace ov::intel_cpu

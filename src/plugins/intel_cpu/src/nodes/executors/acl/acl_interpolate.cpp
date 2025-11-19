@@ -116,10 +116,13 @@ void ov::intel_cpu::ACLInterpolateExecutor::exec(const std::vector<MemoryCPtr>& 
     dstTensor.allocator()->free();
 }
 
-bool ov::intel_cpu::ACLInterpolateExecutorBuilder::isSupportedConfiguration(
-    const ov::intel_cpu::InterpolateAttrs& interpolateAttrs,
-    const std::vector<MemoryDescPtr>& srcDescs,
-    const std::vector<MemoryDescPtr>& dstDescs) {
+namespace {
+
+using namespace ov::intel_cpu;
+
+bool is_acl_interpolate_configuration_supported(const InterpolateAttrs& interpolateAttrs,
+                                                const std::vector<MemoryDescPtr>& srcDescs,
+                                                const std::vector<MemoryDescPtr>& dstDescs) {
     OPENVINO_ASSERT(srcDescs[0]->getShape().getDims().size() == 4);
 
     const auto& inp_shape = srcDescs[0]->getShape().getDims();
@@ -194,9 +197,11 @@ bool ov::intel_cpu::ACLInterpolateExecutorBuilder::isSupportedConfiguration(
     return false;
 }
 
-bool ov::intel_cpu::ACLInterpolateExecutorBuilder::isSupported(const ov::intel_cpu::InterpolateAttrs& interpolateAttrs,
-                                                               const std::vector<MemoryDescPtr>& srcDescs,
-                                                               const std::vector<MemoryDescPtr>& dstDescs) const {
+}  // namespace
+
+bool ov::intel_cpu::acl_interpolate_is_supported(const InterpolateAttrs& interpolateAttrs,
+                                                 const std::vector<MemoryDescPtr>& srcDescs,
+                                                 const std::vector<MemoryDescPtr>& dstDescs) {
     if (srcDescs[0]->getShape().getDims().size() != 4U) {
         DEBUG_LOG("ACL Interpolate does not support src shape rank: ", srcDescs[0]->getShape().getDims().size());
         return false;
@@ -240,7 +245,7 @@ bool ov::intel_cpu::ACLInterpolateExecutorBuilder::isSupported(const ov::intel_c
     }
 
     if (interpolateAttrs.mode == InterpolateMode::nearest &&
-        !isSupportedConfiguration(interpolateAttrs, srcDescs, dstDescs)) {
+        !is_acl_interpolate_configuration_supported(interpolateAttrs, srcDescs, dstDescs)) {
         DEBUG_LOG("ACL Interpolate isSupportedConfiguration method fails for nearest mode");
         return false;
     }
