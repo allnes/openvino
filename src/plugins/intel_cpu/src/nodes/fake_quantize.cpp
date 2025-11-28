@@ -14,7 +14,12 @@
 #include <common/c_types_map.hpp>
 #include <common/nstl.hpp>
 #include <common/utils.hpp>
-#include <cpu/x64/cpu_isa_traits.hpp>
+#if defined(OPENVINO_ARCH_X86) || defined(OPENVINO_ARCH_X86_64)
+#    include <cpu/x64/cpu_isa_traits.hpp>
+#else
+#    include <cpu/aarch64/cpu_isa_traits.hpp>
+#    include <arm_neon.h>
+#endif
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -51,6 +56,10 @@
 #include "utils/debug_capabilities.h"
 #include "utils/general_utils.h"
 
+#if defined(OPENVINO_ARCH_AARCH64) || defined(OPENVINO_ARCH_ARM64)
+#include "nodes/kernels/aarch64/jit_uni_quantization.hpp"
+#endif
+
 #if defined(OPENVINO_ARCH_X86) || defined(OPENVINO_ARCH_X86_64)
 #    include <xbyak/xbyak.h>
 
@@ -66,9 +75,11 @@
 using namespace dnnl;
 using namespace ov;
 using namespace dnnl::impl;
-using namespace dnnl::impl::cpu::x64;
 using namespace dnnl::impl::utils;
+#if defined(OPENVINO_ARCH_X86) || defined(OPENVINO_ARCH_X86_64)
+using namespace dnnl::impl::cpu::x64;
 using namespace Xbyak;
+#endif
 
 namespace ov::intel_cpu::node {
 #if defined(OPENVINO_ARCH_X86_64)
@@ -1044,6 +1055,11 @@ private:
     }
 };
 #endif
+
+#if defined(OPENVINO_ARCH_AARCH64) || defined(OPENVINO_ARCH_ARM64)
+#include "nodes/kernels/aarch64/jit_uni_quantization.hpp"
+#endif
+
 bool FakeQuantize::isSupportedOperation(const std::shared_ptr<const ov::Node>& op, std::string& errorMessage) noexcept {
     try {
         const auto fq = ov::as_type_ptr<const ov::op::v0::FakeQuantize>(op);
@@ -1454,8 +1470,12 @@ std::vector<LayoutType> FakeQuantize::getDataFormats() const {
     }
     if (any_of(dims.size(), 4U, 5U)) {
         if (getAxis() == 1) {
+#if defined(OPENVINO_ARCH_X86_64)
             auto blkFormat = mayiuse(cpu::x64::avx512_core) ? LayoutType::nCsp16c : LayoutType::nCsp8c;
             return {blkFormat, LayoutType::nspc, LayoutType::ncsp};
+#else
+            return {LayoutType::nspc, LayoutType::ncsp};
+#endif
         }
         return {LayoutType::ncsp};
     }
@@ -1502,21 +1522,24 @@ void FakeQuantize::initSupportedPrimitiveDescriptors() {
         return;
     }
 
-    impl_desc_type impl_type = []() {
-        if (mayiuse(cpu::x64::avx512_core)) {
-            return impl_desc_type::jit_avx512;
-        }
-        if (mayiuse(cpu::x64::avx2)) {
-            return impl_desc_type::jit_avx2;
-        }
-        if (mayiuse(cpu::x64::sse41)) {
-            return impl_desc_type::jit_sse42;
-        }
-        return impl_desc_type::ref;
-    }();
-    if (!mayiuse(cpu::x64::sse41) || getAxis() != 1) {
-        impl_type = impl_desc_type::ref;
+    impl_desc_type impl_type = impl_desc_type::ref;
 
+#if defined(OPENVINO_ARCH_X86_64)
+    if (mayiuse(cpu::x64::avx512_core)) {
+        impl_type = impl_desc_type::jit_avx512;
+    } else if (mayiuse(cpu::x64::avx2)) {
+        impl_type = impl_desc_type::jit_avx2;
+    } else if (mayiuse(cpu::x64::sse41)) {
+        impl_type = impl_desc_type::jit_sse42;
+    }
+#elif defined(OPENVINO_ARCH_AARCH64) || defined(OPENVINO_ARCH_ARM64)
+    if (hasJitArmSupport()) {
+        impl_type = impl_desc_type::jit_asimd;
+    }
+#endif
+
+    if (impl_type == impl_desc_type::ref || getAxis() != 1) {
+        impl_type = impl_desc_type::ref;
         if (!isBinarization()) {
             inputPrecision = ov::element::f32;
             outputPrecision = ov::element::f32;
@@ -2031,6 +2054,240 @@ void FakeQuantize::executeQuantization(const std::unique_ptr<jit_uni_quantize_ke
             (*pKernel)(&arg);
         });
     }
+#elif defined(OPENVINO_ARCH_AARCH64) || defined(OPENVINO_ARCH_ARM64)
+    auto srcMemory = getSrcMemoryAtPort(0);
+    auto dstMemory = getDstMemoryAtPort(0);
+
+    const auto* src = srcMemory->getDataAs<const uint8_t>();
+    auto* dst = dstMemory->getDataAs<uint8_t>();
+
+    const auto& srcDesc = srcMemory->getDesc();
+    auto srcDims = srcDesc.getShape().getStaticDims();
+    const size_t rank = srcDims.size();
+
+    const auto& dstDesc = dstMemory->getDesc();
+    auto dstDims = dstDesc.getShape().getStaticDims();
+
+    if (rank < 2) {
+        OPENVINO_THROW("FakeQuantize ARM path supports rank >=2");
+    }
+
+    auto srcMemDesc = srcMemory->getDescWithType<BlockedMemoryDesc>();
+    auto dstMemDesc = dstMemory->getDescWithType<BlockedMemoryDesc>();
+    auto s_str = srcMemDesc->getStrides();
+    auto d_str = dstMemDesc->getStrides();
+
+    // Для nspc раскладываем шаги так, чтобы после N,C шли пространственные оси
+    // (повторяем x86 путь для выравнивания расчёта смещений).
+    if (srcMemDesc->hasLayoutType(LayoutType::nspc) && any_of(rank, 4U, 5U)) {
+        size_t tmp = s_str[s_str.size() - 1];
+        for (int i = static_cast<int>(s_str.size()) - 1; i > 1; --i) {
+            s_str[static_cast<size_t>(i)] = s_str[static_cast<size_t>(i - 1)];
+        }
+        s_str[1] = tmp;
+    }
+    if (dstMemDesc->hasLayoutType(LayoutType::nspc) && any_of(rank, 4U, 5U)) {
+        size_t tmp = d_str[d_str.size() - 1];
+        for (int i = static_cast<int>(d_str.size()) - 1; i > 1; --i) {
+            d_str[static_cast<size_t>(i)] = d_str[static_cast<size_t>(i - 1)];
+        }
+        d_str[1] = tmp;
+    }
+
+    // Подготовим оптимизированные коэффициенты (используются и в post-op пути).
+    const_cast<FakeQuantize*>(this)->initializePostOpData(srcDims, 1 /*bufferAlignment*/, true /*doRounding*/);
+
+    const bool src_plain = srcMemDesc->hasLayoutType(LayoutType::ncsp);
+    const bool dst_plain = dstMemDesc->hasLayoutType(LayoutType::ncsp);
+    bool dense_plain = src_plain && dst_plain && rank == dstDims.size();
+    if (dense_plain) {
+        for (size_t i = 2; i < rank; ++i) {
+            if (s_str[i] != d_str[i]) {
+                dense_plain = false;
+                break;
+            }
+        }
+        dense_plain = dense_plain && s_str[rank - 1] == 1 && d_str[rank - 1] == 1;
+    }
+
+    const int N = srcDims[0];
+    const int C = srcDims[1];
+    size_t inner = 1;
+    for (size_t i = 2; i < srcDims.size(); ++i) inner *= srcDims[i];
+    size_t total_elements = N * static_cast<size_t>(C) * inner;
+
+#if defined(OPENVINO_ARCH_AARCH64) || defined(OPENVINO_ARCH_ARM64)
+    // Временный обход: используем референсный путь на ARM, пока чинится JIT/плотный цикл
+    // (см. OV_ARM_DISABLE_FQ_JIT и отчёты по провалам FQ тестов).
+    // Попадём в общий медленный цикл ниже.
+#else
+    const bool has_broadcast = broadcasted.any();
+    const bool all_broadcast = broadcasted.all();
+
+    if (dense_plain && pKernel) {
+        const auto src_step_n = s_str[0];
+        const auto src_step_c = s_str[1];
+        const auto dst_step_n = d_str[0];
+        const auto dst_step_c = d_str[1];
+
+        const auto src_type_size = pKernel->jqp_.src_prc.size();
+        const auto dst_type_size = pKernel->jqp_.dst_prc.size();
+
+        for (int n = 0; n < N; ++n) {
+            const size_t n_src_off = n * src_step_n;
+            const size_t n_dst_off = n * dst_step_n;
+            for (int c = 0; c < C; ++c) {
+                const size_t base_src = n_src_off + c * src_step_c;
+                const size_t base_dst = n_dst_off + c * dst_step_c;
+
+                auto arg = jit_quantize_call_args();
+                arg.from = reinterpret_cast<const uint8_t*>(src) + base_src * src_type_size;
+                arg.to = reinterpret_cast<const uint8_t*>(dst) + base_dst * dst_type_size;
+                arg.crop_low = broadcasted[(size_t)FQ_add_input_type::CROP_LOW] ? cropLow.data() : &cropLow[c];
+                arg.crop_high = broadcasted[(size_t)FQ_add_input_type::CROP_HIGH] ? cropHigh.data() : &cropHigh[c];
+                arg.input_scale = broadcasted[(size_t)FQ_add_input_type::INPUT_SCALE] ? inputScale.data() : &inputScale[c];
+                arg.input_shift = broadcasted[(size_t)FQ_add_input_type::INPUT_SHIFT] ? inputShift.data() : &inputShift[c];
+                arg.output_scale = broadcasted[(size_t)FQ_add_input_type::OUTPUT_SCALE] ? outputScale.data() : &outputScale[c];
+                arg.output_shift = broadcasted[(size_t)FQ_add_input_type::OUTPUT_SHIFT] ? outputShift.data() : &outputShift[c];
+
+                if (has_broadcast) {
+                    // смешанный broadcast: считаем поэлементно, шаг = 1 элемент
+                    arg.src_step = src_type_size;
+                    arg.dst_step = dst_type_size;
+                    arg.block_size = 1;
+                    arg.work_amount = inner;
+                } else {
+                    arg.src_step = inner * src_type_size;
+                    arg.dst_step = inner * dst_type_size;
+                    arg.block_size = inner;
+                    arg.work_amount = 1;
+                }
+
+                (*pKernel)(&arg);
+            }
+        }
+        return;
+    }
+#endif
+
+    const auto axis = getAxis();
+
+    auto read_src = [&](size_t off) -> float {
+        const auto ip = getInputPrecision();
+        if (ip == ov::element::u8)
+            return static_cast<float>(reinterpret_cast<const uint8_t*>(src)[off]);
+        if (ip == ov::element::i8)
+            return static_cast<float>(reinterpret_cast<const int8_t*>(src)[off]);
+        if (ip == ov::element::f16)
+            return static_cast<float>(reinterpret_cast<const ov::float16*>(src)[off]);
+        if (ip == ov::element::bf16)
+            return static_cast<float>(reinterpret_cast<const ov::bfloat16*>(src)[off]);
+        return reinterpret_cast<const float*>(src)[off];
+    };
+
+    auto write_dst = [&](size_t off, float v) {
+        const auto op = getOutputPrecision();
+        if (op == ov::element::u8) {
+            v = std::max(0.f, std::min(255.f, v));
+            reinterpret_cast<uint8_t*>(dst)[off] = static_cast<uint8_t>(std::nearbyintf(v));
+        } else if (op == ov::element::i8) {
+            v = std::max(-128.f, std::min(127.f, v));
+            reinterpret_cast<int8_t*>(dst)[off] = static_cast<int8_t>(std::nearbyintf(v));
+        } else if (op == ov::element::f16) {
+            reinterpret_cast<ov::float16*>(dst)[off] = ov::float16{v};
+        } else if (op == ov::element::bf16) {
+            reinterpret_cast<ov::bfloat16*>(dst)[off] = ov::bfloat16{v};
+        } else {
+            reinterpret_cast<float*>(dst)[off] = v;
+        }
+    };
+
+    const size_t crop_low_idx = static_cast<size_t>(FQ_add_input_type::CROP_LOW);
+    const size_t crop_high_idx = static_cast<size_t>(FQ_add_input_type::CROP_HIGH);
+    const size_t output_scale_idx = static_cast<size_t>(FQ_add_input_type::OUTPUT_SCALE);
+    const size_t output_shift_idx = static_cast<size_t>(FQ_add_input_type::OUTPUT_SHIFT);
+
+    auto flat_index = [&](const std::vector<size_t>& coord) -> size_t {
+        size_t idx = 0;
+        size_t mul = 1;
+        for (size_t d = rank; d-- > 0;) {
+            idx += coord[d] * mul;
+            mul *= srcDims[d];
+        }
+        return idx;
+    };
+
+    auto get_param = [&](const std::vector<float>& vec, size_t idx_enum, const std::vector<size_t>& coord) -> float {
+        if (broadcasted[idx_enum] || vec.size() == 1) {
+            return vec[0];
+        }
+
+        const size_t size = vec.size();
+        if (axis == 0 && size == static_cast<size_t>(N)) {
+            return vec[coord[0]];
+        }
+        if (axis == 1 && size == static_cast<size_t>(C)) {
+            return vec[coord[1]];
+        }
+        if (size == static_cast<size_t>(N)) {
+            return vec[coord[0]];
+        }
+        if (size == static_cast<size_t>(C)) {
+            return vec[coord[1]];
+        }
+        if (size == total_elements) {
+            return vec[flat_index(coord)];
+        }
+
+        // Fallback: best-effort mapping using flattened index within available size.
+        return vec[flat_index(coord) % size];
+    };
+
+    std::vector<size_t> coords(rank, 0);
+    for (int n = 0; n < N; ++n) {
+        coords[0] = static_cast<size_t>(n);
+        for (int c = 0; c < C; ++c) {
+            coords[1] = static_cast<size_t>(c);
+
+            for (size_t idx = 0; idx < inner; ++idx) {
+                size_t h_off = idx;
+                for (size_t d = rank; d-- > 2;) {
+                    const size_t dim = srcDims[d];
+                    coords[d] = h_off % dim;
+                    h_off /= dim;
+                }
+
+                size_t src_off = 0;
+                size_t dst_off = 0;
+                for (size_t d = 0; d < rank; ++d) {
+                    src_off += coords[d] * s_str[d];
+                    dst_off += coords[d] * d_str[d];
+                }
+
+                const float il_base = get_param(cropLow, crop_low_idx, coords);
+                const float ih_base = get_param(cropHigh, crop_high_idx, coords);
+                const float ol_base = get_param(outputShift, output_shift_idx, coords);
+                const float osc_base = get_param(outputScale, output_scale_idx, coords);
+                const float oh_base = ol_base + osc_base * static_cast<float>(levels - 1);
+
+                float val = read_src(src_off);
+                const float lo = std::min(il_base, ih_base);
+                const float hi = std::max(il_base, ih_base);
+
+                float res = 0.f;
+                if (val <= lo) {
+                    res = ol_base;
+                } else if (val > hi) {
+                    res = oh_base;
+                } else {
+                    const float lm1 = static_cast<float>(levels - 1);
+                    res = std::nearbyintf((val - il_base) / (ih_base - il_base) * lm1) / lm1 * (oh_base - ol_base) + ol_base;
+                }
+
+                write_dst(dst_off, res);
+            }
+        }
+    }
 #endif
 }
 
@@ -2461,6 +2718,12 @@ FakeQuantize::FakeQuantizeJitExecutor::FakeQuantizeJitExecutor([[maybe_unused]] 
     } else {
         OPENVINO_THROW("Can't create jit fake quantize kernel");
     }
+    if (pKernel) {
+        pKernel->create_ker();
+    }
+#elif defined(OPENVINO_ARCH_AARCH64) || defined(OPENVINO_ARCH_ARM64)
+    // ARM path: use portable kernel (no codegen) to avoid Reference fallback
+    pKernel = std::make_unique<jit_uni_quantization_kernel_arm>(_jqp);
     if (pKernel) {
         pKernel->create_ker();
     }

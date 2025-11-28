@@ -100,6 +100,8 @@ void jit_uni_eltwise_generic<isa>::generate() {
 
         ldr(reg_work_amount,
             ptr(reg_const_params, static_cast<int32_t>(offsetof(jit_eltwise_call_args_ptrs, work_amount))));
+        ldr(reg_post_op_ptrs,
+            ptr(reg_const_params, static_cast<int32_t>(offsetof(jit_eltwise_call_args_ptrs, post_op_data))));
     } else {
         auto init_ptrs_with_offsets = [this, offset_count, param2](XReg pointer, const std::vector<size_t>& offsets) {
             for (int j = 0; j < offset_count; j++) {
@@ -127,6 +129,8 @@ void jit_uni_eltwise_generic<isa>::generate() {
         init_ptrs_with_offsets(reg_oc_off, jep.oc_offsets);
 
         mov(reg_work_amount, jep.work_amount);
+        ldr(reg_post_op_ptrs,
+            ptr(reg_const_params, static_cast<int32_t>(offsetof(jit_eltwise_call_args_ptrs, post_op_data))));
     }
 
     Label unroll_loop_label;
@@ -768,6 +772,7 @@ template <dnnl::impl::cpu::aarch64::cpu_isa_t isa>
 void jit_uni_eltwise_generic<isa>::apply_post_ops() {
     int input_idx = eltwise_emitter->get_inputs_count();
     int eltwise_post_op_idx = 0;
+    int fq_post_op_idx = 0;
     for (size_t i = 1; i < ops_list_.size(); i++) {
         if (ops_list_[i] == ov::intel_cpu::Type::Eltwise) {
             std::vector<size_t> in_idxs;
@@ -793,7 +798,39 @@ void jit_uni_eltwise_generic<isa>::apply_post_ops() {
 
             eltwise_post_op_idx++;
         } else if (ops_list_[i] == ov::intel_cpu::Type::FakeQuantize) {
-            OPENVINO_THROW("Eltwise jit kernel: FakeQuantize is not supported");
+            // Per-tensor FakeQuantize post-op (clamp + scale/shift) using post_op_data table
+            // Layout: [crop_low, crop_high, input_scale, input_shift, output_scale, output_shift]
+            const int64_t table_stride = 6 * sizeof(size_t);
+            const int64_t base_off = fq_post_op_idx * table_stride;
+
+            XReg reg_ptr = get_aux_gpr(0);      // x8
+
+            auto load_scalar_ptr = [&](int slot, int dst_vmm) {
+                add_imm(X_DEFAULT_ADDR, reg_post_op_ptrs, base_off + slot * sizeof(size_t), X_TMP_0);
+                ldr(reg_ptr, ptr(X_DEFAULT_ADDR));
+                ld1r(TReg(dst_vmm).s, ptr(reg_ptr));
+            };
+
+            load_scalar_ptr(0, 0);  // v0: crop_low
+            load_scalar_ptr(1, 1);  // v1: crop_high
+            load_scalar_ptr(2, 2);  // v2: input_scale
+            load_scalar_ptr(3, 3);  // v3: input_shift
+            load_scalar_ptr(4, 4);  // v4: output_scale
+            load_scalar_ptr(5, 5);  // v5: output_shift
+
+            // vmm_dst indexes
+            TReg vdst = vmm_dst;
+
+            // vdst = vdst * isc + ish
+            fmul(vdst.s, vdst.s, v2.s);
+            fadd(vdst.s, vdst.s, v3.s);
+            frintn(vdst.s, vdst.s);
+            fmax(vdst.s, vdst.s, v0.s);
+            fmin(vdst.s, vdst.s, v1.s);
+            fmul(vdst.s, vdst.s, v4.s);
+            fadd(vdst.s, vdst.s, v5.s);
+
+            fq_post_op_idx++;
         } else {
             OPENVINO_THROW("Eltwise jit kernel: unexpected operation type");
         }

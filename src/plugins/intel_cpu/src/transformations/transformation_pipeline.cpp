@@ -1638,20 +1638,12 @@ void Transformations::PostSnippets() {
             return node::FakeQuantize::isSupportedOperation(node, errMsg);
         },
         ov::pass::FakeQuantizeDecomposition);
-    // FQ node is not decomposed on ARM only if it is fused into Convolution node
-    // Otherwise FQ node is decomposed because there is no native support of FQ on ARM
+    // На ARM теперь есть собственный путь исполнения FQ, поэтому не разлагаем FQ
+    // (иначе теряем информацию о квантизации и получаем Reference). Разрешаем FQ сохраняться.
     CPU_SET_CALLBACK_ARM(
         postSnippetsManager,
         [](const_node_ptr& node) -> bool {
-            if (ov::is_type<const ov::op::v0::FakeQuantize>(node) &&
-                ov::intel_cpu::any_of(node->get_output_element_type(0), ov::element::u8, ov::element::i8)) {
-                auto parent = node->get_input_node_shared_ptr(0);
-                if (ov::is_type<const ov::op::v1::Multiply>(parent) && !parent->inputs().empty() &&
-                    ov::is_type<const ov::op::v1::Convolution>(parent->get_input_node_shared_ptr(0))) {
-                    return true;
-                }
-            }
-            return false;
+            return ov::is_type<const ov::op::v0::FakeQuantize>(node);
         },
         ov::pass::FakeQuantizeDecomposition);
     CPU_REGISTER_PASS_COMMON(postSnippetsManager, ov::pass::FakeConvertDecomposition);

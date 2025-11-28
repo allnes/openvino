@@ -83,6 +83,10 @@ struct jit_uni_quantize_kernel {
     jit_quantize_params jqp_;
 };
 
+#if defined(OPENVINO_ARCH_AARCH64) || defined(OPENVINO_ARCH_ARM64)
+struct jit_uni_quantization_kernel_arm;
+#endif
+
 class FakeQuantize : public Node {
 public:
     FakeQuantize(const std::shared_ptr<ov::Node>& op, const GraphContext::CPtr& context);
@@ -135,6 +139,14 @@ public:
     }
     const std::vector<float>& getOutputShift() const {
         return outputShift;
+    }
+
+    bool hasJitArmSupport() const {
+#if defined(OPENVINO_ARCH_ARM64) || defined(OPENVINO_ARCH_AARCH64)
+        return true;
+#else
+        return false;
+#endif
     }
     size_t getLevels() const {
         return levels;
