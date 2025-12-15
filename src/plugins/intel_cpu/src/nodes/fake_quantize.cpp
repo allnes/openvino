@@ -47,6 +47,7 @@
 #include "openvino/op/constant.hpp"
 #include "openvino/op/fake_quantize.hpp"
 #include "openvino/op/util/attr_types.hpp"
+#include "openvino/reference/fake_quantize.hpp"
 #include "utils/cpu_utils.hpp"
 #include "utils/debug_capabilities.h"
 #include "utils/general_utils.h"
@@ -1150,6 +1151,7 @@ FakeQuantize::FakeQuantize(const std::shared_ptr<ov::Node>& op, const GraphConte
         algorithm = Algorithm::FQCommon;
         const auto fq = ov::as_type_ptr<const ov::op::v0::FakeQuantize>(op);
 
+        autoBroadcast = fq->get_auto_broadcast();
         levels = fq->get_levels();
         CPU_NODE_ASSERT(levels > 1, "supports 'levels' attribute greater than or equal to 2");
 
@@ -1777,51 +1779,24 @@ void FakeQuantize::executeReference() {
         });
     } else {
         auto* dst = dstMemory->getDataAs<float>();
+        const auto* input_low = getSrcMemoryAtPort(1)->getDataAs<const float>();
+        const auto* input_high = getSrcMemoryAtPort(2)->getDataAs<const float>();
+        const auto* output_low = getSrcMemoryAtPort(3)->getDataAs<const float>();
+        const auto* output_high = getSrcMemoryAtPort(4)->getDataAs<const float>();
 
-        cpu_parallel->parallel_for5d(N, C, D, H, W, [&](dim_t n, dim_t c, dim_t d, dim_t h, dim_t w) {
-            size_t src_off = n * s_str[0];
-            if (srcDims.size() == 5) {
-                src_off += c * s_str[1] + d * s_str[2] + h * s_str[3] + w * s_str[4];
-            } else if (srcDims.size() == 4) {
-                src_off += c * s_str[1] + h * s_str[2] + w * s_str[3];
-            } else if (srcDims.size() == 3) {
-                src_off += c * s_str[1] + h * s_str[2];
-            } else if (srcDims.size() == 2) {
-                src_off += c * s_str[1];
-            }
-
-            float src_val = src[src_off];
-
-            int wei_idx = getAxis() == 0 ? static_cast<int>(n) : static_cast<int>(c);
-            float cl = broadcasted[static_cast<size_t>(FQ_add_input_type::CROP_LOW)] ? cropLow[0] : cropLow[wei_idx];
-            float ch = broadcasted[static_cast<size_t>(FQ_add_input_type::CROP_HIGH)] ? cropHigh[0] : cropHigh[wei_idx];
-            float isc =
-                broadcasted[static_cast<size_t>(FQ_add_input_type::INPUT_SCALE)] ? inputScale[0] : inputScale[wei_idx];
-            float ish =
-                broadcasted[static_cast<size_t>(FQ_add_input_type::INPUT_SHIFT)] ? inputShift[0] : inputShift[wei_idx];
-            float osc = broadcasted[static_cast<size_t>(FQ_add_input_type::OUTPUT_SCALE)] ? outputScale[0]
-                                                                                          : outputScale[wei_idx];
-            float osh = broadcasted[static_cast<size_t>(FQ_add_input_type::OUTPUT_SHIFT)] ? outputShift[0]
-                                                                                          : outputShift[wei_idx];
-
-            float dst_val = nstl::min(ch, nstl::max(cl, src_val));
-            dst_val = dst_val * isc + ish;
-            dst_val = roundf(dst_val);
-            dst_val = dst_val * osc + osh;
-
-            size_t dst_off = n * d_str[0];
-            if (dstDims.size() == 5) {
-                dst_off += c * d_str[1] + d * d_str[2] + h * d_str[3] + w * d_str[4];
-            } else if (dstDims.size() == 4) {
-                dst_off += c * d_str[1] + h * d_str[2] + w * d_str[3];
-            } else if (dstDims.size() == 3) {
-                dst_off += c * d_str[1] + h * d_str[2];
-            } else if (dstDims.size() == 2) {
-                dst_off += c * d_str[1];
-            }
-
-            dst[dst_off] = dst_val;
-        });
+        ov::reference::fake_quantize(src,
+                                     input_low,
+                                     input_high,
+                                     output_low,
+                                     output_high,
+                                     dst,
+                                     srcMemory->getStaticDims(),
+                                     getInputShapeAtPort(1).getStaticDims(),
+                                     getInputShapeAtPort(2).getStaticDims(),
+                                     getInputShapeAtPort(3).getStaticDims(),
+                                     getInputShapeAtPort(4).getStaticDims(),
+                                     levels,
+                                     autoBroadcast);
     }
 }
 void FakeQuantize::executeBinarization(const std::unique_ptr<jit_uni_quantize_kernel>& pKernel) const {

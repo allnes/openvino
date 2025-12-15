@@ -296,10 +296,6 @@ std::vector<std::string> disabledTestPatterns() {
         retVector.emplace_back(R"(.*LSTMCellFusion/LSTMCellFusionWithSplitWeights.SubgraphFusedToLSTMCell/(1|8|15))");
         // Ticket: 131541
         retVector.emplace_back(R"(.*smoke_MulticlassNmsLayerTest_dynamic2.*_outType=i32_.*)");
-        // Ticket: 162434
-        retVector.emplace_back(R"(smoke_LPT/MatMulTransformation.*)");
-        // Ticket: 162260
-        retVector.emplace_back(R"(smoke_Snippets_FQDecomposition.*netPRC=f32_D=CPU.*)");
         // Ticket: 166771
         retVector.emplace_back(R"(.*smoke_BroadcastEltwise/BroadcastEltwise.smoke_CompareWithRefs.*)");
         // Ticket: 168863
@@ -309,14 +305,10 @@ std::vector<std::string> disabledTestPatterns() {
     }
     // invalid test: checks u8 precision for runtime graph, while it should be f32
     retVector.emplace_back(R"(smoke_NegativeQuantizedMatMulMultiplyFusion.*)");
-    // int8 specific
-    retVector.emplace_back(R"(smoke_Quantized.*)");
     // Issue: 124309
     retVector.emplace_back(R"(.*InferRequestPreprocessConversionTest.*oLT=NHWC.*)");
     retVector.emplace_back(R"(.*smoke_NoReshape/OVCompiledModelGraphUniqueNodeNamesTest.CheckUniqueNodeNames.*)");
     retVector.emplace_back(R"(.*smoke_BehaviorTests/InferRequestPerfCountersTest.CheckOperationInPerfMap.*)");
-    retVector.emplace_back(
-        R"(smoke_ExecGraph/ExecGraphRuntimePrecision.CheckRuntimePrecision/Function=FakeQuantizeBinaryConvolution.*)");
     // Issue: 124395
     retVector.emplace_back(R"(smoke_VariableStateBasic/InferRequestVariableStateTest.*)");
     retVector.emplace_back(R"(smoke_VariableState/OVInferRequestVariableStateTest.*)");
@@ -347,7 +339,6 @@ std::vector<std::string> disabledTestPatterns() {
     // by calc abs_threshold with expected value
     retVector.emplace_back(R"(.*smoke_CompareWithRefs_static/EltwiseLayerTest.*_eltwise_op_type=Div_.*_model_type=i32_.*)");
     // int8 / code-generation specific
-    retVector.emplace_back(R"(smoke_LPT.*)");
     retVector.emplace_back(R"(.*smoke_RoPETest.*)");
 #endif
 

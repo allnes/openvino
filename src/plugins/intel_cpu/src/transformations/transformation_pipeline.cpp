@@ -1173,18 +1173,9 @@ void Transformations::PostLpt() {
 
 void Transformations::MainSnippets() {
     using namespace snippets::pass;
-// Disable MainSnippets for int8 models on arm platforms due to performance issues
-// Ticket: 163408
-#if defined(OPENVINO_ARCH_ARM) || defined(OPENVINO_ARCH_ARM64)
-    using namespace ov::pass::low_precision;
-    static const std::set<levels>& supported_fq_levels = {levels::int4,
-                                                          levels::int4_narrow_range,
-                                                          levels::int8,
-                                                          levels::int8_narrow_range};
-    if (LowPrecision::isFunctionQuantized(model, supported_fq_levels)) {
-        return;
-    }
-#endif
+// NOTE: previously Snippets were disabled on ARM for int8-quantized models (ticket 163408) to avoid perf regressions.
+// FakeQuantize alignment requires Snippets even in quantized graphs, so we keep pipeline enabled and rely on
+// tokenization callbacks to prune unsupported cases.
 
     auto is_supported_isa = []() {
 #if defined(OPENVINO_ARCH_X86_64)
@@ -1389,10 +1380,15 @@ void Transformations::MainSnippets() {
 
     auto is_supported_op = []([[maybe_unused]] const std::shared_ptr<const ov::Node>& n) -> bool {
 #if defined(OPENVINO_ARCH_ARM64)
-        // Power on ARM64 only supports power and swish with scalar second inputs
+        // Power on ARM64 only supports power and swish; swish is allowed when beta is an attribute or a scalar const
         auto is_supported_with_scalar_inputs = [](const std::shared_ptr<const ov::Node>& n) {
-            return (ov::is_type_any_of<const ov::op::v4::Swish>(n) && n->inputs().size() > 1 &&
-                    ov::snippets::utils::is_scalar_constant(n->get_input_node_shared_ptr(1)));
+            if (!ov::is_type<const ov::op::v4::Swish>(n))
+                return false;
+            // unary Swish: beta comes from attribute -> supported
+            if (n->inputs().size() == 1)
+                return true;
+            // binary Swish: allow only scalar constant beta
+            return ov::snippets::utils::is_scalar_constant(n->get_input_node_shared_ptr(1));
         };
         auto is_supported = [](const std::shared_ptr<const ov::Node>& n) {
             return (ov::is_type_any_of<ov::op::v0::Abs,
@@ -1638,8 +1634,6 @@ void Transformations::PostSnippets() {
             return node::FakeQuantize::isSupportedOperation(node, errMsg);
         },
         ov::pass::FakeQuantizeDecomposition);
-    // FQ node is not decomposed on ARM only if it is fused into Convolution node
-    // Otherwise FQ node is decomposed because there is no native support of FQ on ARM
     CPU_SET_CALLBACK_ARM(
         postSnippetsManager,
         [](const_node_ptr& node) -> bool {

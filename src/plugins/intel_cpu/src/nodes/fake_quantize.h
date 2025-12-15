@@ -195,6 +195,10 @@ public:
         return outputPrecision;
     }
 
+    const ov::op::AutoBroadcastSpec& getAutoBroadcastSpec() const {
+        return autoBroadcast;
+    }
+
     void appendPostOps(dnnl::post_ops& ops,
                        const VectorDims& postOpDims,
                        std::unordered_map<int, MemoryPtr>& postOpsMem,
@@ -256,6 +260,7 @@ private:
     template <typename T>
     void appendPostOpsImpl(dnnl::post_ops& ops, const VectorDims& postOpDims, std::vector<T>& postOpsMem);
 
+    ov::op::AutoBroadcastSpec autoBroadcast;
     size_t levels = 0;
 
     bool binarization = false;

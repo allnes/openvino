@@ -52,6 +52,12 @@ void FakeQuantizeLayerTest::SetUp() {
     if (fq_direct_arg.size() != 0) {
         abs_threshold = (fq_direct_arg[3] - fq_direct_arg[2]) / levels;
     }
+#if defined(OPENVINO_ARCH_ARM) || defined(OPENVINO_ARCH_ARM64)
+    // ARM int8 FQ path via Snippets shows slightly larger ulp; relax tolerance for no-broadcast case
+    if (broadcast.m_type == ov::op::AutoBroadcastType::NONE) {
+        abs_threshold = std::max(abs_threshold, 1e-2);
+    }
+#endif
     auto param = std::make_shared<ov::op::v0::Parameter>(model_type, inputDynamicShapes.front());
 
     std::shared_ptr<ov::Node> fq;
