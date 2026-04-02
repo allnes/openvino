@@ -1530,9 +1530,12 @@ ov::SoPtr<ov::ICompiledModel> ov::CoreImpl::compile_model_and_cache(ov::Plugin& 
                                                  header_size_alignment);
                 compiled_model->export_model(stream);
             });
+        } catch (const std::exception& ex) {
+            cache_content.m_cache_manager->remove_cache_entry(cache_content.m_blob_id);
+            OPENVINO_WARN("Could not write model to cache. Cache entry will be ignored. Reason: ", ex.what());
         } catch (...) {
             cache_content.m_cache_manager->remove_cache_entry(cache_content.m_blob_id);
-            throw;
+            OPENVINO_WARN("Could not write model to cache. Cache entry will be ignored due to an unknown error.");
         }
     }
     return compiled_model;

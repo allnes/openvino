@@ -9,6 +9,7 @@
 #include <chrono>
 #include <functional>
 #include <mutex>
+#include <streambuf>
 #include <string>
 #include <thread>
 #include <vector>
@@ -143,6 +144,32 @@ public:
 };
 
 namespace {
+class FlushFailingStreambuf final : public std::streambuf {
+public:
+    FlushFailingStreambuf(std::ostream& owner, std::streambuf* delegate) : m_owner(owner), m_delegate(delegate) {}
+
+protected:
+    std::streamsize xsputn(const char_type* s, std::streamsize count) override {
+        return m_delegate->sputn(s, count);
+    }
+
+    int_type overflow(int_type ch) override {
+        if (traits_type::eq_int_type(ch, traits_type::eof())) {
+            return traits_type::not_eof(ch);
+        }
+        return m_delegate->sputc(traits_type::to_char_type(ch));
+    }
+
+    int sync() override {
+        m_owner.rdbuf(m_delegate);
+        return -1;
+    }
+
+private:
+    std::ostream& m_owner;
+    std::streambuf* m_delegate;
+};
+
 inline std::string getline_from_buffer(const char* buffer, size_t size, size_t& pos, char delim = ' ') {
     if (pos >= size) {
         return {};
@@ -1606,13 +1633,47 @@ TEST_P(CachingTest, TestThrowOnExport) {
         });
         testLoad([&](ov::Core& core) {
             core.set_property(ov::cache_dir(m_cacheDir));
-            EXPECT_ANY_THROW(m_testFunction(core));
+            OV_ASSERT_NO_THROW(m_testFunction(core));
+            EXPECT_FALSE(std::filesystem::exists(ov::util::make_path(m_cacheDir)) &&
+                         std::filesystem::directory_iterator(ov::util::make_path(m_cacheDir)) !=
+                             std::filesystem::directory_iterator{});
         });
     }
 }
 
 // TODO: temporary behavior is to no re-throw exception on import error (see 54335)
 // In future add separate 'no throw' test for 'blob_outdated' exception from plugin
+TEST_P(CachingTest, TestPartialWriteFailureOnExport) {
+    EXPECT_CALL(*mockPlugin, get_property(ov::supported_properties.name(), _)).Times(AnyNumber());
+    EXPECT_CALL(*mockPlugin, get_property(ov::device::capability::EXPORT_IMPORT, _)).Times(AnyNumber());
+    EXPECT_CALL(*mockPlugin, get_property(ov::device::architecture.name(), _)).Times(AnyNumber());
+    EXPECT_CALL(*mockPlugin, get_property(ov::internal::supported_properties.name(), _)).Times(AnyNumber());
+    EXPECT_CALL(*mockPlugin, get_property(ov::internal::caching_properties.name(), _)).Times(AnyNumber());
+    EXPECT_CALL(*mockPlugin, get_property(ov::device::capabilities.name(), _)).Times(AnyNumber());
+    auto failing_streambuf = std::shared_ptr<FlushFailingStreambuf>{};
+    {
+        EXPECT_CALL(*mockPlugin, compile_model(_, _, _)).Times(m_remoteContext ? 1 : 0);
+        EXPECT_CALL(*mockPlugin, compile_model(A<const std::shared_ptr<const ov::Model>&>(), _))
+            .Times(!m_remoteContext ? 1 : 0);
+        EXPECT_CALL(*mockPlugin, import_model(A<std::istream&>(), _, _)).Times(0);
+        EXPECT_CALL(*mockPlugin, import_model(A<std::istream&>(), _)).Times(0);
+        m_post_mock_net_callbacks.emplace_back([&](MockICompiledModelImpl& net) {
+            EXPECT_CALL(net, export_model(_)).Times(1).WillOnce(Invoke([&](std::ostream& stream) {
+                failing_streambuf = std::make_shared<FlushFailingStreambuf>(stream, stream.rdbuf());
+                stream.rdbuf(failing_streambuf.get());
+                stream << "partial";
+            }));
+        });
+        testLoad([&](ov::Core& core) {
+            core.set_property(ov::cache_dir(m_cacheDir));
+            OV_ASSERT_NO_THROW(m_testFunction(core));
+            EXPECT_FALSE(std::filesystem::exists(ov::util::make_path(m_cacheDir)) &&
+                         std::filesystem::directory_iterator(ov::util::make_path(m_cacheDir)) !=
+                             std::filesystem::directory_iterator{});
+        });
+    }
+}
+
 TEST_P(CachingTest, TestThrowOnImport) {
     EXPECT_CALL(*mockPlugin, get_property(ov::supported_properties.name(), _)).Times(AnyNumber());
     EXPECT_CALL(*mockPlugin, get_property(ov::device::capability::EXPORT_IMPORT, _)).Times(AnyNumber());

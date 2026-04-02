@@ -9,6 +9,8 @@
  */
 #pragma once
 
+#include <atomic>
+#include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <functional>
@@ -37,6 +39,13 @@ class FileStorageCacheManager final : public ICacheManager {
         return m_cache_path / (blob_hash + ".blob");
     }
 
+    std::filesystem::path get_temp_blob_file(const std::string& blob_hash) const {
+        static std::atomic_uint64_t temp_file_id{0};
+        const auto suffix = std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) +
+                            "." + std::to_string(temp_file_id.fetch_add(1, std::memory_order_relaxed));
+        return m_cache_path / (blob_hash + ".blob.tmp." + suffix);
+    }
+
 public:
     /**
      * @brief Constructor
@@ -51,11 +60,24 @@ private:
         // Fix the bug caused by pugixml, which may return unexpected results if the locale is different from "C".
         ScopedLocale plocal_C(LC_ALL, "C");
         const auto blob_path = get_blob_file(id);
-        std::ofstream stream(blob_path, std::ios_base::binary);
-        writer(stream);
-        stream.close();
-        std::filesystem::permissions(blob_path,
-                                     std::filesystem::perms::owner_read | std::filesystem::perms::group_read);
+        const auto temp_blob_path = get_temp_blob_file(id);
+        std::error_code ec;
+        std::filesystem::remove(temp_blob_path, ec);
+        try {
+            std::ofstream stream;
+            stream.exceptions(std::ios_base::failbit | std::ios_base::badbit);
+            stream.open(temp_blob_path, std::ios_base::binary | std::ios_base::trunc);
+            writer(stream);
+            stream.flush();
+            stream.close();
+            std::filesystem::permissions(temp_blob_path,
+                                         std::filesystem::perms::owner_read | std::filesystem::perms::group_read,
+                                         std::filesystem::perm_options::replace);
+            std::filesystem::rename(temp_blob_path, blob_path);
+        } catch (...) {
+            std::filesystem::remove(temp_blob_path, ec);
+            throw;
+        }
     }
 
     void read_cache_entry(const std::string& id, bool enable_mmap, StreamReader reader) override {
