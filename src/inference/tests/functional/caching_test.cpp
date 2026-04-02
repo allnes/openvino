@@ -1641,8 +1641,6 @@ TEST_P(CachingTest, TestThrowOnExport) {
     }
 }
 
-// TODO: temporary behavior is to no re-throw exception on import error (see 54335)
-// In future add separate 'no throw' test for 'blob_outdated' exception from plugin
 TEST_P(CachingTest, TestPartialWriteFailureOnExport) {
     EXPECT_CALL(*mockPlugin, get_property(ov::supported_properties.name(), _)).Times(AnyNumber());
     EXPECT_CALL(*mockPlugin, get_property(ov::device::capability::EXPORT_IMPORT, _)).Times(AnyNumber());
@@ -1674,6 +1672,8 @@ TEST_P(CachingTest, TestPartialWriteFailureOnExport) {
     }
 }
 
+// TODO: temporary behavior is to no re-throw exception on import error (see 54335)
+// In future add separate 'no throw' test for 'blob_outdated' exception from plugin
 TEST_P(CachingTest, TestThrowOnImport) {
     EXPECT_CALL(*mockPlugin, get_property(ov::supported_properties.name(), _)).Times(AnyNumber());
     EXPECT_CALL(*mockPlugin, get_property(ov::device::capability::EXPORT_IMPORT, _)).Times(AnyNumber());
