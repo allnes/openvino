@@ -247,7 +247,7 @@ void CustomLayer::LoadFromFile(const std::string configFile, CustomLayerMap& cus
 #ifdef _WIN32
     char path[MAX_PATH];
     char* abs_path_ptr = _fullpath(path, configFile.c_str(), MAX_PATH);
-#elif defined(__linux__) || (defined(__APPLE__) && defined(ENABLE_EXPERIMENTAL_PORTABLE_GPU))
+#elif defined(__linux__) || defined(ENABLE_EXPERIMENTAL_PORTABLE_GPU)
     char path[PATH_MAX];
     char* abs_path_ptr = realpath(configFile.c_str(), path);
 #else

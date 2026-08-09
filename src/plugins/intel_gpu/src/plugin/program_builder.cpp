@@ -23,7 +23,7 @@
 #include "intel_gpu/op/placeholder.hpp"
 #include "openvino/util/pp.hpp"
 
-#if defined(__linux__) || (defined(__APPLE__) && defined(ENABLE_EXPERIMENTAL_PORTABLE_GPU))
+#if defined(__linux__) || defined(ENABLE_EXPERIMENTAL_PORTABLE_GPU)
 # include <dlfcn.h>
 #endif
 
@@ -88,7 +88,7 @@ ProgramBuilder::ProgramBuilder(std::shared_ptr<ov::Model> model, cldnn::engine& 
         (LPCSTR)CustomLayer::LoadFromFile,
         &nModule);
     GetModuleFileName(nModule, mpath, sizeof(mpath));
-#elif defined(__linux__) || (defined(__APPLE__) && defined(ENABLE_EXPERIMENTAL_PORTABLE_GPU))
+#elif defined(__linux__) || defined(ENABLE_EXPERIMENTAL_PORTABLE_GPU)
     Dl_info dl_info;
     dladdr(reinterpret_cast<void *>(CustomLayer::LoadFromFile), &dl_info);
     const char* mpath = dl_info.dli_fname;
