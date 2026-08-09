@@ -25,6 +25,13 @@ primitive_db::primitive_db()
       batch_headers({
 #include "ks_primitive_db_batch_headers.inc"
       }) {
+#ifdef ENABLE_EXPERIMENTAL_PORTABLE_GPU
+    // Generic Eltwise kernels only depend on fetch_data and its common preamble.
+    std::map<std::string, code> portable_batch_headers;
+    portable_batch_headers.emplace("common", std::move(batch_headers.at("common")));
+    portable_batch_headers.emplace("fetch_data", std::move(batch_headers.at("fetch_data")));
+    batch_headers = std::move(portable_batch_headers);
+#endif
 }
 
 std::vector<code> primitive_db::get(const primitive_id& id) const {
