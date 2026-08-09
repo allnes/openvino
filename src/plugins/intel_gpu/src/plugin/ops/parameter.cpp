@@ -29,7 +29,9 @@ static void CreateParameterOp(ProgramBuilder& p, const std::shared_ptr<ov::op::v
 
     cldnn::format input_format = cldnn::format::get_default_format(input_pshape.size());
     auto element_type = convert_to_supported_device_type(op->get_output_element_type(0));
-    element_type = element_type == ov::element::boolean ? boolean_storage_type() : element_type;
+    element_type = element_type == ov::element::boolean
+                       ? get_boolean_storage_type(p.get_engine().get_device_info())
+                       : element_type;
 
     // look at the expected color format of this input
     auto input_name = layer_type_name_ID(op);

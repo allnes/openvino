@@ -180,6 +180,10 @@ void convert_and_copy(const void* src_ptr, ov::element::Type src_et, void* dst_p
 
 namespace ov::intel_gpu {
 
+ov::element::Type get_boolean_storage_type(const cldnn::device_info& device_info) {
+    return device_info.supports_8bit_buffer_storage ? ov::element::u8 : ov::element::i32;
+}
+
 bool is_supported(ov::element::Type_t et) {
     switch (et) {
         case ov::element::Type_t::dynamic: return true;

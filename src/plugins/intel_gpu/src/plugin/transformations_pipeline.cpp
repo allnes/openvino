@@ -1061,7 +1061,7 @@ void TransformationsPipeline::apply(std::shared_ptr<ov::Model> func) {
             {ov::element::i16, ov::element::i32},
             {ov::element::u16, ov::element::i32},
             {ov::element::u32, ov::element::i32},
-            {ov::element::boolean, boolean_storage_type()},
+            {ov::element::boolean, get_boolean_storage_type(device_info)},
             {ov::element::i4, ov::element::i8},
             {ov::element::u4, ov::element::u8},
         };

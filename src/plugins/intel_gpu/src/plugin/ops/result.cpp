@@ -30,7 +30,9 @@ static void CreateResultOp(ProgramBuilder& p, const std::shared_ptr<ov::op::v0::
 
     auto out_primitive_name = layer_type_name_ID(op);
     auto out_data_type = convert_to_supported_device_type(op->get_input_element_type(0));
-    out_data_type = out_data_type == ov::element::boolean ? boolean_storage_type() : out_data_type;
+    out_data_type = out_data_type == ov::element::boolean
+                        ? get_boolean_storage_type(p.get_engine().get_device_info())
+                        : out_data_type;
 
     auto reorder_primitive = cldnn::reorder(out_primitive_name,
                                             inputs[0],

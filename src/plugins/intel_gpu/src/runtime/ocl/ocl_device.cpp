@@ -26,6 +26,7 @@
 #include <chrono>
 #include <fstream>
 #include <iostream>
+#include <mutex>
 #include <utility>
 
 #ifdef _WIN32
@@ -200,6 +201,43 @@ bool get_imad_support(const cl::Device& device) {
     }
 
     return false;
+}
+
+bool probe_8bit_buffer_storage_support(const cl::Device& device, const cl::Context& context) {
+    static std::mutex cache_mutex;
+    static std::unordered_map<cl_device_id, bool> cache;
+
+    std::lock_guard<std::mutex> lock(cache_mutex);
+    const auto device_id = device.get();
+    const auto cached = cache.find(device_id);
+    if (cached != cache.end()) {
+        return cached->second;
+    }
+
+    static constexpr char probe_source[] = R"(
+        __kernel void ov_gpu_probe_8bit_buffer_storage(__global uchar* data) {
+            const size_t index = get_global_id(0);
+            data[index] ^= (uchar)1;
+        }
+    )";
+
+    bool supported = true;
+    try {
+        cl::Program program(context, probe_source);
+        program.build({device});
+    } catch (const cl::BuildError& error) {
+        supported = false;
+        GPU_DEBUG_INFO << "OpenCL 8-bit buffer storage probe failed; boolean buffers will use 32-bit storage."
+                       << std::endl;
+        for (const auto& log : error.getBuildLog()) {
+            GPU_DEBUG_INFO << log.second << std::endl;
+        }
+    } catch (const cl::Error& error) {
+        OPENVINO_THROW("[GPU] OpenCL 8-bit buffer storage probe failed: ", OCL_ERR_MSG_FMT(error));
+    }
+
+    cache.emplace(device_id, supported);
+    return supported;
 }
 
 device_info init_device_info(const cl::Device& device, const cl::Context& context) {
@@ -429,6 +467,7 @@ memory_capabilities init_memory_caps(const cl::Device& device, const device_info
 
 void ocl_device::initialize_context(const cl::Context& ctx) {
     _context = ctx.get() != nullptr ? ctx : cl::Context(_device);
+    _info.supports_8bit_buffer_storage = probe_8bit_buffer_storage_support(_device, _context);
     _usm_helper = std::make_unique<cl::UsmHelper>(_context, _device, use_unified_shared_memory());
     _is_initialized = true;
 }
