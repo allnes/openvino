@@ -4,6 +4,13 @@
 
 set(XETLA_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/xetla/include/" CACHE PATH "Path to XeTLA headers")
 
+if(ANDROID AND ENABLE_EXPERIMENTAL_PORTABLE_GPU)
+    add_subdirectory(opencl_loader)
+    set(OV_GPU_OPENCL_TARGET openvino::portable_opencl_loader PARENT_SCOPE)
+else()
+    set(OV_GPU_OPENCL_TARGET OpenCL::OpenCL PARENT_SCOPE)
+endif()
+
 #
 # oneDNN for GPU plugin
 #

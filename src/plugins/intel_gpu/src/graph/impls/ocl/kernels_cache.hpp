@@ -84,6 +84,12 @@ public:
                 };
                 for (const auto& kv : batch_headers) {
                     if (std::find(micro_kernel_include_names.begin(), micro_kernel_include_names.end(), kv.first) == micro_kernel_include_names.end()) {
+#ifdef ENABLE_EXPERIMENTAL_PORTABLE_GPU
+                        // The portable bootstrap uses the generic Eltwise kernels. Their only batch-header
+                        // dependencies are fetch_data and its common preamble.
+                        if (kv.first != "common" && kv.first != "fetch_data")
+                            continue;
+#endif
                         source.push_back(kv.second);
                     } else {
                         micro_headers.push_back(kv.second);

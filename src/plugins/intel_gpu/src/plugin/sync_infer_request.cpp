@@ -77,7 +77,7 @@ cldnn::data_types data_type_for_remote_tensor(ov::element::Type t) {
     case ov::element::Type_t::u64:
         return cldnn::data_types::i32;
     case ov::element::Type_t::boolean:
-        return cldnn::data_types::u8;
+        return cldnn::element_type_to_data_type(ov::intel_gpu::boolean_storage_type());
     default: return t;
     }
 }
@@ -978,7 +978,9 @@ std::vector<cldnn::event::ptr> SyncInferRequest::prepare_input(const std::string
                     user_tensor->get_shape(),
                     ") are incompatible");
 
-    auto device_tensor_et = convert_to_supported_device_type(element_type);
+    auto device_tensor_et = element_type == ov::element::boolean
+                                ? boolean_storage_type()
+                                : convert_to_supported_device_type(element_type);
     bool convert_needed = is_convert_required(element_type, device_tensor_et);
 
     if (is_remote_tensor_impl) {
@@ -1133,7 +1135,9 @@ std::vector<cldnn::event::ptr> SyncInferRequest::prepare_output(size_t output_id
     }
 
     auto network = m_graph->get_network();
-    auto device_tensor_et = convert_to_supported_device_type(element_type);
+    auto device_tensor_et = element_type == ov::element::boolean
+                                ? boolean_storage_type()
+                                : convert_to_supported_device_type(element_type);
     bool convert_needed = is_convert_required(device_tensor_et, element_type);
 
     // Even if the network is dynamic, if user tensor's shape is static, remote tensor can be set as plugin's output tensor

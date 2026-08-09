@@ -47,6 +47,21 @@ INSTANTIATE_TEST_SUITE_P(smoke_maximum, MaxMinLayerTest,
                                 ::testing::Values(ov::test::utils::DEVICE_GPU)),
                         MaxMinLayerTest::getTestCaseName);
 
+const std::vector<std::vector<ov::Shape>> portableFamilyMinMaxShapes = {
+    {{1, 8, 4, 4}, {1, 8, 4, 4}},
+};
+
+INSTANTIATE_TEST_SUITE_P(
+    PortableEltwiseFamilyMinMax,
+    MaxMinLayerTest,
+    ::testing::Combine(
+        ::testing::ValuesIn(ov::test::static_shapes_to_test_representation(portableFamilyMinMaxShapes)),
+        ::testing::ValuesIn(opType),
+        ::testing::Values(ov::element::f32),
+        ::testing::Values(ov::test::utils::InputLayerType::PARAMETER),
+        ::testing::Values(ov::test::utils::DEVICE_GPU)),
+    MaxMinLayerTest::getTestCaseName);
+
 template <typename OpType>
 void compile_int_extremum(ov::element::Type precision) {
     const auto input0 = std::make_shared<ov::op::v0::Parameter>(precision, ov::Shape{4, 4});

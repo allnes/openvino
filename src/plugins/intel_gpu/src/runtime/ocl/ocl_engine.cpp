@@ -121,12 +121,13 @@ memory::ptr ocl_engine::import_buffer(const layout& layout, ov::intel_gpu::os_ha
 #ifndef CL_VERSION_3_0
     OPENVINO_THROW("[GPU] External memory import is not supported on this platform");
 #else
+#if !defined(_WIN32) && !defined(__linux__)
+    OPENVINO_THROW("[GPU] External memory import is not supported on this platform");
+#else
 #ifdef _WIN32
     constexpr auto handle_type_token = CL_EXTERNAL_MEMORY_HANDLE_OPAQUE_WIN32_KHR;
-#elif defined(__linux__)
-    constexpr auto handle_type_token = CL_EXTERNAL_MEMORY_HANDLE_DMA_BUF_KHR;
 #else
-    OPENVINO_THROW("[GPU] External memory import is not supported on this platform");
+    constexpr auto handle_type_token = CL_EXTERNAL_MEMORY_HANDLE_DMA_BUF_KHR;
 #endif
 
     cl_mem_properties props[] = {
@@ -162,6 +163,7 @@ memory::ptr ocl_engine::import_buffer(const layout& layout, ov::intel_gpu::os_ha
     auto memory = std::make_shared<ocl::gpu_buffer_from_handle>(this, layout, buf, mem_tracker);
     clReleaseMemObject(imported);
     return memory;
+#endif
 #endif
 }
 

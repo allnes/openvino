@@ -42,7 +42,9 @@
 #else
 #include <unistd.h>
 #include <climits>
+#ifndef ENABLE_EXPERIMENTAL_PORTABLE_GPU
 #include <link.h>
+#endif
 #include <dlfcn.h>
 #endif
 

@@ -94,6 +94,14 @@ inline ov::element::Type convert_to_supported_device_type(ov::element::Type et) 
     }
 }
 
+inline ov::element::Type boolean_storage_type() {
+#ifdef ENABLE_EXPERIMENTAL_PORTABLE_GPU
+    return ov::element::i32;
+#else
+    return ov::element::u8;
+#endif
+}
+
 bool is_supported(ov::element::Type_t et);
 bool data_types_are_supported(const ov::Node* node);
 

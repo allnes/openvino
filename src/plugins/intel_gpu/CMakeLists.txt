@@ -6,6 +6,10 @@ if (NOT ENABLE_INTEL_GPU)
     return()
 endif()
 
+if(ENABLE_EXPERIMENTAL_PORTABLE_GPU)
+    add_compile_definitions(ENABLE_EXPERIMENTAL_PORTABLE_GPU)
+endif()
+
 set (TARGET_NAME "openvino_intel_gpu_plugin")
 
 include(${CMAKE_CURRENT_LIST_DIR}/cmake/utils.cmake)

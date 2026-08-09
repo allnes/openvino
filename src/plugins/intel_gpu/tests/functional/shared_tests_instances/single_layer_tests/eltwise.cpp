@@ -178,4 +178,55 @@ INSTANTIATE_TEST_SUITE_P(smoke_NumpyBroadcastPower,
                                             ::testing::Values(additional_config)),
                          EltwiseLayerTest::getTestCaseName);
 
+const std::vector<std::vector<ov::Shape>> portableFamilyShapes = {
+    {{1, 8, 4, 4}, {1, 8, 4, 4}},
+};
+
+const std::vector<EltwiseTypes> portableFamilyArithmeticOps = {
+    EltwiseTypes::ADD,
+    EltwiseTypes::MULTIPLY,
+    EltwiseTypes::SUBTRACT,
+    EltwiseTypes::DIVIDE,
+    EltwiseTypes::SQUARED_DIFF,
+    EltwiseTypes::POWER,
+    EltwiseTypes::FLOOR_MOD,
+    EltwiseTypes::MOD,
+};
+
+const std::vector<EltwiseTypes> portableFamilyBitwiseOps = {
+    EltwiseTypes::BITWISE_AND,
+    EltwiseTypes::BITWISE_OR,
+    EltwiseTypes::BITWISE_XOR,
+    EltwiseTypes::RIGHT_SHIFT,
+    EltwiseTypes::LEFT_SHIFT,
+};
+
+INSTANTIATE_TEST_SUITE_P(
+    PortableEltwiseFamilyArithmetic,
+    EltwiseLayerTest,
+    ::testing::Combine(::testing::ValuesIn(ov::test::static_shapes_to_test_representation(portableFamilyShapes)),
+                       ::testing::ValuesIn(portableFamilyArithmeticOps),
+                       ::testing::Values(InputLayerType::PARAMETER),
+                       ::testing::Values(OpType::VECTOR),
+                       ::testing::Values(ov::element::f32),
+                       ::testing::Values(ov::element::dynamic),
+                       ::testing::Values(ov::element::dynamic),
+                       ::testing::Values(ov::test::utils::DEVICE_GPU),
+                       ::testing::Values(additional_config)),
+    EltwiseLayerTest::getTestCaseName);
+
+INSTANTIATE_TEST_SUITE_P(
+    PortableEltwiseFamilyBitwise,
+    EltwiseLayerTest,
+    ::testing::Combine(::testing::ValuesIn(ov::test::static_shapes_to_test_representation(portableFamilyShapes)),
+                       ::testing::ValuesIn(portableFamilyBitwiseOps),
+                       ::testing::Values(InputLayerType::CONSTANT),
+                       ::testing::Values(OpType::VECTOR),
+                       ::testing::Values(ov::element::i32),
+                       ::testing::Values(ov::element::dynamic),
+                       ::testing::Values(ov::element::dynamic),
+                       ::testing::Values(ov::test::utils::DEVICE_GPU),
+                       ::testing::Values(additional_config)),
+    EltwiseLayerTest::getTestCaseName);
+
 }  // namespace

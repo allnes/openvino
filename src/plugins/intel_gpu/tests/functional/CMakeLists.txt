@@ -13,6 +13,10 @@ endif()
 
 list(APPEND DEFINES TEST_CUSTOM_OP_CONFIG_PATH="${CMAKE_CURRENT_SOURCE_DIR}/custom_op/custom_op.xml")
 
+if(ENABLE_EXPERIMENTAL_PORTABLE_GPU)
+    set(EXCLUDED_SOURCE_PATHS ${CMAKE_CURRENT_SOURCE_DIR}/remote_tensor_tests/)
+endif()
+
 ov_add_test_target(
         NAME
             ${TARGET_NAME}
@@ -20,6 +24,8 @@ ov_add_test_target(
             ${CMAKE_CURRENT_SOURCE_DIR}
         ADDITIONAL_SOURCE_DIRS
             ${TEST_COMMON_SOURCE_DIR}
+        EXCLUDED_SOURCE_PATHS
+            ${EXCLUDED_SOURCE_PATHS}
         INCLUDES
             ${CMAKE_CURRENT_SOURCE_DIR}
             $<TARGET_PROPERTY:openvino_intel_gpu_plugin,SOURCE_DIR>/include/
@@ -32,7 +38,7 @@ ov_add_test_target(
             funcSharedTests
             openvino::reference
             OpenCL::NewHeaders # should come before OpenCL::OpenCL
-            OpenCL::OpenCL
+            ${OV_GPU_OPENCL_TARGET}
         LABELS
             OV GPU
 )

@@ -10,6 +10,10 @@
 
 #include <array>
 
+#ifdef ENABLE_EXPERIMENTAL_PORTABLE_GPU
+#include <CL/opencl.h>
+#endif
+
 #ifdef OV_GPU_USE_OPENCL_HPP
 #include <CL/opencl.hpp>
 #else

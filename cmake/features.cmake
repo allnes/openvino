@@ -33,7 +33,19 @@ else()
     set(ENABLE_INTEL_GPU_DEFAULT OFF)
 endif()
 
-ov_dependent_option (ENABLE_INTEL_GPU "GPU OpenCL-based plugin for OpenVINO Runtime" ${ENABLE_INTEL_GPU_DEFAULT} "X86_64 OR AARCH64;NOT APPLE;NOT WINDOWS_STORE;NOT WINDOWS_PHONE" OFF)
+ov_option(ENABLE_EXPERIMENTAL_PORTABLE_GPU
+    "Enable experimental portable OpenCL GPU plugin support on AArch64" OFF)
+
+if(ENABLE_EXPERIMENTAL_PORTABLE_GPU AND NOT AARCH64)
+    message(FATAL_ERROR "ENABLE_EXPERIMENTAL_PORTABLE_GPU is supported only on AArch64")
+endif()
+
+if(ENABLE_EXPERIMENTAL_PORTABLE_GPU)
+    set(ENABLE_INTEL_GPU ON CACHE BOOL "GPU OpenCL-based plugin for OpenVINO Runtime" FORCE)
+endif()
+
+ov_dependent_option (ENABLE_INTEL_GPU "GPU OpenCL-based plugin for OpenVINO Runtime" ${ENABLE_INTEL_GPU_DEFAULT}
+    "X86_64 OR AARCH64;(NOT APPLE) OR ENABLE_EXPERIMENTAL_PORTABLE_GPU;NOT WINDOWS_STORE;NOT WINDOWS_PHONE" OFF)
 
 if (ANDROID OR MINGW OR (CMAKE_COMPILER_IS_GNUCXX AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 7.0))
     # oneDNN doesn't support old compilers and Android builds for now, so we'll build GPU plugin without oneDNN
@@ -46,6 +58,9 @@ endif()
 set(OV_GPU_DEFAULT_RT "OCL")
 if (ENABLE_INTEL_GPU)
     ov_option_enum (GPU_RT_TYPE "Type of GPU runtime. Supported value: OCL, SYCL and ZE (L0 is accepted as ZE alias)" ${OV_GPU_DEFAULT_RT} ALLOWED_VALUES ZE OCL L0 SYCL)
+    if(ENABLE_EXPERIMENTAL_PORTABLE_GPU)
+        set(GPU_RT_TYPE "OCL" CACHE STRING "Type of GPU runtime" FORCE)
+    endif()
     if(GPU_RT_TYPE STREQUAL "L0")
         set(GPU_RT_TYPE "ZE" CACHE STRING "Type of GPU runtime" FORCE)
     endif()
@@ -53,6 +68,12 @@ endif()
 
 ov_dependent_option (ENABLE_ONEDNN_FOR_GPU "Enable oneDNN with GPU support" ${ENABLE_ONEDNN_FOR_GPU_DEFAULT} "ENABLE_INTEL_GPU" OFF)
 ov_dependent_option (ENABLE_CM_FOR_GPU "Enable C for Metal (CM) kernels at GPU runtime" ON "ENABLE_INTEL_GPU" OFF)
+
+if(ENABLE_EXPERIMENTAL_PORTABLE_GPU)
+    set(ENABLE_ONEDNN_FOR_GPU OFF CACHE BOOL "Enable oneDNN with GPU support" FORCE)
+    set(ENABLE_CM_FOR_GPU OFF CACHE BOOL "Enable C for Metal (CM) kernels at GPU runtime" FORCE)
+    set(OV_FORCE_ADHOC_SIGN ON)
+endif()
 
 ov_dependent_option (ENABLE_INTEL_NPU "NPU plugin for OpenVINO runtime" ON "X86_64;WIN32 OR LINUX OR ANDROID" OFF)
 ov_dependent_option (ENABLE_INTEL_NPU_INTERNAL "NPU plugin internal components for OpenVINO runtime" ON "ENABLE_INTEL_NPU" OFF)
@@ -205,6 +226,9 @@ ov_dependent_option(ENABLE_SYSTEM_FLATBUFFERS "Enables use of system flatbuffers
     "ENABLE_OV_TF_LITE_FRONTEND OR ENABLE_INTEL_NPU" OFF)
 ov_dependent_option (ENABLE_SYSTEM_OPENCL "Enables use of system OpenCL" ${ENABLE_SYSTEM_LIBS_DEFAULT}
     "ENABLE_INTEL_GPU" OFF)
+if(ENABLE_EXPERIMENTAL_PORTABLE_GPU)
+    set(ENABLE_SYSTEM_OPENCL OFF CACHE BOOL "Enables use of system OpenCL" FORCE)
+endif()
 # the option is turned off by default, because we compile our own static version of protobuf
 # with LTO and -fPIC options, while system one does not have such flags
 ov_dependent_option (ENABLE_SYSTEM_PROTOBUF "Enables use of system Protobuf" OFF

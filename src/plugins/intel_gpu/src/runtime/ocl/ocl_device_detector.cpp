@@ -36,7 +36,7 @@ std::vector<std::string> split(const std::string& s, char delim) {
 }
 
 bool does_device_match_config(const cl::Device& device) {
-    if (device.getInfo<CL_DEVICE_TYPE>() != CL_DEVICE_TYPE_GPU) {
+    if ((device.getInfo<CL_DEVICE_TYPE>() & CL_DEVICE_TYPE_GPU) == 0) {
         return false;
     }
 

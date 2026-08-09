@@ -87,7 +87,7 @@ ov_gpu_set_runtime_interface_for(${TARGET_NAME})
 
 # Requires OpenCL even for Level Zero builds because of kernel builder and OneDNN
 target_link_libraries(${TARGET_NAME} PRIVATE
-    OpenCL::OpenCL
+    ${OV_GPU_OPENCL_TARGET}
     openvino::itt
     openvino::runtime::dev
   )

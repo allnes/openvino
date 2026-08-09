@@ -6,11 +6,26 @@
 #include <stdexcept>
 
 #include "common_test_utils/ov_plugin_cache.hpp"
+#include "gtest/gtest.h"
 
 #include "set_device_name.hpp"
 
 namespace ov {
 namespace test {
+
+#ifdef ENABLE_EXPERIMENTAL_PORTABLE_GPU
+namespace {
+class PortableGpuPluginEnvironment : public ::testing::Environment {
+public:
+    void TearDown() override {
+        utils::PluginCache::get().reset();
+    }
+};
+
+const auto portable_gpu_plugin_environment =
+    ::testing::AddGlobalTestEnvironment(new PortableGpuPluginEnvironment);
+}  // namespace
+#endif
 
 void set_device_suffix(const std::string& suffix) {
     static std::string new_gpu_name;

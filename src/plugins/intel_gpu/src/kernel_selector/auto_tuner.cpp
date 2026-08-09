@@ -32,7 +32,9 @@
 #else
 #include <unistd.h>
 #include <climits>
+#ifndef ENABLE_EXPERIMENTAL_PORTABLE_GPU
 #include <link.h>
+#endif
 #include <dlfcn.h>
 #endif
 
@@ -228,7 +230,7 @@ TuningCache* TuningCache::get() {
     GetModuleFileName(hm, module_path, sizeof(module_path));
     std::string bin_path(module_path);
     path = bin_path.substr(0, bin_path.find_last_of("\\")) + "\\cache.json";
-#elif __linux__
+#elif defined(__linux__) || defined(ENABLE_EXPERIMENTAL_PORTABLE_GPU)
     const char* device_info_failed_msg = "Device lookup failed";
     Dl_info dl_info;
     dladdr((void*)(device_info_failed_msg), &dl_info);  // NOLINT

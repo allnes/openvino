@@ -86,4 +86,42 @@ INSTANTIATE_TEST_SUITE_P(smoke_IsOp,
                                             ::testing::Values(additional_config)),
                          ComparisonLayerTest::getTestCaseName);
 
+const std::vector<std::vector<ov::Shape>> portableFamilyComparisonShapes = {
+    {{1, 8, 4, 4}, {1, 8, 4, 4}},
+};
+
+const std::vector<std::vector<ov::Shape>> portableFamilyPredicateShapes = {
+    {{1, 8, 4, 4}, {1}},
+};
+
+const std::vector<ov::test::utils::ComparisonTypes> portableFamilyPredicateOps = {
+    ov::test::utils::ComparisonTypes::IS_FINITE,
+    ov::test::utils::ComparisonTypes::IS_INF,
+    ov::test::utils::ComparisonTypes::IS_NAN,
+};
+
+INSTANTIATE_TEST_SUITE_P(
+    PortableEltwiseFamilyComparison,
+    ComparisonLayerTest,
+    ::testing::Combine(
+        ::testing::ValuesIn(ov::test::static_shapes_to_test_representation(portableFamilyComparisonShapes)),
+        ::testing::ValuesIn(comparisonOpTypes),
+        ::testing::Values(ov::test::utils::InputLayerType::PARAMETER),
+        ::testing::Values(ov::element::f32),
+        ::testing::Values(ov::test::utils::DEVICE_GPU),
+        ::testing::Values(additional_config)),
+    ComparisonLayerTest::getTestCaseName);
+
+INSTANTIATE_TEST_SUITE_P(
+    PortableEltwiseFamilyPredicate,
+    ComparisonLayerTest,
+    ::testing::Combine(
+        ::testing::ValuesIn(ov::test::static_shapes_to_test_representation(portableFamilyPredicateShapes)),
+        ::testing::ValuesIn(portableFamilyPredicateOps),
+        ::testing::Values(ov::test::utils::InputLayerType::CONSTANT),
+        ::testing::Values(ov::element::f32),
+        ::testing::Values(ov::test::utils::DEVICE_GPU),
+        ::testing::Values(additional_config)),
+    ComparisonLayerTest::getTestCaseName);
+
 }  // namespace

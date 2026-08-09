@@ -78,4 +78,20 @@ INSTANTIATE_TEST_SUITE_P(smoke_CompareWithRefsNot,
                                             ::testing::Values(additional_config)),
                          LogicalLayerTest::getTestCaseName);
 
+const std::vector<std::vector<ov::Shape>> portableFamilyLogicalShapes = {
+    {{1, 8, 4, 4}, {1, 8, 4, 4}},
+};
+
+INSTANTIATE_TEST_SUITE_P(
+    PortableEltwiseFamilyLogical,
+    LogicalLayerTest,
+    ::testing::Combine(
+        ::testing::ValuesIn(ov::test::static_shapes_to_test_representation(portableFamilyLogicalShapes)),
+        ::testing::ValuesIn(logicalOpTypes),
+        ::testing::Values(ov::test::utils::InputLayerType::PARAMETER),
+        ::testing::Values(ov::element::boolean),
+        ::testing::Values(ov::test::utils::DEVICE_GPU),
+        ::testing::Values(additional_config)),
+    LogicalLayerTest::getTestCaseName);
+
 }  // namespace
