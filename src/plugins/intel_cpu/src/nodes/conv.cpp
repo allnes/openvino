@@ -53,6 +53,7 @@
 #include "post_ops.hpp"
 #include "shape_inference/custom/convolution.hpp"
 #include "utils/general_utils.h"
+#include "utils/rt_info/convolution_dequantization.hpp"
 
 using namespace dnnl;
 
@@ -197,6 +198,12 @@ Convolution::Convolution(const std::shared_ptr<ov::Node>& op, const GraphContext
 
     m_atoi[ARG_SRC] = DATA;
     m_atoi[ARG_WEI] = WEIGHTS;
+    const auto quantization = op->get_rt_info().find(ConvolutionInputZeroPoint);
+    if (quantization != op->get_rt_info().end()) {
+        m_attrs.inputZeroPoint = quantization->second.as<int32_t>();
+        const auto scales = op->get_rt_info().at(ConvolutionDequantizationScales).as<std::vector<float>>();
+        fuseDQScales(scales.data(), scales.size());
+    }
 
     auto convolutionOp = ov::as_type_ptr<ov::op::v1::Convolution>(op);
     auto groupConvolutionOp = ov::as_type_ptr<ov::op::v1::GroupConvolution>(op);
@@ -562,6 +569,12 @@ static MemoryPtr memoryViewToVector(const std::vector<T>& vec, const dnnl::engin
 
 bool Convolution::canFuse(const NodePtr& node) const {
 #if defined(OV_CPU_WITH_ACL)
+    // The asymmetric path keeps a floating destination; activation/FQ fusion is separate.
+    if (m_attrs.inputZeroPoint &&
+        (node->getType() == Type::FakeQuantize ||
+         (node->getType() == Type::Eltwise && node->getAlgorithm() != Algorithm::EltwiseAdd))) {
+        return false;
+    }
     // check for multiply node
     auto isScaleShiftMul = [&](const NodePtr& n) -> bool {
         if (n->getAlgorithm() != Algorithm::EltwiseMultiply) {

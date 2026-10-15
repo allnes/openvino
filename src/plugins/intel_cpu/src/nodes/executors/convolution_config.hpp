@@ -6,6 +6,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <vector>
 
 #include "executor_config.hpp"
@@ -38,6 +39,7 @@ struct ConvAttrs {
     std::vector<float> dqScales;
 
     PostOps postOps;
+    std::optional<int32_t> inputZeroPoint = std::nullopt;
 };
 
 using ConvConfig = executor::Config<ConvAttrs>;

@@ -253,6 +253,7 @@
 #    include "transformations/cpu_opset/arm/pass/convert_reduce_no_keep_dims.hpp"
 #    include "transformations/cpu_opset/arm/pass/deconv_1d_decomposition.hpp"
 #    include "transformations/cpu_opset/arm/pass/fallback_unsupported_lp_conv_to_float.hpp"
+#    include "transformations/cpu_opset/arm/pass/fuse_conv_dequantization.hpp"
 #    include "transformations/cpu_opset/arm/pass/grid_sample_decomposition.hpp"
 #    include "transformations/cpu_opset/common/op/sdpa.hpp"
 #    include "transformations/cpu_opset/common/pass/decompose_integer_divide.hpp"
@@ -980,6 +981,7 @@ void Transformations::runLptPasses(const std::vector<ov::element::Type>& default
 #if defined(OPENVINO_ARCH_ARM) || defined(OPENVINO_ARCH_ARM64)
     lowPrecPass->add_markup<AlignUnsupportedLPConvFQPrecision>();
 #endif
+    CPU_REGISTER_PASS_ARM(lptManager, FuseConvolutionDequantization);
     CPU_REGISTER_PASS_ARM(lptManager, ConvertConvolutionBias);
     CPU_REGISTER_PASS_ARM(lptManager, ConvertFullyConnectedBias);
     CPU_REGISTER_PASS_ARM(lptManager, FallbackUnsupportedLPConvToFloat);
