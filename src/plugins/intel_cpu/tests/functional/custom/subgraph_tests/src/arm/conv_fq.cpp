@@ -230,13 +230,11 @@ INSTANTIATE_TEST_SUITE_P(smoke_ConvAndFQMixedOutput_CPU,
                                             ::testing::Values(ov::test::utils::DEVICE_CPU)),
                          ConvAndFQ::getTestCaseName);
 
-// upstream ACL's dequantize-to-F32 convolution path (int8_dequantize_f32_path) only accepts
-// QASYMM8_SIGNED (i8) src, not u8, so a u8-src Swish conv currently falls back to plain f32
-// need to update this test later after upstream ACL has supported u8 src
+// Unsigned inputs are normalized to signed values for ACL dequantization to f32.
 std::vector<QuantizationParams> withSwishQuantizationParams{
-    {signedIntervals, signedIntervals, {}, expectedConvPrecBySignedFQRange, false},  // i8 -> i8, per-tensor
-    {unsignedIntervals, unsignedIntervals, {}, element::f32, false},  // u8 -> u8, per-tensor (fallbacks to f32)
-    {signedIntervals, signedIntervals, {}, expectedConvPrecBySignedFQRange, true},  // i8 -> i8, per-channel
+    {signedIntervals, signedIntervals, {}, expectedConvPrecBySignedFQRange, false},        // i8 -> i8, per-tensor
+    {unsignedIntervals, unsignedIntervals, {}, expectedConvPrecByUnsignedFQRange, false},  // u8 -> u8, per-tensor
+    {signedIntervals, signedIntervals, {}, expectedConvPrecBySignedFQRange, true},         // i8 -> i8, per-channel
 };
 
 INSTANTIATE_TEST_SUITE_P(smoke_ConvAndFQ_withSwish_CPU,

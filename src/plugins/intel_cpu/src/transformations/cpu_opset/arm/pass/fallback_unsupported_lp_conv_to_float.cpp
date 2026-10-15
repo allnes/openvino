@@ -74,7 +74,7 @@ ov::intel_cpu::FallbackUnsupportedLPConvToFloat::FallbackUnsupportedLPConvToFloa
         }
 
         // If there's a Subtract (zero-point dequantization), always apply fallback —
-        // int8 ACL convolution executor does not support zero-point yet
+        // the asymmetric Conv pass has already removed supported per-tensor zero points
         const bool has_subtract = ov::is_type<ov::op::v1::Subtract>(conv->get_input_node_ptr(0));
         if (!has_subtract && fake_quantize->get_output_element_type(0) == conv->get_input_element_type(0)) {
             return false;

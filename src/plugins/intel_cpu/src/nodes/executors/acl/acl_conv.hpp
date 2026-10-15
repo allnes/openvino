@@ -35,6 +35,7 @@ private:
     std::vector<float> fqInputShift;
     std::vector<float> fqOutputShift;
     std::vector<float> weightScale;
+    int32_t inputZeroPoint = 0;
 };
 
 using ACLConvolutionExecutorPtr = std::shared_ptr<ACLConvolutionExecutor>;

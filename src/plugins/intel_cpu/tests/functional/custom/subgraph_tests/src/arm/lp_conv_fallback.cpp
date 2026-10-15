@@ -35,7 +35,7 @@ public:
     static std::string getTestCaseName(const testing::TestParamInfo<LPConvFallbackParams>& obj) {
         const auto& [additionalConfig, cpuParams] = obj.param;
         std::ostringstream result;
-        result << "IS=(1.16.32.32)_Config=";
+        result << "IS=(1.16.32.32)_Strides=(2.1)_Config=";
         if (additionalConfig.empty()) {
             result << "Default";
         } else {
@@ -81,9 +81,10 @@ protected:
         }
         const auto scale = op::v0::Constant::create(element::f32, Shape{32, 1, 1, 1}, scales);
         const auto multiply = std::make_shared<op::v1::Multiply>(convert, scale);
+        // Unequal spatial strides keep this case on the unsupported low-precision path.
         const auto convolution = std::make_shared<op::v1::Convolution>(inputFQ,
                                                                        multiply,
-                                                                       Strides{2, 2},
+                                                                       Strides{2, 1},
                                                                        CoordinateDiff{1, 1},
                                                                        CoordinateDiff{1, 1},
                                                                        Strides{1, 1});
