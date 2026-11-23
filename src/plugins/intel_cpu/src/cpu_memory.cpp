@@ -667,9 +667,8 @@ MemoryPtr split_horizontal(const dnnl::engine& eng,
     // reference stride
     VectorDims stride_dims = dims;
     stride_dims[dim] = splited_dim_vec[0];
-    size_t stride =
-        std::accumulate(stride_dims.begin(), stride_dims.end(), static_cast<size_t>(1), std::multiplies<>()) *
-        prec.size();
+    const size_t partition_elements =
+        std::accumulate(stride_dims.begin(), stride_dims.end(), static_cast<size_t>(1), std::multiplies<>());
 
     // create new shape for target memory
     VectorDims new_dims = dims;
@@ -683,10 +682,26 @@ MemoryPtr split_horizontal(const dnnl::engine& eng,
 
     auto* srcPtr = static_cast<uint8_t*>(src->getData());
     if (any_of(prec, ov::element::u4, ov::element::i4)) {
-        stride /= 2;
+        const size_t element_offset = static_cast<size_t>(w_rank) * partition_elements;
+        if (element_offset % 2 == 0) {
+            return std::make_shared<Memory>(eng, new_desc, srcPtr + element_offset / 2);
+        }
+        auto ptr = std::make_shared<Memory>(eng, new_desc);
+        auto* dst = static_cast<uint8_t*>(ptr->getData());
+        const size_t elements = ptr->getShape().getElementsCount();
+        // A partition starting at the high nibble needs its own byte-aligned storage.
+        for (size_t byte = 0; byte < div_up(elements, size_t{2}); ++byte) {
+            const size_t source_byte = element_offset / 2 + byte;
+            unsigned int value = srcPtr[source_byte] >> 4;
+            if (byte * 2 + 1 < elements) {
+                value |= (srcPtr[source_byte + 1] & 15U) << 4;
+            }
+            dst[byte] = static_cast<uint8_t>(value);
+        }
+        return ptr;
     }
 
-    MemoryPtr ptr = std::make_shared<Memory>(eng, new_desc, srcPtr + w_rank * stride);
+    MemoryPtr ptr = std::make_shared<Memory>(eng, new_desc, srcPtr + w_rank * partition_elements * prec.size());
     return ptr;
 }
 

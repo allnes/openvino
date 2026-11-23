@@ -40,7 +40,6 @@
 #include "openvino/core/node.hpp"
 #include "openvino/core/type.hpp"
 #include "openvino/core/type/element_type.hpp"
-#include "openvino/core/validation_util.hpp"
 #include "openvino/op/constant.hpp"
 #include "openvino/runtime/system_conf.hpp"
 #include "openvino/runtime/threading/cpu_message.hpp"
@@ -54,6 +53,7 @@
 #include "utils/debug_capabilities.h"
 #include "utils/general_utils.h"
 #if defined(OPENVINO_ARCH_X86_64)
+#    include "openvino/core/validation_util.hpp"
 #    include "transformations/rt_info/disable_precision_conversion.hpp"
 #    include "utils/precision_support.h"
 #endif
@@ -222,8 +222,7 @@ bool FullyConnected::isSupportedCompressedOperation([[maybe_unused]] const std::
             // Grouped reorder requires plain weights and integer zero points in the quantized type's range.
             const auto& weights_shape = op->get_input_shape(WEIGHTS);
             if (weights_shape.size() != 2 || weights_shape[0] != OC || weights_shape[1] != IC || G == 0 ||
-                IC % G != 0 ||
-                (any_of(weightsPrecision, ov::element::i4, ov::element::u4) && OC % 2 != 0 && IC % 2 != 0)) {
+                IC % G != 0) {
                 return false;
             }
             auto parameterGroups = [&](size_t port) -> size_t {

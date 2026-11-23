@@ -1,4 +1,4 @@
-// Copyright (C) 2026 Intel Corporation
+// Copyright (C) 2018-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 //
 
@@ -22,10 +22,17 @@
 
 namespace ov::intel_cpu::test {
 namespace {
-void check_tensor_parallel(ov::element::Type weight_type, bool kn, bool grouped, bool per_channel, size_t n = 64) {
+void check_tensor_parallel(ov::element::Type weight_type,
+                           bool kn,
+                           bool grouped,
+                           bool per_channel,
+                           size_t n = 64,
+                           size_t k = 64) {
     using namespace ov::opset13;
-    constexpr size_t k = 64;
-    const size_t groups = grouped ? 2 : 1;
+    size_t groups = 1;
+    if (grouped) {
+        groups = k == 33 ? 3 : 2;
+    }
     const size_t group_size = k / groups;
     const size_t parameter_channels = per_channel ? n : 1;
     const bool signed_weights = weight_type == ov::element::i4 || weight_type == ov::element::i8;
@@ -57,14 +64,15 @@ void check_tensor_parallel(ov::element::Type weight_type, bool kn, bool grouped,
         std::make_shared<Subtract>(std::make_shared<Convert>(weights, ov::element::f16), zero_point),
         scale);
     if (grouped) {
-        dequantized = std::make_shared<Reshape>(dequantized,
-                                                Constant::create(ov::element::i64,
-                                                                 ov::Shape{2},
-                                                                 kn ? std::vector<int64_t>{k, static_cast<int64_t>(n)}
-                                                                    : std::vector<int64_t>{static_cast<int64_t>(n), k}),
-                                                false);
+        dequantized = std::make_shared<Reshape>(
+            dequantized,
+            Constant::create(ov::element::i64,
+                             ov::Shape{2},
+                             kn ? std::vector<int64_t>{static_cast<int64_t>(k), static_cast<int64_t>(n)}
+                                : std::vector<int64_t>{static_cast<int64_t>(n), static_cast<int64_t>(k)}),
+            false);
     }
-    auto input = std::make_shared<Parameter>(ov::element::f16, ov::PartialShape{-1, k});
+    auto input = std::make_shared<Parameter>(ov::element::f16, ov::PartialShape{-1, static_cast<int64_t>(k)});
     auto output = std::make_shared<MatMul>(input, dequantized, false, !kn);
     auto model = std::make_shared<ov::Model>(ov::OutputVector{output}, ov::ParameterVector{input});
     ov::Core core;
@@ -82,7 +90,7 @@ void check_tensor_parallel(ov::element::Type weight_type, bool kn, bool grouped,
         auto* values = source.data<ov::float16>();
         for (size_t row = 0; row < rows; ++row) {
             // One-hot rows select weights from both K groups without a second GEMM reference.
-            const size_t feature = row % 2 == 0 ? 1 : 33;
+            const size_t feature = 1 + (row % groups) * group_size;
             for (size_t column = 0; column < k; ++column) {
                 values[row * k + column] = ov::float16(column == feature ? 1.F : 0.F);
             }
@@ -90,8 +98,10 @@ void check_tensor_parallel(ov::element::Type weight_type, bool kn, bool grouped,
         request.set_input_tensor(source);
         request.infer();
         const auto result = request.get_output_tensor();
+        ASSERT_EQ(result.get_shape(), (ov::Shape{rows, n}));
+        ASSERT_NE(result.data<ov::float16>(), nullptr);
         for (size_t row = 0; row < rows; ++row) {
-            const size_t feature = row % 2 == 0 ? 1 : 33;
+            const size_t feature = 1 + (row % groups) * group_size;
             const size_t group = feature / group_size;
             for (size_t channel = 0; channel < n; ++channel) {
                 const size_t parameter_channel = per_channel ? channel : 0;
@@ -141,6 +151,18 @@ TEST(FP16CompressedFCTensorParallel, PerChannelGroupedParametersPreserveInferenc
                 SCOPED_TRACE("N=" + std::to_string(n));
                 check_tensor_parallel(type, kn, true, true, n);
             }
+        }
+    }
+}
+
+TEST(FP16CompressedFCTensorParallel, OddKPreservesPackedPartitionBoundaries) {
+    if (!hasFp16WeightsDecompressionSupport()) {
+        GTEST_SKIP();
+    }
+    for (const auto type : {ov::element::i4, ov::element::u4}) {
+        for (const bool kn : {false, true}) {
+            SCOPED_TRACE(type.to_string() + (kn ? "/KN" : "/NK"));
+            check_tensor_parallel(type, kn, true, true, 18, 33);
         }
     }
 }

@@ -203,13 +203,15 @@ TEST(FP16CompressedFC, UnalignedGroupsUseFp16Reorder) {
     }
 }
 
-TEST(FP16CompressedFC, OddKWithEvenElementCountUsesFp16Reorder) {
+TEST(FP16CompressedFC, OddKAndElementCountsUseFp16Reorder) {
     if (!hasFp16WeightsDecompressionSupport()) {
         GTEST_SKIP();
     }
     for (const auto type : {ov::element::i4, ov::element::u4, ov::element::i8, ov::element::u8}) {
-        check_fc(type, 33, false, true, false, 1, 0.06931F, DecompressionCase::Grouped, 33, 18);
-        check_fc(type, 33, false, true, false, 1, 0.06931F, DecompressionCase::GroupedWeightsKN, 33, 18);
+        for (const size_t n : {17U, 18U}) {
+            check_fc(type, 33, false, true, false, 1, 0.06931F, DecompressionCase::Grouped, 11, n);
+            check_fc(type, 33, false, true, false, 1, 0.06931F, DecompressionCase::GroupedWeightsKN, 11, n);
+        }
     }
 }
 
@@ -218,7 +220,6 @@ TEST(FP16CompressedFC, UnsupportedDecompressionKeepsMaterializedFallback) {
         GTEST_SKIP();
     }
     for (const auto type : {ov::element::i4, ov::element::u4}) {
-        check_fc(type, 33, false, false);
         check_fc(type, 64, true, false);
         check_fc(type, 64, false, false, true);
     }

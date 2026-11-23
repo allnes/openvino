@@ -211,14 +211,16 @@ private:
                                                       dnnl::memory::data_type::f16,
                                                       kn ? dnnl::memory::format_tag::ba : dnnl::memory::format_tag::ab);
             dnnl::primitive_attr attributes;
-            attributes.set_scales(DNNL_ARG_SRC, 3, group_sizes(scales), dnnl::memory::data_type::f32);
-            auto scale_memory = normalize(scales.memory, ov::element::f32);
+            attributes.set_scales(DNNL_ARG_SRC,
+                                  3,
+                                  group_sizes(scales),
+                                  DnnlExtensionUtils::ElementTypeToDataType(scales.memory->getPrecision()));
             MemoryPtr zero_memory;
             auto result = std::make_shared<Memory>(m_context->getEngine(), m_primitive->weightsDesc());
             dnnl_primitive_args arguments{
                 {DNNL_ARG_FROM, dnnl::memory(source_desc, m_context->getEngine(), quant->getData())},
                 {DNNL_ARG_TO, dnnl::memory(destination_desc, m_context->getEngine(), result->getData())},
-                {DNNL_ARG_ATTR_SCALES | DNNL_ARG_SRC, parameter_view(scales, scale_memory)}};
+                {DNNL_ARG_ATTR_SCALES | DNNL_ARG_SRC, parameter_view(scales, scales.memory)}};
             if (zero_points) {
                 zero_memory = normalize(zero_points->memory, ov::element::i32);
                 attributes.set_zero_points(DNNL_ARG_SRC, 3, group_sizes(*zero_points), dnnl::memory::data_type::s32);
