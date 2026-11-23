@@ -9,13 +9,11 @@
 
 #include <algorithm>
 #include <common/c_types_map.hpp>
-#include <common/dnnl_thread.hpp>
 #include <common/memory_desc.hpp>
 #include <cpu/x64/amx_tile_configure.hpp>
 #include <cpu/x64/brgemm/brgemm.hpp>
 #include <cpu/x64/brgemm/brgemm_types.hpp>
 #include <cpu/x64/cpu_isa_traits.hpp>
-#include <cpu/x64/jit_uni_reorder.hpp>
 #include <cpu/x64/matmul/brgemm_matmul_copy_utils.hpp>
 #include <cpu/x64/matmul/brgemm_matmul_utils.hpp>
 #include <cstddef>
@@ -36,53 +34,6 @@ using namespace dnnl::impl::cpu::x64::matmul;
 #define THROW_ERROR(...) OPENVINO_THROW("brgemm executor Init Failure '", __VA_ARGS__)
 
 namespace ov::intel_cpu {
-
-class PlainBReorder final : public jit_brgemm_matmul_copy_b_t {
-public:
-    PlainBReorder(size_t n, size_t k, size_t src_ld, size_t dst_ld, bool transpose, ov::element::Type dtype)
-        : jit_brgemm_matmul_copy_b_t(nullptr),
-          n(n),
-          k(k),
-          dst_ld(dst_ld),
-          element_size(dtype.size()) {
-        const dims_t dimensions{static_cast<dnnl_dim_t>(k), static_cast<dnnl_dim_t>(n)};
-        const dims_t src_strides{transpose ? 1 : static_cast<dnnl_dim_t>(src_ld),
-                                 transpose ? static_cast<dnnl_dim_t>(src_ld) : 1};
-        const dims_t dst_strides{static_cast<dnnl_dim_t>(dst_ld), 1};
-        const auto dt = static_cast<dnnl_data_type_t>(DnnlExtensionUtils::ElementTypeToDataType(dtype));
-        memory_desc_t src, dst;
-        OPENVINO_ASSERT(memory_desc_init_by_strides(src, 2, dimensions, dt, src_strides) == status::success);
-        OPENVINO_ASSERT(memory_desc_init_by_strides(dst, 2, dimensions, dt, dst_strides) == status::success);
-        primitive_attr_t attributes;
-        tr::prb_t problem{};
-        OPENVINO_ASSERT(tr::prb_init(problem, src, dst, &attributes) == status::success);
-        OPENVINO_ASSERT(!problem.is_tail_present && problem.ioff == 0 && problem.ooff == 0);
-        tr::kernel_t::desc_t descriptor{};
-        OPENVINO_ASSERT(tr::kernel_t::desc_init(descriptor, problem, problem.ndims) == status::success);
-        OPENVINO_ASSERT(descriptor.prb.ndims == problem.ndims);
-        kernel.reset(tr::kernel_t::create(descriptor));
-        OPENVINO_ASSERT(kernel && kernel->create_kernel() == status::success);
-    }
-
-    status_t create_kernel() override {
-        return status::success;
-    }
-
-    void operator()(ctx_t* ctx) override {
-        OPENVINO_ASSERT(ctx->current_K_iters == static_cast<dnnl_dim_t>(k) &&
-                        ctx->current_N_blk == static_cast<dnnl_dim_t>(n));
-        auto* destination = const_cast<void*>(ctx->tr_src);
-        std::memset(destination, 0, k * dst_ld * element_size);
-        tr::call_param_t parameters{};
-        parameters.in = ctx->src;
-        parameters.out = destination;
-        (*kernel)(&parameters);
-    }
-
-private:
-    size_t n, k, dst_ld, element_size;
-    std::unique_ptr<tr::kernel_t> kernel;
-};
 
 BrgemmKernel::BrgemmKernel(size_t M,
                            size_t N,
@@ -458,11 +409,7 @@ void BrgemmKernel::init_brgemm_copy_b(
     size_t copy_B_wei_stride) {
     copyBConf = brgemm_matmul_conf_t{};
     auto& brgCopyKernelConf = copyBConf;
-    if (f16_copy) {
-        if (weiType == ov::element::f16) {
-            brgCopyKernel = std::make_unique<PlainBReorder>(N, K, ldb, LDB, transpose, b_in_type);
-            return;
-        }
+    if (f16_copy && weiType != ov::element::f16) {
         auto ret = dnnl::impl::cpu::x64::matmul::init_conf(
             brgCopyKernelConf,
             1,
@@ -485,6 +432,7 @@ void BrgemmKernel::init_brgemm_copy_b(
     }
     brgCopyKernelConf.src_dt = dt_in0;
     brgCopyKernelConf.wei_dt = dt_in1;
+    brgCopyKernelConf.plain_B = f16_copy && weiType == ov::element::f16;
     brgCopyKernelConf.orig_wei_dt = static_cast<dnnl_data_type_t>(DnnlExtensionUtils::ElementTypeToDataType(b_in_type));
     brgCopyKernelConf.wei_n_blk = N_blk;
     brgCopyKernelConf.wei_tag = transpose ? dnnl_ba : dnnl_ab;

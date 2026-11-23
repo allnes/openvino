@@ -4,8 +4,6 @@
 
 #pragma once
 
-#include <algorithm>
-#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -17,72 +15,51 @@
 #include "memory_desc/dnnl_blocked_memory_desc.h"
 #include "nodes/executors/dnnl/dnnl_matmul_primitive.hpp"
 #include "nodes/executors/executor.hpp"
-#include "openvino/core/type/float16.hpp"
+#include "nodes/reorder.h"
+#include "thread_pool_imp.hpp"
 
 namespace ov::intel_cpu::fp16_compressed_fc {
 inline bool plain(const MemoryPtr& memory) {
     auto md = MemoryDescUtils::convertToDnnlMemoryDesc(memory->getDescPtr())->getDnnlDesc();
     if (md.get_format_kind() != dnnl::memory::format_kind::blocked || md.get_inner_nblks() != 0 ||
-        md.get_submemory_offset() != 0)
+        md.get_submemory_offset() != 0) {
         return false;
+    }
     auto dims = md.get_dims();
     auto strides = md.get_strides();
-    if (dims != md.get_padded_dims())
+    if (dims != md.get_padded_dims()) {
         return false;
-    for (auto offset : md.get_padded_offsets())
-        if (offset != 0)
+    }
+    for (auto offset : md.get_padded_offsets()) {
+        if (offset != 0) {
             return false;
+        }
+    }
     int64_t stride = 1;
     for (size_t i = dims.size(); i-- > 0;) {
-        if (strides[i] != stride)
+        if (strides[i] != stride) {
             return false;
+        }
         stride *= dims[i];
     }
     return true;
 }
-inline float read(const MemoryPtr& mem, size_t index) {
-    const auto type = mem->getPrecision();
-    const auto* bytes = static_cast<const uint8_t*>(mem->getData());
-    if (type == ov::element::f16)
-        return static_cast<const ov::float16*>(mem->getData())[index];
-    if (type == ov::element::f32)
-        return static_cast<const float*>(mem->getData())[index];
-    if (type == ov::element::i32)
-        return static_cast<const int32_t*>(mem->getData())[index];
-    if (type == ov::element::i8)
-        return static_cast<const int8_t*>(mem->getData())[index];
-    if (type == ov::element::u8)
-        return bytes[index];
-    if (type == ov::element::i4 || type == ov::element::u4) {
-        int value = (bytes[index / 2] >> (4 * (index % 2))) & 15;
-        if (type == ov::element::i4 && value >= 8)
-            value -= 16;
-        return static_cast<float>(value);
-    }
-    OPENVINO_THROW("Unsupported FP16 weight decompression precision ", type);
-}
 struct Params {
     MemoryPtr memory;
     size_t channels = 1, groups = 1;
-    bool transposed;
-    explicit Params(const MemoryPtr& value, size_t n, size_t k, bool transposed)
-        : memory(value),
-          transposed(transposed) {
+    explicit Params(const MemoryPtr& value, size_t n, size_t k) : memory(value) {
         OPENVINO_ASSERT(plain(value));
         auto dims = value->getShape().getStaticDims();
-        while (dims.size() > 2 && dims.front() == 1)
+        while (dims.size() > 2 && dims.front() == 1) {
             dims.erase(dims.begin());
-        if (dims.size() == 1 && dims.front() == 1)
+        }
+        if (dims.size() == 1 && dims.front() == 1) {
             dims.push_back(1);
+        }
         OPENVINO_ASSERT(dims.size() == 2 && dims[0] > 0 && dims[1] > 0);
         channels = dims[0];
         groups = dims[1];
         OPENVINO_ASSERT(n % channels == 0 && k % groups == 0);
-    }
-    float at(size_t nc, size_t kc, size_t n, size_t k) const {
-        const size_t channel = nc / (n / channels);
-        const size_t group = kc / (k / groups);
-        return read(memory, transposed ? group * channels + channel : channel * groups + group);
     }
 };
 class Fp16CompressedFCExecutor final : public Executor {
@@ -140,10 +117,10 @@ private:
         OPENVINO_ASSERT(memory.at(ARG_SRC)->getPrecision() == ov::element::f16);
         OPENVINO_ASSERT(memory.at(ARG_SRC)->getShape().getStaticDims().back() == k);
         OPENVINO_ASSERT(memory.at(ARG_DST)->getShape().getStaticDims().back() == n);
-        Params scales(memory.at(ARG_WEI | ARG_ATTR_SCALES), n, k, m_attrs.weightsNonTransposed);
+        Params scales(memory.at(ARG_WEI | ARG_ATTR_SCALES), n, k);
         std::unique_ptr<Params> zero_points;
         if (const auto it = memory.find(ARG_WEI | ARG_ATTR_ZERO_POINTS); it != memory.end()) {
-            zero_points = std::make_unique<Params>(it->second, n, k, m_attrs.weightsNonTransposed);
+            zero_points = std::make_unique<Params>(it->second, n, k);
         }
         size_t rows = 1;
         const auto& source_dims = memory.at(ARG_SRC)->getShape().getStaticDims();
@@ -196,42 +173,66 @@ private:
                                      MemoryDescUtils::convertToDnnlMemoryDesc(zero_points->memory->getDescPtr()))
                          : "/no_zp");
         auto create_weights = [&]() -> MemoryPtr {
-            auto result = std::make_shared<Memory>(m_context->getEngine(), m_primitive->weightsDesc());
-            auto* output = result->getDataAs<ov::float16>();
-            const auto* packed = quant->getDataAs<const uint8_t>();
-            const auto* signed_packed = quant->getDataAs<const int8_t>();
-            const size_t scale_group = k / scales.groups;
-            const size_t zero_group = zero_points ? k / zero_points->groups : k;
-            m_context->getCpuParallel()->parallel_for(n, [&](size_t row) {
-                for (size_t channel = 0; channel < k;) {
-                    const float scale = scales.at(row, channel, n, k);
-                    const float zero = zero_points ? zero_points->at(row, channel, n, k) : 0.F;
-                    OPENVINO_ASSERT(std::isfinite(scale) && std::isfinite(zero) && zero == std::trunc(zero));
-                    const float minimum = type == ov::element::i4 ? -8.F : (type == ov::element::i8 ? -128.F : 0.F);
-                    const float maximum =
-                        type == ov::element::i4
-                            ? 7.F
-                            : (type == ov::element::u4 ? 15.F : (type == ov::element::i8 ? 127.F : 255.F));
-                    OPENVINO_ASSERT(zero >= minimum && zero <= maximum);
-                    const size_t end =
-                        std::min((channel / scale_group + 1) * scale_group, (channel / zero_group + 1) * zero_group);
-                    for (; channel < end; ++channel) {
-                        const size_t index = m_attrs.weightsNonTransposed ? channel * n + row : row * k + channel;
-                        int value;
-                        if (type == ov::element::i4 || type == ov::element::u4) {
-                            value = (packed[index / 2] >> (4 * (index % 2))) & 15;
-                            if (type == ov::element::i4 && value >= 8) {
-                                value -= 16;
-                            }
-                        } else {
-                            value = type == ov::element::i8 ? signed_packed[index] : packed[index];
-                        }
-                        // The integer subtraction is exact in FP16; round the
-                        // scaled weight before oneDNN's FP32 accumulation.
-                        output[row * k + channel] = ov::float16((static_cast<float>(value) - zero) * scale);
-                    }
+            auto normalize = [&](const MemoryPtr& parameter, ov::element::Type precision) -> MemoryPtr {
+                if (parameter->getPrecision() == precision) {
+                    return parameter;
                 }
-            });
+                auto normalized = std::make_shared<Memory>(m_context->getEngine(),
+                                                           parameter->getDescPtr()->cloneWithNewPrecision(precision));
+                node::Reorder::reorderData(*parameter,
+                                           *normalized,
+                                           m_context->getRuntimeCache(),
+                                           m_context->getThreadPool());
+                return normalized;
+            };
+            const bool kn = m_attrs.weightsNonTransposed;
+            auto group_sizes = [kn, n, k](const Params& parameters) -> dnnl::memory::dims {
+                const auto channel_size = static_cast<int64_t>(n / parameters.channels);
+                const auto group_size = static_cast<int64_t>(k / parameters.groups);
+                return kn ? dnnl::memory::dims{group_size, channel_size} : dnnl::memory::dims{channel_size, group_size};
+            };
+            auto parameter_view = [this, kn](const Params& parameters, const MemoryPtr& memory) {
+                const auto channels = static_cast<int64_t>(parameters.channels);
+                const auto groups = static_cast<int64_t>(parameters.groups);
+                const auto dimensions =
+                    kn ? dnnl::memory::dims{groups, channels} : dnnl::memory::dims{channels, groups};
+                const auto precision = DnnlExtensionUtils::ElementTypeToDataType(memory->getPrecision());
+                return dnnl::memory({dimensions, precision, dnnl::memory::format_tag::ab},
+                                    m_context->getEngine(),
+                                    memory->getData());
+            };
+            const dnnl::memory::dims dimensions =
+                kn ? dnnl::memory::dims{static_cast<int64_t>(k), static_cast<int64_t>(n)}
+                   : dnnl::memory::dims{static_cast<int64_t>(n), static_cast<int64_t>(k)};
+            const dnnl::memory::desc source_desc(dimensions,
+                                                 DnnlExtensionUtils::ElementTypeToDataType(type),
+                                                 dnnl::memory::format_tag::ab);
+            const dnnl::memory::desc destination_desc(dimensions,
+                                                      dnnl::memory::data_type::f16,
+                                                      kn ? dnnl::memory::format_tag::ba : dnnl::memory::format_tag::ab);
+            dnnl::primitive_attr attributes;
+            attributes.set_scales(DNNL_ARG_SRC, 3, group_sizes(scales), dnnl::memory::data_type::f32);
+            auto scale_memory = normalize(scales.memory, ov::element::f32);
+            MemoryPtr zero_memory;
+            auto result = std::make_shared<Memory>(m_context->getEngine(), m_primitive->weightsDesc());
+            dnnl_primitive_args arguments{
+                {DNNL_ARG_FROM, dnnl::memory(source_desc, m_context->getEngine(), quant->getData())},
+                {DNNL_ARG_TO, dnnl::memory(destination_desc, m_context->getEngine(), result->getData())},
+                {DNNL_ARG_ATTR_SCALES | DNNL_ARG_SRC, parameter_view(scales, scale_memory)}};
+            if (zero_points) {
+                zero_memory = normalize(zero_points->memory, ov::element::i32);
+                attributes.set_zero_points(DNNL_ARG_SRC, 3, group_sizes(*zero_points), dnnl::memory::data_type::s32);
+                arguments[DNNL_ARG_ATTR_ZERO_POINTS | DNNL_ARG_SRC] = parameter_view(*zero_points, zero_memory);
+            }
+            const dnnl::reorder::primitive_desc descriptor(m_context->getEngine(),
+                                                           source_desc,
+                                                           m_context->getEngine(),
+                                                           destination_desc,
+                                                           attributes);
+            auto stream = make_stream(m_context->getEngine(), m_context->getThreadPool());
+            // Existing grouped reorder performs dequantization and the final FP16 store.
+            dnnl::reorder(descriptor).execute(stream, arguments);
+            stream.wait();
             return result;
         };
         // One model-owned FP16 copy is shared by streams and both execution

@@ -67,13 +67,13 @@ INSTANTIATE_TEST_SUITE_P(smoke_PagedAttnSharedKVCache,
                          PagedAttnVSSDPATest,
                          ::testing::Combine(::testing::Values(ElementType::f32, ElementType::bf16),
                                             ::testing::ValuesIn(inputShapeAndReorders),
-                                            ::testing::Values(false),   // extendBlockIndices
-                                            ::testing::Values(false),   // enableXattn
-                                            ::testing::Values(false),   // sinkInput
-                                            ::testing::Values(0),       // slidingWindow
+                                            ::testing::Values(false),  // extendBlockIndices
+                                            ::testing::Values(false),  // enableXattn
+                                            ::testing::Values(false),  // sinkInput
+                                            ::testing::Values(0),      // slidingWindow
                                             ::testing::Values(ov::AnyMap{
                                                 {ov::intel_cpu::enable_sage_attn.name(), false}}),
-                                            ::testing::Values(true)),   // addSharedReader
+                                            ::testing::Values(true)),  // addSharedReader
                          PagedAttnTestBase::getTestCaseName);
 
 const std::vector<InputShapes> inputShapes = {  // greedy search
@@ -341,6 +341,64 @@ INSTANTIATE_TEST_SUITE_P(
                                      {ov::hint::kv_cache_precision.name(), ov::element::u4},
                                      {ov::inference_num_threads.name(), 8}}),
         ::testing::Values(false)),
+    PagedAttnTestBase::getTestCaseName);
+
+class PagedAttnFP16TypedKVTest : public PagedAttnFP16UnequalHeadTest {
+public:
+    void SetUp() override {
+        if (!ov::with_cpu_x86_avx512_core_fp16() || ov::with_cpu_x86_avx512_core_amx_fp16() ||
+            ov::get_number_of_cpu_cores() < 32) {
+            GTEST_SKIP() << "Typed FP16 KV storage requires AVX512-FP16 without AMX-FP16 and at least 32 CPU cores.";
+        }
+        PagedAttnFP16UnequalHeadTest::SetUp();
+    }
+};
+
+TEST_P(PagedAttnFP16TypedKVTest, ChunkedPrefillAndDecodeTransitions) {
+    SKIP_IF_CURRENT_TEST_IS_DISABLED();
+    prepare();
+    ASSERT_EQ(compiledModel.get_property(ov::inference_num_threads), 32);
+    init_kv_cache(4);
+    const auto actual = run_pa_inference(false, false);
+    ASSERT_EQ(actual.size(), expectedOutputs.size());
+    for (size_t i = 0; i < actual.size(); ++i) {
+        SCOPED_TRACE(i);
+        ov::test::utils::compare(expectedOutputs[i], actual[i], abs_threshold, rel_threshold);
+    }
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    smoke_PagedAttnFP16TypedKV,
+    PagedAttnFP16TypedKVTest,
+    ::testing::Combine(::testing::Values(ElementType::f16),
+                       // Populate full blocks, leave typed storage for decode, then re-enter it
+                       // with both partial and full blocks. The accumulated cache fits four blocks.
+                       ::testing::Values(InputShapes{{{-1, 1, 1, 128},
+                                                      {{32, 1, 1, 128},
+                                                       {32, 1, 1, 128},
+                                                       {1, 1, 1, 128},
+                                                       {2, 1, 1, 128},
+                                                       {33, 1, 1, 128},
+                                                       {1, 1, 1, 128},
+                                                       {27, 1, 1, 128}}},
+                                                     {{-1, 1, 1, 128},
+                                                      {{0, 1, 1, 128},
+                                                       {32, 1, 1, 128},
+                                                       {64, 1, 1, 128},
+                                                       {65, 1, 1, 128},
+                                                       {67, 1, 1, 128},
+                                                       {100, 1, 1, 128},
+                                                       {101, 1, 1, 128}}}}),
+                       ::testing::Values(false),
+                       ::testing::Values(false),
+                       ::testing::Values(false),
+                       ::testing::Values(0),
+                       ::testing::Values(ov::AnyMap{{ov::intel_cpu::enable_sage_attn.name(), false},
+                                                    {ov::hint::inference_precision.name(), ov::element::f16},
+                                                    {ov::hint::kv_cache_precision.name(), ov::element::f16},
+                                                    {ov::inference_num_threads.name(), 32},
+                                                    {ov::num_streams.name(), 1}}),
+                       ::testing::Values(false)),
     PagedAttnTestBase::getTestCaseName);
 
 TEST_P(PagedAttnCacheCollisionTest, CompareWithRefs) {

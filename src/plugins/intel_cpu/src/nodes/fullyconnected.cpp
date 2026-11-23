@@ -219,12 +219,11 @@ bool FullyConnected::isSupportedCompressedOperation([[maybe_unused]] const std::
             if (!any_of(op->get_input_element_type(WEIGHT_SCALES), ov::element::f16, ov::element::f32)) {
                 return false;
             }
-            // The oneDNN compressed FP16 route needs even INT4 rows and aligned K groups.
-            // Its primitive attributes require integer zero points in the quantized type's range.
+            // Grouped reorder requires plain weights and integer zero points in the quantized type's range.
             const auto& weights_shape = op->get_input_shape(WEIGHTS);
             if (weights_shape.size() != 2 || weights_shape[0] != OC || weights_shape[1] != IC || G == 0 ||
-                IC % G != 0 || (G > 1 && (IC / G) % 32 != 0) ||
-                (any_of(weightsPrecision, ov::element::i4, ov::element::u4) && IC % 2 != 0)) {
+                IC % G != 0 ||
+                (any_of(weightsPrecision, ov::element::i4, ov::element::u4) && OC % 2 != 0 && IC % 2 != 0)) {
                 return false;
             }
             auto parameterGroups = [&](size_t port) -> size_t {
@@ -232,13 +231,12 @@ bool FullyConnected::isSupportedCompressedOperation([[maybe_unused]] const std::
                 if (shape.size() == 1 && shape[0] == 1) {
                     return 1;
                 }
-                if (shape.size() != 2 && !(shape.size() == 3 && shape[0] == 1)) {
+                if (shape.size() != 2 && (shape.size() != 3 || shape[0] != 1)) {
                     return 0;
                 }
                 const auto channels = shape[shape.size() - 2];
                 const auto groups = shape.back();
-                if ((channels != 1 && channels != OC) || groups == 0 || IC % groups != 0 ||
-                    (groups > 1 && (IC / groups) % 32 != 0)) {
+                if ((channels != 1 && channels != OC) || groups == 0 || IC % groups != 0) {
                     return 0;
                 }
                 return groups;
@@ -269,21 +267,24 @@ bool FullyConnected::isSupportedCompressedOperation([[maybe_unused]] const std::
                     return false;
                 }
                 const auto zeroPointGroups = parameterGroups(WEIGHT_ZERO_POINTS);
-                if (zeroPointGroups == 0 ||
-                    (scaleGroups > 1 && zeroPointGroups > 1 && scaleGroups != zeroPointGroups)) {
+                if (zeroPointGroups == 0) {
                     return false;
                 }
                 const auto zero_points = ov::util::get_constant_from_source(op->input_value(WEIGHT_ZERO_POINTS));
                 if (!zero_points) {
                     return false;
                 }
-                const float minimum = weightsPrecision == ov::element::i4   ? -8.F
-                                      : weightsPrecision == ov::element::i8 ? -128.F
-                                                                            : 0.F;
-                const float maximum = weightsPrecision == ov::element::i4   ? 7.F
-                                      : weightsPrecision == ov::element::u4 ? 15.F
-                                      : weightsPrecision == ov::element::i8 ? 127.F
-                                                                            : 255.F;
+                float minimum = 0.F;
+                float maximum = 255.F;
+                if (weightsPrecision == ov::element::i4) {
+                    minimum = -8.F;
+                    maximum = 7.F;
+                } else if (weightsPrecision == ov::element::u4) {
+                    maximum = 15.F;
+                } else if (weightsPrecision == ov::element::i8) {
+                    minimum = -128.F;
+                    maximum = 127.F;
+                }
                 for (const float value : zero_points->cast_vector<float>()) {
                     if (!std::isfinite(value) || value != std::trunc(value) || value < minimum || value > maximum) {
                         return false;
@@ -822,32 +823,31 @@ void FullyConnected::needSplitMemoryForTensorParallel() {
             it->second = split_horizontal(context->getEngine(), it->second, 0, tp_cfg.w_rank, tp_cfg.w_size);
         }
 
-        if (auto it = memory.find(ARG_WEI | ARG_ATTR_SCALES); it != memory.end()) {
-            auto scale_mem = std::const_pointer_cast<IMemory>(it->second);
-            it->second = attrs.weightsNonTransposed
-                             ? split_vertical(context->getEngine(),
-                                              scale_mem,
-                                              0,
-                                              tp_cfg.w_rank,
-                                              tp_cfg.w_size,
-                                              context->getCpuParallel())
-                             : split_horizontal(context->getEngine(), scale_mem, 0, tp_cfg.w_rank, tp_cfg.w_size);
-        }
-
-        if (auto it = memory.find(ARG_WEI | ARG_ATTR_ZERO_POINTS); it != memory.end()) {
-            auto zeropoint_mem = std::const_pointer_cast<IMemory>(it->second);
-            auto element_num = zeropoint_mem->getSize() / zeropoint_mem->getPrecision().size();
-            if (element_num != 1) {
-                it->second =
-                    attrs.weightsNonTransposed
-                        ? split_vertical(context->getEngine(),
-                                         zeropoint_mem,
-                                         0,
-                                         tp_cfg.w_rank,
-                                         tp_cfg.w_size,
-                                         context->getCpuParallel())
-                        : split_horizontal(context->getEngine(), zeropoint_mem, 0, tp_cfg.w_rank, tp_cfg.w_size);
+        auto split_decompression_parameter = [&](const MemoryPtr& parameter) -> MemoryPtr {
+            const auto& dims = parameter->getShape().getStaticDims();
+            if (dims.empty()) {
+                return parameter;
             }
+            const size_t channel_axis = dims.size() > 1 ? dims.size() - 2 : 0;
+            // Scalars and [1, G] parameters broadcast over N and are shared by all ranks.
+            if (dims[channel_axis] == 1) {
+                return parameter;
+            }
+            const auto dim = static_cast<int>(channel_axis);
+            return attrs.weightsNonTransposed
+                       ? split_vertical(context->getEngine(),
+                                        parameter,
+                                        dim,
+                                        tp_cfg.w_rank,
+                                        tp_cfg.w_size,
+                                        context->getCpuParallel())
+                       : split_horizontal(context->getEngine(), parameter, dim, tp_cfg.w_rank, tp_cfg.w_size);
+        };
+        if (auto it = memory.find(ARG_WEI | ARG_ATTR_SCALES); it != memory.end()) {
+            it->second = split_decompression_parameter(it->second);
+        }
+        if (auto it = memory.find(ARG_WEI | ARG_ATTR_ZERO_POINTS); it != memory.end()) {
+            it->second = split_decompression_parameter(it->second);
         }
     }
 }

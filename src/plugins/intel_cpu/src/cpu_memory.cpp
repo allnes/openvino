@@ -734,6 +734,35 @@ MemoryPtr split_vertical(const dnnl::engine& eng,
     if (!need_fill) {
         return ptr;
     }
+    if (any_of(prec, ov::element::u4, ov::element::i4)) {
+        const auto* packed_src = static_cast<const uint8_t*>(src->getData());
+        auto* packed_dst = static_cast<uint8_t*>(ptr->getData());
+        const size_t src_columns = dims[dim];
+        const size_t dst_columns = new_dims[dim];
+        const size_t column_offset = static_cast<size_t>(w_rank) * splited_dim_vec[0];
+        const size_t rows = shape.getElementsCount() / src_columns;
+        if (src_columns % 2 == 0 && dst_columns % 2 == 0 && column_offset % 2 == 0) {
+            cpu_parallel->parallel_for(rows, [&](size_t row) {
+                cpu_parallel_memcpy(packed_dst + row * (dst_columns / 2),
+                                    packed_src + (row * src_columns + column_offset) / 2,
+                                    dst_columns / 2);
+            });
+        } else {
+            const size_t elements = ptr->getShape().getElementsCount();
+            // Adjacent odd-width rows share a byte, so each worker owns complete destination bytes.
+            cpu_parallel->parallel_for(div_up(elements, size_t{2}), [&](size_t byte) {
+                unsigned int value = 0;
+                for (size_t half = 0; half < 2 && byte * 2 + half < elements; ++half) {
+                    const size_t element = byte * 2 + half;
+                    const size_t source = (element / dst_columns) * src_columns + column_offset + element % dst_columns;
+                    const auto nibble = (packed_src[source / 2] >> (4 * (source % 2))) & 15U;
+                    value |= nibble << (4 * half);
+                }
+                packed_dst[byte] = static_cast<uint8_t>(value);
+            });
+        }
+        return ptr;
+    }
     // copy
     auto* srcPtr = static_cast<uint8_t*>(src->getData());
     auto* dstPtr = static_cast<uint8_t*>(ptr->getData());
@@ -746,10 +775,6 @@ MemoryPtr split_vertical(const dnnl::engine& eng,
     // bytes of selected dim.
     auto strideSize = static_cast<size_t>(splited_dim_vec[0] * element_size);
     auto copySize = static_cast<size_t>(splited_dim_vec[w_rank] * element_size);
-    if (any_of(prec, ov::element::u4, ov::element::i4)) {
-        strideSize /= 2;
-        copySize /= 2;
-    }
     cpu_parallel->parallel_for(step, [&](size_t i) {
         size_t dst_offset = i * copySize;
         size_t src_offset = i * splited_size + w_rank * strideSize;

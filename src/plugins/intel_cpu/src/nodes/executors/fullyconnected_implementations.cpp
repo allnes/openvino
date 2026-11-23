@@ -215,6 +215,20 @@ struct CreateOptimalConfigDefault {
     }
 };
 
+#if defined(OV_CPU_WITH_DNNL)
+static ExecutorPtr create_fp16_compressed_fc([[maybe_unused]] const FCAttrs& attrs,
+                                             [[maybe_unused]] const MemoryArgs& memory,
+                                             [[maybe_unused]] const ExecutorContext::CPtr& context) {
+#    if defined(OPENVINO_ARCH_X86_64)
+    if (memory.at(ARG_SRC)->getPrecision() == f16 && any_of(memory.at(ARG_WEI)->getPrecision(), i4, u4, i8, u8) &&
+        hasFp16WeightsDecompressionSupport() && attrs.constantWeights && !attrs.sparseWeights) {
+        return std::make_shared<fp16_compressed_fc::Fp16CompressedFCExecutor>(attrs, context);
+    }
+#    endif
+    return nullptr;
+}
+#endif
+
 // to keep OV_CPU_INSTANCE macros aligned
 // clang-format off
 template <>
@@ -475,13 +489,9 @@ const std::vector<ExecutorImplementation<FCAttrs>>& getImplementations() {
                     attrs.postOps
                 };
 
-#if defined(OPENVINO_ARCH_X86_64)
-                if (memory.at(ARG_SRC)->getPrecision() == f16 &&
-                    any_of(memory.at(ARG_WEI)->getPrecision(), i4, u4, i8, u8) &&
-                    hasFp16WeightsDecompressionSupport() && attrs.constantWeights && !attrs.sparseWeights) {
-                    return std::make_shared<fp16_compressed_fc::Fp16CompressedFCExecutor>(attrs, context);
+                if (auto executor = create_fp16_compressed_fc(attrs, memory, context)) {
+                    return executor;
                 }
-#endif
                 return std::make_shared<
                     DnnlExecutor<DnnlMatMulPrimitive, MatMulAttrs, DnnlShapeAgnosticData,
                                  DefaultInstantiator<DnnlMatMulPrimitive, MatMulAttrs, DnnlShapeAgnosticData>>>(

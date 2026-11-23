@@ -41,16 +41,20 @@ void check_fc(ov::element::Type weight_type,
               bool oversized_zero_point = false,
               int streams = 1,
               float scale = 0.0625F,
-              DecompressionCase test_case = DecompressionCase::Grouped) {
+              DecompressionCase test_case = DecompressionCase::Grouped,
+              size_t group_override = 0,
+              size_t n = 17) {
     using namespace ov::opset13;
-    constexpr size_t n = 17;
     const bool grouped_kn = test_case == DecompressionCase::GroupedWeightsKN;
     const bool kn_layout = test_case == DecompressionCase::RoundedWeightsKN || grouped_kn;
     const bool rounded_weights =
         test_case == DecompressionCase::RoundedWeights || test_case == DecompressionCase::FusedRelu ||
         test_case == DecompressionCase::RoundedWeightsKN || test_case == DecompressionCase::Rank3RoundedWeights ||
         test_case == DecompressionCase::BatchedRank3RoundedWeights || test_case == DecompressionCase::FusedBias;
-    const size_t group = rounded_weights ? k : (k == 33 ? 33 : 32);
+    size_t group = group_override;
+    if (group == 0) {
+        group = rounded_weights || k == 33 ? k : 32;
+    }
     const size_t groups = k / group;
     const bool signed_weights = weight_type == ov::element::i4 || weight_type == ov::element::i8;
     std::vector<int32_t> values(n * k);
@@ -186,6 +190,26 @@ TEST(FP16CompressedFC, DynamicShapesKeepCompressedWeights) {
     }
     for (const auto type : {ov::element::i4, ov::element::u4, ov::element::i8, ov::element::u8}) {
         check_fc(type, 64, false, true);
+    }
+}
+
+TEST(FP16CompressedFC, UnalignedGroupsUseFp16Reorder) {
+    if (!hasFp16WeightsDecompressionSupport()) {
+        GTEST_SKIP();
+    }
+    for (const auto type : {ov::element::i4, ov::element::u4, ov::element::i8, ov::element::u8}) {
+        check_fc(type, 30, false, true, false, 1, 0.06931F, DecompressionCase::Grouped, 15);
+        check_fc(type, 30, false, true, false, 1, 0.06931F, DecompressionCase::GroupedWeightsKN, 15);
+    }
+}
+
+TEST(FP16CompressedFC, OddKWithEvenElementCountUsesFp16Reorder) {
+    if (!hasFp16WeightsDecompressionSupport()) {
+        GTEST_SKIP();
+    }
+    for (const auto type : {ov::element::i4, ov::element::u4, ov::element::i8, ov::element::u8}) {
+        check_fc(type, 33, false, true, false, 1, 0.06931F, DecompressionCase::Grouped, 33, 18);
+        check_fc(type, 33, false, true, false, 1, 0.06931F, DecompressionCase::GroupedWeightsKN, 33, 18);
     }
 }
 
