@@ -7,6 +7,8 @@
 #include "openvino/core/visibility.hpp"
 
 #if defined(OPENVINO_ARCH_X86_64)
+#    include <algorithm>
+#    include <cmath>
 #    include <cstddef>
 #    include <cstdint>
 #    include <memory>
@@ -43,7 +45,8 @@ void check_fc(ov::element::Type weight_type,
               float scale = 0.0625F,
               DecompressionCase test_case = DecompressionCase::Grouped,
               size_t group_override = 0,
-              size_t n = 17) {
+              size_t n = 17,
+              size_t dq_group = 0) {
     using namespace ov::opset13;
     const bool grouped_kn = test_case == DecompressionCase::GroupedWeightsKN;
     const bool kn_layout = test_case == DecompressionCase::RoundedWeightsKN || grouped_kn;
@@ -118,7 +121,7 @@ void check_fc(ov::element::Type weight_type,
     auto compiled = core.compile_model(model,
                                        "CPU",
                                        {ov::hint::inference_precision(ov::element::f16),
-                                        ov::hint::dynamic_quantization_group_size(32),
+                                        ov::hint::dynamic_quantization_group_size(dq_group),
                                         ov::inference_num_threads(2),
                                         ov::num_streams(streams)});
     std::vector<ov::InferRequest> requests;
@@ -193,6 +196,94 @@ TEST(FP16CompressedFC, DynamicShapesKeepCompressedWeights) {
     }
 }
 
+TEST(FP16CompressedFC, DynamicQuantizationMatchesFp32WithCompressedWeights) {
+    if (!hasFp16WeightsDecompressionSupport()) {
+        GTEST_SKIP();
+    }
+    using namespace ov::opset13;
+    constexpr size_t n = 17;
+    ov::Core core;
+    for (const auto type : {ov::element::i4, ov::element::u4, ov::element::i8, ov::element::u8}) {
+        for (const size_t k : {256U, 145U}) {
+            for (const bool fused : {false, true}) {
+                SCOPED_TRACE(type.to_string() + ":" + std::to_string(k) + ":" + std::to_string(fused));
+                const size_t group = k == 256 ? 128 : k;
+                const size_t groups = k / group;
+                const bool signed_weights = type == ov::element::i4 || type == ov::element::i8;
+                std::vector<int32_t> values(n * k);
+                for (size_t i = 0; i < values.size(); ++i) {
+                    values[i] = static_cast<int32_t>((i * 13 + i / k * 7) % 16) - (signed_weights ? 8 : 0);
+                }
+                auto weights = Constant::create(type, ov::Shape{n, groups, group}, values);
+                std::shared_ptr<ov::Node> dequantized = std::make_shared<Convert>(weights, ov::element::f16);
+                if (!signed_weights) {
+                    auto zero_points = Constant::create(type, ov::Shape{n, groups, 1}, {3});
+                    dequantized = std::make_shared<Subtract>(dequantized,
+                                                             std::make_shared<Convert>(zero_points, ov::element::f16));
+                }
+                std::vector<float> scales(n * groups);
+                for (size_t i = 0; i < scales.size(); ++i) {
+                    scales[i] = static_cast<float>(1 + i % 3) / 64.F;
+                }
+                dequantized =
+                    std::make_shared<Multiply>(dequantized,
+                                               Constant::create(ov::element::f16, ov::Shape{n, groups, 1}, scales));
+                auto flattened = std::make_shared<Reshape>(dequantized,
+                                                           Constant::create(ov::element::i64, ov::Shape{2}, {n, k}),
+                                                           false);
+                auto input_node =
+                    std::make_shared<Parameter>(ov::element::f32, ov::PartialShape{-1, static_cast<int64_t>(k)});
+                std::shared_ptr<ov::Node> result =
+                    std::make_shared<MatMul>(input_node,
+                                             std::make_shared<Convert>(flattened, ov::element::f32),
+                                             false,
+                                             true);
+                if (fused) {
+                    result = std::make_shared<Relu>(
+                        std::make_shared<Add>(result, Constant::create(ov::element::f32, ov::Shape{n}, {0.25F})));
+                }
+                auto model = std::make_shared<ov::Model>(ov::OutputVector{result}, ov::ParameterVector{input_node});
+                ov::AnyMap config{ov::hint::inference_precision(ov::element::f32),
+                                  ov::hint::dynamic_quantization_group_size(32),
+                                  ov::inference_num_threads(2),
+                                  ov::num_streams(1)};
+                auto reference = core.compile_model(model, "CPU", config).create_infer_request();
+                config[ov::hint::inference_precision.name()] = ov::element::f16;
+                auto compiled = core.compile_model(model, "CPU", config);
+                auto request = compiled.create_infer_request();
+                size_t fc_count = 0;
+                for (const auto& node : compiled.get_runtime_model()->get_ordered_ops()) {
+                    const auto& info = node->get_rt_info();
+                    const auto layer_type = info.find("layerType");
+                    if (layer_type == info.end() || layer_type->second.as<std::string>() != "FullyConnected") {
+                        continue;
+                    }
+                    ++fc_count;
+                    EXPECT_EQ(node->input_value(0).get_element_type(), ov::element::f16);
+                    EXPECT_TRUE(node->input_value(1).get_element_type().is_integral_number());
+                }
+                ASSERT_EQ(fc_count, 1U);
+                for (const size_t rows : {1U, 31U, 1U, 2U}) {
+                    ov::Tensor input(ov::element::f32, ov::Shape{rows, k});
+                    for (size_t i = 0; i < input.get_size(); ++i) {
+                        input.data<float>()[i] = static_cast<float>(static_cast<int>(i * 17 % 127) - 63) / 32.F;
+                    }
+                    reference.set_input_tensor(input);
+                    request.set_input_tensor(input);
+                    reference.infer();
+                    request.infer();
+                    const auto expected = reference.get_output_tensor();
+                    const auto actual = request.get_output_tensor();
+                    for (size_t i = 0; i < actual.get_size(); ++i) {
+                        const float value = expected.data<float>()[i];
+                        ASSERT_NEAR(actual.data<float>()[i], value, std::max(1.F, std::abs(value)) / 1024.F);
+                    }
+                }
+            }
+        }
+    }
+}
+
 TEST(FP16CompressedFC, UnalignedGroupsUseFp16Reorder) {
     if (!hasFp16WeightsDecompressionSupport()) {
         GTEST_SKIP();
@@ -222,6 +313,16 @@ TEST(FP16CompressedFC, UnsupportedDecompressionKeepsMaterializedFallback) {
     for (const auto type : {ov::element::i4, ov::element::u4}) {
         check_fc(type, 64, true, false);
         check_fc(type, 64, false, false, true);
+    }
+}
+
+TEST(FP16CompressedFC, UnsupportedDynamicQuantizationKeepsFp16Decompression) {
+    if (!hasFp16WeightsDecompressionSupport()) {
+        GTEST_SKIP();
+    }
+    for (const auto type : {ov::element::i4, ov::element::u4, ov::element::i8, ov::element::u8}) {
+        check_fc(type, 64, false, true, false, 1, 0.06931F, DecompressionCase::Grouped, 0, 17, 32);
+        check_fc(type, 33, false, true, false, 1, 0.06931F, DecompressionCase::Grouped, 11, 17, 32);
     }
 }
 
@@ -297,6 +398,7 @@ TEST(FP16CompressedFC, SharedSquareWeightsPreserveBothLayouts) {
     auto model = std::make_shared<ov::Model>(ov::OutputVector{nk, kn}, ov::ParameterVector{input_node});
     ov::Core core;
     const ov::AnyMap config{ov::hint::inference_precision(ov::element::f16),
+                            ov::hint::dynamic_quantization_group_size(0),
                             ov::inference_num_threads(2),
                             ov::num_streams(1)};
     auto request = core.compile_model(model, "CPU", config).create_infer_request();

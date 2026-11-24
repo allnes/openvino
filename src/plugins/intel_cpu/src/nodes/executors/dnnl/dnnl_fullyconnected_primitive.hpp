@@ -74,6 +74,11 @@ public:
                                             ov::element::Type weightsType,
                                             Config::ModelType modelType);
 
+    static bool useDynamicQuantizationImpl(size_t dqGroupSize,
+                                           const MemoryDescPtr& srcDesc,
+                                           const MemoryDescPtr& weightsDesc,
+                                           const MemoryArgs& memory);
+
     static DnnlMemoryDescPtr makeTransposedWeightDescriptor(const DnnlMemoryDescPtr& srcDesc,
                                                             const DnnlMemoryDescPtr& dstDesc,
                                                             const FCAttrs& attrs);

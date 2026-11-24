@@ -222,6 +222,12 @@ static ExecutorPtr create_fp16_compressed_fc([[maybe_unused]] const FCAttrs& att
 #    if defined(OPENVINO_ARCH_X86_64)
     if (memory.at(ARG_SRC)->getPrecision() == f16 && any_of(memory.at(ARG_WEI)->getPrecision(), i4, u4, i8, u8) &&
         hasFp16WeightsDecompressionSupport() && attrs.constantWeights && !attrs.sparseWeights) {
+        if (DnnlFCPrimitive::useDynamicQuantizationImpl(attrs.dynamicQuantizationGroupSize,
+                                                        memory.at(ARG_SRC)->getDescPtr(),
+                                                        memory.at(ARG_WEI)->getDescPtr(),
+                                                        memory)) {
+            return CreateDnnlDefault<DnnlFCPrimitive, FCAttrs>{false, true}(attrs, memory, context);
+        }
         return std::make_shared<fp16_compressed_fc::Fp16CompressedFCExecutor>(attrs, context);
     }
 #    endif

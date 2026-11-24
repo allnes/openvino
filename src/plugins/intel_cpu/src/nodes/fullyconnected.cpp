@@ -227,7 +227,7 @@ bool FullyConnected::isSupportedCompressedOperation([[maybe_unused]] const std::
             }
             auto parameterGroups = [&](size_t port) -> size_t {
                 const auto& shape = op->get_input_shape(port);
-                if (shape.size() == 1 && shape[0] == 1) {
+                if (shape.empty() || (shape.size() == 1 && shape[0] == 1)) {
                     return 1;
                 }
                 if (shape.size() != 2 && (shape.size() != 3 || shape[0] != 1)) {

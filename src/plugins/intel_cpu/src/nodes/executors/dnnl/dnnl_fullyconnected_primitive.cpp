@@ -41,6 +41,7 @@
 #include "utils/cpu_utils.hpp"
 #include "utils/debug_capabilities.h"
 #include "utils/general_utils.h"
+#include "utils/precision_support.h"
 
 namespace ov::intel_cpu {
 
@@ -141,6 +142,9 @@ DnnlMemoryDescPtr DnnlFCPrimitive::makeTransposedWeightDescriptor(const DnnlMemo
 bool DnnlFCPrimitive::useWeightsDecompressionImpl(const ov::element::Type inputType,
                                                   const ov::element::Type weightsType,
                                                   const ov::intel_cpu::Config::ModelType modelType) {
+    if (inputType == f16 && hasFp16WeightsDecompressionSupport() && any_of(weightsType, u8, i8, u4, i4)) {
+        return true;
+    }
     if (ov::with_cpu_x86_avx2()) {
         if (any_of(inputType, f32, bf16) && any_of(weightsType, u8, i8, nf4, u4, i4, f4e2m1, u2, u3)) {
             return true;
@@ -158,10 +162,10 @@ bool DnnlFCPrimitive::useWeightsDecompressionImpl(const ov::element::Type inputT
     return false;
 }
 
-static bool useDynamicQuantizationImpl(size_t dqGroupSize,
-                                       const MemoryDescPtr& srcDesc,
-                                       const MemoryDescPtr& weightsDesc,
-                                       const MemoryArgs& memory) {
+bool DnnlFCPrimitive::useDynamicQuantizationImpl(size_t dqGroupSize,
+                                                 const MemoryDescPtr& srcDesc,
+                                                 const MemoryDescPtr& weightsDesc,
+                                                 const MemoryArgs& memory) {
     if (dqGroupSize == 0) {
         return false;
     }
@@ -176,6 +180,10 @@ static bool useDynamicQuantizationImpl(size_t dqGroupSize,
         // On AMX-capable HW, AMX BF16 TMUL outperforms VNNI int8 dyn-quant for bf16 src.
         // Disable the bf16 dyn-quant entry here so the AMX BF16 path stays in use.
         if (ov::with_cpu_x86_avx512_core_amx()) {
+            return false;
+        }
+    } else if (srcPrecision == ov::element::f16) {
+        if (!hasFp16WeightsDecompressionSupport()) {
             return false;
         }
     } else if (srcPrecision == ov::element::f32) {
