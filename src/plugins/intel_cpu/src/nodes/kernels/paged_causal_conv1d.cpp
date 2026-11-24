@@ -27,6 +27,18 @@ namespace {
 
 constexpr size_t kChannelBlock = 64;
 
+int32_t state_flush_slot(int32_t prev_nums, int32_t seq_interval, int32_t t, int32_t seq_tokens, int32_t block_span) {
+    const int32_t cached_tokens = prev_nums + (t + 1);
+    const bool interval_hit = (seq_interval > 0) && ((cached_tokens % seq_interval) == 0);
+    if (interval_hit || t == seq_tokens - 1) {
+        const int32_t slot = (seq_interval > 0) ? (1 + (cached_tokens - 1) / seq_interval) : 1;
+        if (slot < block_span) {
+            return slot;
+        }
+    }
+    return -1;
+}
+
 // Flush state to conv_state_table when interval or last-token condition is met.
 // Called from the inner token loop of both ref and optimized kernels.
 template <typename StateType>
@@ -43,23 +55,122 @@ void maybe_flush_state(StateType* conv_state_table,
                        const size_t state_off,
                        const size_t h_count,
                        const size_t window) {
-    const int32_t cached_tokens = prev_nums + (t + 1);
-    const bool interval_hit = (seq_interval > 0) && ((cached_tokens % seq_interval) == 0);
-    const bool is_last_token = (t == seq_tokens - 1);
-    if (interval_hit || is_last_token) {
-        const int32_t slot = (seq_interval > 0) ? (1 + (cached_tokens - 1) / seq_interval) : 1;
-        if (slot < block_span) {
-            const int32_t physical_block = block_indices[blk_begin + slot];
-            const size_t write_count = h_count * window;
-            cvt_copy(conv_state_table + static_cast<size_t>(physical_block) * state_stride + state_off,
-                     local_state + state_off,
-                     /*m=*/size_t{1},
-                     /*n=*/write_count,
-                     /*src_stride=*/write_count,
-                     /*dst_stride=*/write_count);
-        }
+    const int32_t slot = state_flush_slot(prev_nums, seq_interval, t, seq_tokens, block_span);
+    if (slot >= 0) {
+        const int32_t physical_block = block_indices[blk_begin + slot];
+        const size_t write_count = h_count * window;
+        cvt_copy(conv_state_table + static_cast<size_t>(physical_block) * state_stride + state_off,
+                 local_state + state_off,
+                 /*m=*/size_t{1},
+                 /*n=*/write_count,
+                 /*src_stride=*/write_count,
+                 /*dst_stride=*/write_count);
     }
 }
+
+#if defined(HAVE_AVX2)
+// Keep each channel vector's causal window and weights in f32 registers across tokens.
+// Only cache flushes transpose the state back to the table's channel-major layout.
+template <size_t Taps, typename DataT, typename StateT>
+size_t conv1d_vector_sequence(const DataT* input_embeds,
+                              StateT* conv_state_table,
+                              const DataT* conv_weight,
+                              const DataT* conv_bias,
+                              bool has_bias,
+                              DataT* output_embeds,
+                              float* local_state,
+                              size_t hidden_size,
+                              size_t h_begin,
+                              size_t h_end,
+                              int32_t token_begin,
+                              int32_t seq_tokens,
+                              const int32_t* block_indices,
+                              int32_t blk_begin,
+                              int32_t block_span,
+                              int32_t prev_nums,
+                              int32_t seq_interval) {
+#    if defined(HAVE_AVX512F)
+    constexpr size_t step = vec_len_f32_avx512;
+    using Vec = __m512;
+    const Vec zero = _mm512_setzero_ps();
+    const auto load = [](const auto* ptr) {
+        return mm512_uni_loadu_ps(ptr);
+    };
+    const auto store = [](auto* ptr, Vec value) {
+        mm512_uni_storeu_ps(ptr, value);
+    };
+    const auto fmadd = [](Vec a, Vec b, Vec c) {
+        return _mm512_fmadd_ps(a, b, c);
+    };
+#    else
+    constexpr size_t step = vec_len_f32_avx2;
+    using Vec = __m256;
+    const Vec zero = _mm256_setzero_ps();
+    const auto load = [](const auto* ptr) {
+        return mm256_uni_loadu_ps(ptr);
+    };
+    const auto store = [](auto* ptr, Vec value) {
+        mm256_uni_storeu_ps(ptr, value);
+    };
+    const auto fmadd = [](Vec a, Vec b, Vec c) {
+        return _mm256_fmadd_ps(a, b, c);
+    };
+#    endif
+    size_t h = h_begin;
+    for (; h + step <= h_end; h += step) {
+        float weight_buf[Taps * step];
+        cvt_copy(weight_buf, conv_weight + h * Taps, size_t{1}, Taps * step, Taps * step, Taps * step);
+        float state_buf[Taps][step];
+        float transposed_weight[Taps][step];
+        for (size_t k = 0; k < Taps; k++) {
+            for (size_t i = 0; i < step; i++) {
+                state_buf[k][i] = local_state[(h + i) * Taps + k];
+                transposed_weight[k][i] = weight_buf[i * Taps + k];
+            }
+        }
+        Vec state[Taps];
+        Vec weight[Taps];
+        for (size_t k = 0; k < Taps; k++) {
+            state[k] = load(state_buf[k]);
+            weight[k] = load(transposed_weight[k]);
+        }
+        const Vec bias = has_bias ? load(conv_bias + h) : zero;
+        for (int32_t t = 0; t < seq_tokens; t++) {
+            for (size_t k = 0; k + 1 < Taps; k++) {
+                state[k] = state[k + 1];
+            }
+            const size_t token_off = (static_cast<size_t>(token_begin) + static_cast<size_t>(t)) * hidden_size + h;
+            state[Taps - 1] = load(input_embeds + token_off);
+            auto acc = bias;
+            for (size_t k = 0; k < Taps; k++) {
+                acc = fmadd(state[k], weight[k], acc);
+            }
+            store(output_embeds + token_off, acc);
+
+            const int32_t slot = state_flush_slot(prev_nums, seq_interval, t, seq_tokens, block_span);
+            if (slot >= 0) {
+                for (size_t k = 0; k < Taps; k++) {
+                    store(state_buf[k], state[k]);
+                }
+                for (size_t i = 0; i < step; i++) {
+                    for (size_t k = 0; k < Taps; k++) {
+                        local_state[(h + i) * Taps + k] = state_buf[k][i];
+                    }
+                }
+                const size_t write_count = step * Taps;
+                const size_t physical_block = static_cast<size_t>(block_indices[blk_begin + slot]);
+                cvt_copy(conv_state_table + physical_block * hidden_size * Taps + h * Taps,
+                         local_state + h * Taps,
+                         size_t{1},
+                         write_count,
+                         write_count,
+                         write_count);
+            }
+        }
+    }
+    return h;
+}
+#endif
 
 // Scalar conv1d computation for a channel range [h_begin, h_end).
 // Shifts state (over the full causal window), inserts new token, computes dot product with
@@ -334,6 +445,35 @@ void paged_causal_conv1d_optimized(const DataT* input_embeds,
                  /*src_stride=*/h_count * window,
                  /*dst_stride=*/h_count * window);
 
+        size_t scalar_begin = h_begin;
+        if (dilation == 1) {
+            const auto run_vector = [&](auto taps) {
+                return conv1d_vector_sequence<decltype(taps)::value>(input_embeds,
+                                                                     conv_state_table,
+                                                                     conv_weight,
+                                                                     conv_bias,
+                                                                     has_bias,
+                                                                     output_embeds,
+                                                                     thread_local_state,
+                                                                     hidden_size,
+                                                                     h_begin,
+                                                                     h_end,
+                                                                     token_begin,
+                                                                     seq_tokens,
+                                                                     block_indices,
+                                                                     blk_begin,
+                                                                     block_span,
+                                                                     prev_nums,
+                                                                     seq_interval);
+            };
+            scalar_begin = num_taps == 3 ? run_vector(std::integral_constant<size_t, 3>{})
+                                         : run_vector(std::integral_constant<size_t, 4>{});
+        }
+
+        if (scalar_begin == h_end) {
+            return;
+        }
+
         for (int32_t t = 0; t < seq_tokens; t++) {
             const size_t token_idx = static_cast<size_t>(token_begin) + static_cast<size_t>(t);
             const auto* token_ptr = input_embeds + token_idx * hidden_size;
@@ -341,7 +481,7 @@ void paged_causal_conv1d_optimized(const DataT* input_embeds,
 
             // SIMD-accelerated paths for num_taps 3 and 4.
             // Each path: shift state, gather into aligned buffers, vectorized MAC, scalar tail.
-            size_t h = h_begin;
+            size_t h = scalar_begin;
 
 #    if defined(HAVE_AVX512F)
             constexpr size_t simd_step = vec_len_f32_avx512;
@@ -414,8 +554,8 @@ void paged_causal_conv1d_optimized(const DataT* input_embeds,
                               t,
                               seq_tokens,
                               state_stride,
-                              state_off,
-                              h_count,
+                              scalar_begin * window,
+                              h_end - scalar_begin,
                               window);
         }
     });
