@@ -161,6 +161,7 @@
 #include "transformations/cpu_opset/common/pass/disable_bf16_comp_cumsum_sin_gen.hpp"
 #include "transformations/cpu_opset/common/pass/insert_convert_after_extension.hpp"
 #include "transformations/cpu_opset/common/pass/move_fc_scales_before_split.hpp"
+#include "transformations/cpu_opset/common/pass/move_fp16_convert_after_view.hpp"
 #include "transformations/cpu_opset/common/pass/ngram_fusion.hpp"
 #include "transformations/cpu_opset/common/pass/permute_slice_n_interpolation.hpp"
 #include "transformations/cpu_opset/common/pass/stateful_sdpa_fusion.hpp"
@@ -695,6 +696,7 @@ void Transformations::PreLpt(const std::vector<ov::element::Type>& defaultPrecis
     };
     CPU_REGISTER_PASS_COMMON(manager, ov::pass::ConvertPagedAttnInputs, cacheConfig, update_paged_attention_shape_func);
     CPU_REGISTER_PASS_COMMON(manager, SwapConvertTranspose);
+    CPU_REGISTER_PASS_X64(manager, MoveFP16ConvertAfterView);
     CPU_REGISTER_PASS_X64(manager, ConvertToInteraction);
     CPU_REGISTER_PASS_X64(manager, ConvertInteractionInt8);
     CPU_REGISTER_PASS_X64(manager, ov::pass::StridedSliceReshapeConcatFusion);
