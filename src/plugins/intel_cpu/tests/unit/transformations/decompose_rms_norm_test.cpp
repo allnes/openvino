@@ -28,8 +28,7 @@ using namespace ov::op;
 namespace {
 constexpr double kEpsilon = 1e-5;
 
-using DecomposeRMSNormParams = std::tuple<element::Type,  // data precision, the RMS output is f32
-                                          bool>;          // with gamma
+using DecomposeRMSNormParams = std::tuple<element::Type, element::Type, bool>;
 
 std::shared_ptr<Node> make_decomposed_rms(const Output<Node>& data, const std::shared_ptr<Node>& gamma) {
     const auto prc = data.get_element_type();
@@ -44,14 +43,14 @@ std::shared_ptr<Node> make_decomposed_rms(const Output<Node>& data, const std::s
 class DecomposeRMSNormTest : public TransformationTestsF, public testing::WithParamInterface<DecomposeRMSNormParams> {
 public:
     static std::string getTestCaseName(const testing::TestParamInfo<DecomposeRMSNormParams>& obj) {
-        const auto& [data_prc, with_gamma] = obj.param;
-        return "data=" + data_prc.get_type_name() + (with_gamma ? "_gamma" : "_no_gamma");
+        const auto& [data_prc, output_prc, with_gamma] = obj.param;
+        return "data=" + data_prc.get_type_name() + "_output=" + output_prc.get_type_name() +
+               (with_gamma ? "_gamma" : "_no_gamma");
     }
 };
 
-// RMS outputs f32 for f16 data too, so the decomposition must run in the output type
-TEST_P(DecomposeRMSNormTest, ComputesInOutputPrecision) {
-    const auto& [data_prc, with_gamma] = GetParam();
+TEST_P(DecomposeRMSNormTest, AccumulatesInFP32BeforeOutputConversion) {
+    const auto& [data_prc, output_prc, with_gamma] = GetParam();
     comparator.enable(FunctionsComparator::CmpValues::CONST_VALUES);
     {
         auto data = std::make_shared<v0::Parameter>(data_prc, PartialShape{-1, -1, 8});
@@ -59,8 +58,8 @@ TEST_P(DecomposeRMSNormTest, ComputesInOutputPrecision) {
                        ? std::make_shared<ov::op::internal::RMS>(data,
                                                                  v0::Constant::create(element::f32, Shape{8}, {1.5F}),
                                                                  kEpsilon,
-                                                                 element::f32)
-                       : std::make_shared<ov::op::internal::RMS>(data, kEpsilon, element::f32);
+                                                                 output_prc)
+                       : std::make_shared<ov::op::internal::RMS>(data, kEpsilon, output_prc);
         model = std::make_shared<Model>(OutputVector{rms}, ParameterVector{data});
         manager.register_pass<ov::intel_cpu::DecomposeRMSNorm>();
     }
@@ -71,12 +70,18 @@ TEST_P(DecomposeRMSNormTest, ComputesInOutputPrecision) {
             input = std::make_shared<v0::Convert>(data, element::f32);
         }
         auto gamma = with_gamma ? v0::Constant::create(element::f32, Shape{8}, {1.5F}) : nullptr;
-        model_ref = std::make_shared<Model>(OutputVector{make_decomposed_rms(input, gamma)}, ParameterVector{data});
+        auto result = make_decomposed_rms(input, gamma);
+        if (output_prc != element::f32) {
+            result = std::make_shared<v0::Convert>(result, output_prc);
+        }
+        model_ref = std::make_shared<Model>(OutputVector{result}, ParameterVector{data});
     }
 }
 
 INSTANTIATE_TEST_SUITE_P(TransformationTests,
                          DecomposeRMSNormTest,
-                         testing::Combine(testing::Values(element::f16, element::f32), testing::Bool()),
+                         testing::Combine(testing::Values(element::f16, element::f32, element::bf16),
+                                          testing::Values(element::f16, element::f32, element::bf16),
+                                          testing::Bool()),
                          DecomposeRMSNormTest::getTestCaseName);
 }  // namespace

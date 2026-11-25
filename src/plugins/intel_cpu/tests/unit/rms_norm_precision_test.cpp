@@ -22,6 +22,10 @@
 #include "transformations/rt_info/disable_precision_conversion.hpp"
 #include "utils/precision_support.h"
 
+#if defined(OPENVINO_ARCH_X86_64)
+#    include "cpu/x64/cpu_isa_traits.hpp"
+#endif
+
 namespace ov::intel_cpu::test {
 namespace {
 struct RMSPrecisionCase {
@@ -87,7 +91,8 @@ TEST_P(RMSNormPrecision, PreservesIndependentOutputPrecision) {
     for (const size_t rows : {1U, 5U, 2U}) {
         ov::Tensor tensor(p.source, ov::Shape{1, rows, p.channels});
         for (size_t i = 0; i < tensor.get_size(); ++i) {
-            const float value = static_cast<float>(static_cast<int>(i * 17 % 31) - 15) * 0.0625F;
+            // Large inputs expose overflow if the fallback squares in FP16.
+            const float value = static_cast<float>(static_cast<int>(i * 17 % 31) - 15) * (rows == 1 ? 1024.F : 0.0625F);
             if (p.source == ov::element::f16) {
                 tensor.data<ov::float16>()[i] = ov::float16(value);
             } else if (p.source == ov::element::bf16) {
@@ -127,7 +132,11 @@ TEST_P(RMSNormPrecision, PreservesIndependentOutputPrecision) {
                 EXPECT_EQ(node->get_output_element_type(0), p.destination);
             }
         }
-        EXPECT_EQ(count, 1U);
+#if defined(OPENVINO_ARCH_X86_64)
+        EXPECT_EQ(count, dnnl::impl::cpu::x64::mayiuse(dnnl::impl::cpu::x64::avx2) ? 1U : 0U);
+#else
+        EXPECT_EQ(count, 0U);
+#endif
     }
 }
 

@@ -20,6 +20,7 @@
 #    include "cpu_types.h"
 #    include "graph.h"
 #    include "graph_context.h"
+#    include "nodes/executors/jit/eltwise.h"
 #endif
 
 namespace ov::intel_cpu::test {
@@ -181,6 +182,26 @@ TEST(FP16EltwiseConvert, PreservesConvertsBelowAVX2) {
     for (size_t i = 0; i < tensor.get_size(); ++i) {
         const float value = tensor.data<const ov::float16>()[i];
         EXPECT_EQ(request.get_output_tensor().data<const ov::float16>()[i], ov::float16(0.0006F - value));
+    }
+#else
+    GTEST_SKIP();
+#endif
+}
+
+TEST(EltwiseReducedPrecisionFallback, RejectsUnsupportedLoadAndStorePrecisions) {
+#if defined(OPENVINO_ARCH_X86_64)
+    if (dnnl::impl::cpu::x64::mayiuse(dnnl::impl::cpu::x64::avx512_core) ||
+        dnnl::impl::cpu::x64::mayiuse(dnnl::impl::cpu::x64::avx2_vnni_2)) {
+        GTEST_SKIP();
+    }
+    EltwiseAttrs attrs;
+    attrs.data.algo = Algorithm::EltwiseSubtract;
+    EXPECT_FALSE(EltwiseJitExecutor::supports(attrs, 2, {ov::element::f32, ov::element::f32}, {ov::element::bf16}));
+    if (!dnnl::impl::cpu::x64::mayiuse(dnnl::impl::cpu::x64::avx2)) {
+        for (const auto precision : {ov::element::f16, ov::element::bf16}) {
+            EXPECT_FALSE(EltwiseJitExecutor::supports(attrs, 2, {precision, ov::element::f32}, {ov::element::f32}));
+        }
+        EXPECT_FALSE(EltwiseJitExecutor::supports(attrs, 2, {ov::element::f32, ov::element::f32}, {ov::element::f16}));
     }
 #else
     GTEST_SKIP();

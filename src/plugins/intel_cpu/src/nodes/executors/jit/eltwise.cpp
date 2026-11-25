@@ -400,11 +400,17 @@ bool EltwiseJitExecutor::supports(const EltwiseAttrs& attrs,
                Algorithm::EltwiseLog,
                Algorithm::EltwiseBitwiseLeftShift,
                Algorithm::EltwiseBitwiseRightShift)) {
-        return false;  // NOLINT(readability-simplify-boolean-expr) since no further checks on x64 are required
+        return false;
     }
 
 #if defined(OPENVINO_ARCH_X86_64)
-    return true;
+    if (!mayiuse(dnnl::impl::cpu::x64::avx2) &&
+        (contains(input_precisions, ov::element::f16) || contains(input_precisions, ov::element::bf16) ||
+         contains(output_precisions, ov::element::f16))) {
+        return false;
+    }
+    return !contains(output_precisions, ov::element::bf16) || mayiuse(dnnl::impl::cpu::x64::avx512_core) ||
+           mayiuse(dnnl::impl::cpu::x64::avx2_vnni_2);
 
 #elif defined(OPENVINO_ARCH_ARM64)
     std::vector<ov::element::Type> supported_input_precisions = std::vector<ov::element::Type>{ov::element::f16,

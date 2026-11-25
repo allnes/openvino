@@ -26,6 +26,7 @@
 #include "openvino/pass/pattern/op/wrap_type.hpp"
 #include "openvino/util/pp.hpp"
 #include "ov_ops/rms.hpp"
+#include "transformations/rt_info/disable_precision_conversion.hpp"
 
 namespace ov::intel_cpu {
 
@@ -40,36 +41,44 @@ DecomposeRMSNorm::DecomposeRMSNorm() {
         if (node == nullptr || transformation_callback(node)) {
             return false;
         }
-        // RMS may output another type than its input (e.g. f16 data with f32 gamma -> f32), so compute in it
         const auto output_precision = node->get_output_element_type(0);
         ov::NodeVector new_nodes;
-        auto to_output_type = [&](const ov::Output<ov::Node>& input) -> ov::Output<ov::Node> {
-            if (input.get_element_type() == output_precision) {
+        auto to_fp32 = [&](const ov::Output<ov::Node>& input) -> ov::Output<ov::Node> {
+            if (input.get_element_type() == ov::element::f32) {
                 return input;
             }
-            new_nodes.push_back(std::make_shared<ov::op::v0::Convert>(input, output_precision));
+            new_nodes.push_back(std::make_shared<ov::op::v0::Convert>(input, ov::element::f32));
             return new_nodes.back();
         };
-        auto data = to_output_type(node->input_value(0));
+        auto data = to_fp32(node->input_value(0));
 
-        auto power_const = ov::op::v0::Constant::create(output_precision, {}, std::vector<float>{2.F});
+        auto power_const = ov::op::v0::Constant::create(ov::element::f32, {}, std::vector<float>{2.F});
         auto power = std::make_shared<ov::op::v1::Power>(data, power_const);
         auto mean_axes = ov::op::v0::Constant::create(ov::element::i32, ov::Shape{1}, {-1});
         auto mean = std::make_shared<ov::op::v1::ReduceMean>(power, mean_axes, true);
-        auto eps = ov::op::v0::Constant::create(output_precision, {}, {node->get_epsilon()});
+        auto eps = ov::op::v0::Constant::create(ov::element::f32, {}, {node->get_epsilon()});
         auto add_eps = std::make_shared<ov::op::v1::Add>(mean, eps);
         auto sqrt = std::make_shared<ov::op::v0::Sqrt>(add_eps);
-        auto div_const = ov::op::v0::Constant::create(output_precision, {}, {-1});
+        auto div_const = ov::op::v0::Constant::create(ov::element::f32, {}, {-1});
         auto div = std::make_shared<ov::op::v1::Power>(sqrt, div_const);
         std::shared_ptr<ov::Node> result = std::make_shared<ov::op::v1::Multiply>(data, div);
         if (node->get_input_size() > 1) {
             new_nodes.push_back(result);
-            result = std::make_shared<ov::op::v1::Multiply>(to_output_type(node->input_value(1)), result);
+            result = std::make_shared<ov::op::v1::Multiply>(to_fp32(node->input_value(1)), result);
         }
         new_nodes.insert(new_nodes.end(), {power, mean, add_eps, sqrt, div, result});
 
-        result->set_friendly_name(node->get_friendly_name());
         ov::copy_runtime_info(node, new_nodes);
+        // Match the RMS kernel: normalize and apply gamma in FP32 before rounding the output.
+        for (const auto& new_node : new_nodes) {
+            ov::disable_conversion(new_node, ov::element::f16);
+            ov::disable_conversion(new_node, ov::element::f32, ov::element::bf16);
+        }
+        if (output_precision != ov::element::f32) {
+            result = std::make_shared<ov::op::v0::Convert>(result, output_precision);
+            ov::copy_runtime_info(node, result);
+        }
+        result->set_friendly_name(node->get_friendly_name());
         ov::replace_node(node, result);
         return true;
     };

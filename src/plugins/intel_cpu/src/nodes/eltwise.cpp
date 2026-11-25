@@ -21,10 +21,6 @@
 #include <unordered_map>
 #include <vector>
 
-#if defined(OPENVINO_ARCH_X86_64)
-#    include "cpu/x64/cpu_isa_traits.hpp"
-#endif
-
 #include "config.h"
 #include "cpu_memory.h"
 #include "cpu_types.h"
@@ -1155,8 +1151,10 @@ bool Eltwise::canFuseParent(const NodePtr& parentNode) const {
     if (parentNode->getType() == Type::Convert && parentNode->getOriginalInputPrecisionAtPort(0) == ov::element::f16 &&
         parentNode->getOriginalOutputPrecisionAtPort(0) == ov::element::f32) {
         // Loading f16 directly performs the same exact widening as the Convert node.
-        return dnnl::impl::cpu::x64::mayiuse(dnnl::impl::cpu::x64::avx2) &&
-               EltwiseJitExecutor::supports(m_attrs, inputShapes.front().getRank());
+        return EltwiseJitExecutor::supports(m_attrs,
+                                            inputShapes.front().getRank(),
+                                            parentNode->getOriginalInputPrecisions(),
+                                            {getOriginalOutputPrecisionAtPort(0)});
     }
 #    endif
     const auto isSuitableParentNode = [](const Node* parentNode) {
@@ -1175,12 +1173,6 @@ bool Eltwise::canFuseParent(const NodePtr& parentNode) const {
 }
 
 bool Eltwise::canFuseConvert(const NodePtr& convertNode) {
-#if defined(OPENVINO_ARCH_X86_64)
-    if (convertNode->getOriginalOutputPrecisionAtPort(0) == ov::element::f16 &&
-        !dnnl::impl::cpu::x64::mayiuse(dnnl::impl::cpu::x64::avx2)) {
-        return false;
-    }
-#endif
     if (none_of(convertNode->getOriginalOutputPrecisionAtPort(0),
                 ov::element::i8,
                 ov::element::u8,
