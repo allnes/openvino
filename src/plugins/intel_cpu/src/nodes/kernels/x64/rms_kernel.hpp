@@ -27,6 +27,7 @@ struct jit_rms_compile_params {
     size_t data_size = 0UL;
     float eps = 0.0F;
     size_t scale_size = 0UL;
+    float output_scale = 1.0F;
 };
 
 struct jit_rms_call_args {
@@ -103,6 +104,7 @@ private:
     std::unordered_map<size_t, std::unique_ptr<jit_emitter>> emitters;
     const std::vector<size_t> pool_aux_gpr_idxs = {static_cast<size_t>(rax.getIdx()), static_cast<size_t>(r9.getIdx())};
     const std::vector<size_t> pool_aux_vmm_idxs = {7};
+    const Vmm vmm_output_scale = Vmm(8);
 };
 
 }  // namespace ov::intel_cpu::kernel

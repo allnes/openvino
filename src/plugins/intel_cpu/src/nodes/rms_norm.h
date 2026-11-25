@@ -31,6 +31,7 @@ public:
         execute(strm);
     }
     void initSupportedPrimitiveDescriptors() override;
+    bool canFuse(const NodePtr& node) const override;
     void execute(const dnnl::stream& strm) override;
     void createPrimitive() override;
     static bool isSupportedOperation(const std::shared_ptr<const ov::Node>& op, std::string& errorMessage) noexcept;

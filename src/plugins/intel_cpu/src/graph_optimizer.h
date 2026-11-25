@@ -38,6 +38,7 @@ private:
     static void FuseMVNAndSimpleOperation(Graph& graph);
     static void FuseInterpolateAndSimpleOperation(Graph& graph);
     static void FuseNormalizeL2AndSimpleOperation(Graph& graph);
+    static void FuseRMSAndScalarMultiply(Graph& graph);
     static void FuseReduceAndSimpleOperation(Graph& graph);
     static void FuseGatherAndConvert(Graph& graph);
 

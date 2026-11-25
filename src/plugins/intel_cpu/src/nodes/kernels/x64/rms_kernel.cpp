@@ -192,6 +192,11 @@ void jit_rms_kernel<isa>::generate() {
         vmulss(xmm_rsqrt, xmm_rsqrt, xmm_tmp);
     }
     vbroadcastss(vmm_rsqrt, xmm_rsqrt);
+    if (m_jcp.output_scale != 1.F) {
+        mov(reg_tmp.cvt32(), float2int(m_jcp.output_scale));
+        vmovd(Xmm(vmm_output_scale.getIdx()), reg_tmp.cvt32());
+        vbroadcastss(vmm_output_scale, Xmm(vmm_output_scale.getIdx()));
+    }
     mov(reg_size, m_jcp.data_size / vec_size);
     mov(reg_src, reg_src_org);
     if (m_jcp.data_size >= vec_size) {
@@ -205,6 +210,11 @@ void jit_rms_kernel<isa>::generate() {
             if (m_jcp.scale_size != 1) {
                 load(vmm_tmp, reg_scale, ov::element::f32, vec_size, false);
                 vmulps(vmm_src, vmm_src, vmm_tmp);
+            }
+            if (m_jcp.output_scale != 1.F) {
+                // Match PowerStatic's scale*x + (+0), including signed zero.
+                uni_vpxor(vmm_tmp, vmm_tmp, vmm_tmp);
+                vfmadd132ps(vmm_src, vmm_tmp, vmm_output_scale);
             }
             store(reg_dst, vmm_src, m_jcp.dst_prc, vec_size);
 
@@ -224,6 +234,10 @@ void jit_rms_kernel<isa>::generate() {
         if (m_jcp.scale_size != 1) {
             load(vmm_tmp, reg_scale, ov::element::f32, m_jcp.data_size % vec_size, false);
             vmulps(vmm_src, vmm_src, vmm_tmp);
+        }
+        if (m_jcp.output_scale != 1.F) {
+            uni_vpxor(vmm_tmp, vmm_tmp, vmm_tmp);
+            vfmadd132ps(vmm_src, vmm_tmp, vmm_output_scale);
         }
         store(reg_dst, vmm_src, m_jcp.dst_prc, m_jcp.data_size % vec_size);
     }

@@ -198,6 +198,10 @@ void GraphOptimizer::ApplyCommonGraphOptimizations(Graph& graph) {
     FuseNormalizeL2AndSimpleOperation(graph);
     graph.RemoveDroppedNodes();
 
+    OV_ITT_SCOPE_NEXT(FIRST_INFERENCE, taskChain, "FuseRMSAndScalarMultiply");
+    FuseRMSAndScalarMultiply(graph);
+    graph.RemoveDroppedNodes();
+
     OV_ITT_SCOPE_NEXT(FIRST_INFERENCE, taskChain, "FuseReduceAndSimpleOperation");
     FuseReduceAndSimpleOperation(graph);
     graph.RemoveDroppedNodes();
@@ -2021,6 +2025,19 @@ void GraphOptimizer::FuseNormalizeL2AndSimpleOperation(Graph& graph) {
         }
 
         graph.DropNode(childNode);
+    }
+}
+
+void GraphOptimizer::FuseRMSAndScalarMultiply(Graph& graph) {
+    for (const auto& parent : graph.GetNodes()) {
+        if (parent->getType() != Type::RMS || parent->getChildEdges().size() != 1) {
+            continue;
+        }
+        const auto child = parent->getChildEdgeAt(0)->getChild();
+        if (parent->canFuse(child)) {
+            child->fuseInto(parent);
+            graph.DropNode(child);
+        }
     }
 }
 
