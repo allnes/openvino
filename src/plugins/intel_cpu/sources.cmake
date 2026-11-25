@@ -650,6 +650,8 @@ set(CPU_PLUGIN_SRCS
     ${CPU_SRC_DIR}/transformations/cpu_opset/common/pass/insert_convert_after_extension.hpp
     ${CPU_SRC_DIR}/transformations/cpu_opset/common/pass/move_readvalue_inputs_to_subgraph.cpp
     ${CPU_SRC_DIR}/transformations/cpu_opset/common/pass/move_readvalue_inputs_to_subgraph.hpp
+    ${CPU_SRC_DIR}/transformations/cpu_opset/common/pass/move_fc_scales_before_split.cpp
+    ${CPU_SRC_DIR}/transformations/cpu_opset/common/pass/move_fc_scales_before_split.hpp
     ${CPU_SRC_DIR}/transformations/cpu_opset/common/pass/ngram_fusion.cpp
     ${CPU_SRC_DIR}/transformations/cpu_opset/common/pass/ngram_fusion.hpp
     ${CPU_SRC_DIR}/transformations/cpu_opset/common/pass/permute_slice_n_interpolation.cpp

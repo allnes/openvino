@@ -160,6 +160,7 @@
 #include "transformations/cpu_opset/common/pass/clamp_bf16_scalar_constants.hpp"
 #include "transformations/cpu_opset/common/pass/disable_bf16_comp_cumsum_sin_gen.hpp"
 #include "transformations/cpu_opset/common/pass/insert_convert_after_extension.hpp"
+#include "transformations/cpu_opset/common/pass/move_fc_scales_before_split.hpp"
 #include "transformations/cpu_opset/common/pass/ngram_fusion.hpp"
 #include "transformations/cpu_opset/common/pass/permute_slice_n_interpolation.hpp"
 #include "transformations/cpu_opset/common/pass/stateful_sdpa_fusion.hpp"
@@ -1167,6 +1168,9 @@ void Transformations::PostLpt() {
                                  ov::pass::ActivationsScaling,
                                  config.activationsScaleFactor,
                                  config.inferencePrecision);
+    }
+    if (config.inferencePrecision == ov::element::f16) {
+        CPU_REGISTER_PASS_X64(postLPTPassManager, ov::intel_cpu::MoveFCScalesBeforeSplit);
     }
     CPU_REGISTER_PASS_COMMON(postLPTPassManager, ov::intel_cpu::DecomposeRMSNorm);
     CPU_SET_CALLBACK_COMMON(

@@ -748,9 +748,7 @@ void GraphOptimizer::FuseMultiplyAndAdd(Graph& graph) {
 }
 
 void GraphOptimizer::MergeEltwiseAndConvert(Graph& graph) {
-// The pass is enabled on arm platforms only, however it might be usefull for other platforms as well
-// It requires additional perf validation. Ticket: 163388
-#if !defined(OPENVINO_ARCH_ARM64)
+#if !defined(OPENVINO_ARCH_ARM64) && !defined(OPENVINO_ARCH_X86_64)
     return;
 #endif
     const auto& graphNodes = graph.GetNodes();
@@ -776,6 +774,17 @@ void GraphOptimizer::MergeEltwiseAndConvert(Graph& graph) {
             parent++;
             continue;
         }
+
+#if defined(OPENVINO_ARCH_X86_64)
+        // A narrowing store preserves the original conversion. Widening here would remove
+        // the intermediate rounding at the Eltwise output.
+        if (parentNode->getOriginalOutputPrecisionAtPort(0) != ov::element::f32 ||
+            childNode->getOriginalInputPrecisionAtPort(0) != ov::element::f32 ||
+            childNode->getOriginalOutputPrecisionAtPort(0) != ov::element::f16) {
+            parent++;
+            continue;
+        }
+#endif
 
         auto* const eltwise = dynamic_cast<ov::intel_cpu::node::Eltwise*>(parentNode.get());
         if (!eltwise->canFuseConvert(childNode)) {
@@ -861,7 +870,8 @@ void GraphOptimizer::MergeConvertAndEltwise(Graph& graph) {
             graph.CreateEdge(parent, child, inNum, outNum);
         }
 
-        childNode->setOriginalInputPrecisionAtPort(0, parentNode->getOriginalInputPrecisionAtPort(0));
+        childNode->setOriginalInputPrecisionAtPort(edge->getOutputNum(),
+                                                   parentNode->getOriginalInputPrecisionAtPort(0));
         childNode->addOriginalLayer(parentNode->getOriginalLayers());
         graph.DropNode(parentNode);
     }
