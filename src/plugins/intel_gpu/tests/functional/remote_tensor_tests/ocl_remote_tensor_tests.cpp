@@ -2874,6 +2874,54 @@ TEST(RemoteTensor, smoke_RejectRoiCopyToInsufficientShape) {
     EXPECT_EQ(expanded_output, (std::array<uint8_t, 4>{22, 33, 66, 77}));
 }
 
+TEST(RemoteTensor, smoke_CopyRoiWithStridedHostTensor) {
+    ov::Core core;
+    auto context = core.get_default_context(ov::test::utils::DEVICE_GPU);
+    const auto type = ov::element::u8;
+    const ov::Shape shape{2, 2};
+    const ov::Strides host_strides{4, 2};
+    const ov::Shape owner_shape{2, 4};
+    std::array<uint8_t, 8> initial{};
+    auto owner = context.create_tensor(type, owner_shape);
+    owner.copy_from(ov::Tensor(type, owner_shape, initial.data()));
+    ov::RemoteTensor roi(owner, {0, 1}, {2, 3});
+
+    std::array<uint8_t, 8> strided_input{11, 99, 13, 99, 21, 99, 23, 99};
+    roi.copy_from(ov::Tensor(type, shape, strided_input.data(), host_strides));
+    std::array<uint8_t, 4> dense_output{};
+    ov::Tensor dense(type, shape, dense_output.data());
+    roi.copy_to(dense);
+    EXPECT_EQ(dense_output, (std::array<uint8_t, 4>{11, 13, 21, 23}));
+
+    std::array<uint8_t, 4> dense_input{31, 33, 41, 43};
+    roi.copy_from(ov::Tensor(type, shape, dense_input.data()));
+    std::array<uint8_t, 8> strided_output{};
+    strided_output.fill(99);
+    ov::Tensor strided(type, shape, strided_output.data(), host_strides);
+    roi.copy_to(strided);
+    EXPECT_EQ(strided_output, (std::array<uint8_t, 8>{31, 99, 33, 99, 41, 99, 43, 99}));
+}
+
+TEST(RemoteTensor, smoke_CopyEmptyRoiWithoutHostBuffer) {
+    ov::Core core;
+    auto context = core.get_default_context(ov::test::utils::DEVICE_GPU);
+    const auto type = ov::element::u8;
+    const ov::Shape shape{2, 2};
+    std::array<uint8_t, 4> initial{11, 13, 21, 23};
+    auto owner = context.create_tensor(type, shape);
+    owner.copy_from(ov::Tensor(type, shape, initial.data()));
+    ov::RemoteTensor roi(owner, {0, 1}, {2, 1});
+
+    ov::Tensor empty_host(type, {2, 0}, static_cast<void*>(nullptr));
+    EXPECT_NO_THROW(roi.copy_from(empty_host));
+    EXPECT_NO_THROW(roi.copy_to(empty_host));
+
+    std::array<uint8_t, 4> output{};
+    ov::Tensor host(type, shape, output.data());
+    owner.copy_to(host);
+    EXPECT_EQ(output, initial);
+}
+
 struct TestParams {
     ov::Shape src_shape;
     ov::Shape dst_shape;

@@ -98,30 +98,30 @@ void copy_roi_recursively(const MemWrapper& src_mem,
                           const ov::Strides& src_strides,
                           const ov::Strides& dst_strides,
                           const ov::Strides& roi_strides) {
-    if (axis == roi_shape.size() - 1) {
-        // Copy the innermost dimension
-        const auto size = roi_strides[axis] * roi_shape[axis];
-        src_mem.copy_to(dst_mem, src_offset, dst_offset, size);
-    } else {
-        // Check if the current dimension and all inner dimensions can be copied as a single chunk
-        bool can_copy_as_chunk = true;
-        for (size_t i = axis; i < roi_shape.size(); i++) {
-            if (src_strides[i] != roi_strides[i] || dst_strides[i] != roi_strides[i]) {
-                can_copy_as_chunk = false;
-                break;
-            }
-        }
+    if (axis == roi_shape.size()) {
+        src_mem.copy_to(dst_mem, src_offset, dst_offset, roi_strides.back());
+        return;
+    }
 
-        if (can_copy_as_chunk) {
-            const auto chunk_size = roi_strides[axis] * roi_shape[axis];
-            src_mem.copy_to(dst_mem, src_offset, dst_offset, chunk_size);
-        } else {
-            for (size_t i = 0; i < roi_shape[axis]; i++) {
-                const auto src_offset_new = src_offset + i * src_strides[axis];
-                const auto dst_offset_new = dst_offset + i * dst_strides[axis];
-                copy_roi_recursively(src_mem, dst_mem, axis + 1, src_offset_new, dst_offset_new, roi_shape, src_strides, dst_strides, roi_strides);
-            }
+    // Check if the current dimension and all inner dimensions can be copied as a single chunk.
+    bool can_copy_as_chunk = true;
+    for (size_t i = axis; i < roi_shape.size(); i++) {
+        if (src_strides[i] != roi_strides[i] || dst_strides[i] != roi_strides[i]) {
+            can_copy_as_chunk = false;
+            break;
         }
+    }
+
+    if (can_copy_as_chunk) {
+        const auto chunk_size = roi_strides[axis] * roi_shape[axis];
+        src_mem.copy_to(dst_mem, src_offset, dst_offset, chunk_size);
+        return;
+    }
+
+    for (size_t i = 0; i < roi_shape[axis]; i++) {
+        const auto src_offset_new = src_offset + i * src_strides[axis];
+        const auto dst_offset_new = dst_offset + i * dst_strides[axis];
+        copy_roi_recursively(src_mem, dst_mem, axis + 1, src_offset_new, dst_offset_new, roi_shape, src_strides, dst_strides, roi_strides);
     }
 }
 
@@ -272,10 +272,15 @@ void RemoteTensorImpl::copy_to(const std::shared_ptr<ov::ITensor>& dst,
                                const ov::Shape& roi_shape) const {
     validate_and_check_shapes(shared_from_this(), dst, roi_shape);
 
-    auto& stream = m_context->get_engine().get_service_stream();
-    auto dst_remote_tensor = std::dynamic_pointer_cast<RemoteTensorImpl>(dst);
-    auto shape = roi_shape.empty() ? get_shape() : roi_shape;
+    const auto dst_remote_tensor = std::dynamic_pointer_cast<RemoteTensorImpl>(dst);
+    OPENVINO_ASSERT(dst_remote_tensor || !std::dynamic_pointer_cast<ov::IRemoteTensor>(dst), "[GPU] Unsupported Remote Tensor type");
 
+    const auto shape = roi_shape.empty() ? get_shape() : roi_shape;
+    if (std::find(shape.begin(), shape.end(), size_t{0}) != shape.end()) {
+        return;
+    }
+
+    auto& stream = m_context->get_engine().get_service_stream();
     // Sub-byte types and scalars use a flat contiguous copy.
     if (m_element_type.bitwidth() < 8 || shape.empty()) {
         const auto byte_size = get_byte_size();
@@ -284,7 +289,6 @@ void RemoteTensorImpl::copy_to(const std::shared_ptr<ov::ITensor>& dst,
             auto dst_mem = MemWrapper(stream, dst_remote_tensor->get_memory(), nullptr);
             src_mem.copy_to(dst_mem, src_offset, dst_offset, byte_size);
         } else {
-            OPENVINO_ASSERT(!std::dynamic_pointer_cast<ov::IRemoteTensor>(dst), "[GPU] Unsupported Remote Tensor type");
             auto src_mem = MemWrapper(stream, get_memory(), nullptr);
             auto dst_mem = MemWrapper(stream, nullptr, dst->data());
             src_mem.copy_to(dst_mem, src_offset, dst_offset, byte_size);
@@ -307,8 +311,6 @@ void RemoteTensorImpl::copy_to(const std::shared_ptr<ov::ITensor>& dst,
                                << src_offset << ", dst_offset=" << dst_offset << ", roi_shape=" << shape << ", src_shape=" << get_shape()
                                << ", dst_shape=" << dst->get_shape() << "\n";
 
-        OPENVINO_ASSERT(!std::dynamic_pointer_cast<ov::IRemoteTensor>(dst), "[GPU] Unsupported Remote Tensor type");
-
         auto src_mem = MemWrapper(stream, get_memory(), nullptr);
         auto dst_mem = MemWrapper(stream, nullptr, dst->data());
 
@@ -321,11 +323,16 @@ void RemoteTensorImpl::copy_from(const std::shared_ptr<const ov::ITensor>& src,
                                  size_t dst_offset,
                                  const ov::Shape& roi_shape) {
     validate_and_check_shapes(src, shared_from_this(), roi_shape);
-    auto shape = roi_shape.empty() ? get_shape() : roi_shape;
+
+    const auto src_remote_tensor = std::dynamic_pointer_cast<const RemoteTensorImpl>(src);
+    OPENVINO_ASSERT(src_remote_tensor || !std::dynamic_pointer_cast<const ov::IRemoteTensor>(src), "[GPU] Unsupported Remote Tensor type");
+
+    const auto shape = roi_shape.empty() ? get_shape() : roi_shape;
+    if (std::find(shape.begin(), shape.end(), size_t{0}) != shape.end()) {
+        return;
+    }
 
     auto& stream = m_context->get_engine().get_service_stream();
-    auto src_remote_tensor = std::dynamic_pointer_cast<const RemoteTensorImpl>(src);
-
     // Sub-byte types and scalars use a flat contiguous copy.
     if (m_element_type.bitwidth() < 8 || shape.empty()) {
         const auto byte_size = get_byte_size();
@@ -334,7 +341,6 @@ void RemoteTensorImpl::copy_from(const std::shared_ptr<const ov::ITensor>& src,
             auto dst_mem = MemWrapper(stream, get_memory(), nullptr);
             src_mem.copy_to(dst_mem, src_offset, dst_offset, byte_size);
         } else {
-            OPENVINO_ASSERT(!std::dynamic_pointer_cast<const ov::IRemoteTensor>(src), "[GPU] Unsupported Remote Tensor type");
             auto src_mem = MemWrapper(stream, nullptr, const_cast<void*>(src->data()));
             auto dst_mem = MemWrapper(stream, get_memory(), nullptr);
             src_mem.copy_to(dst_mem, src_offset, dst_offset, byte_size);
@@ -356,8 +362,6 @@ void RemoteTensorImpl::copy_from(const std::shared_ptr<const ov::ITensor>& src,
         GPU_DEBUG_TRACE_DETAIL << "Copying from host tensor to RemoteTensor (" << get_memory()->get_allocation_type() << "), src_offset="
                                << src_offset << ", dst_offset=" << dst_offset << ", roi_shape=" << shape << ", src_shape" << src->get_shape()
                                << ", dst_shape=" << get_shape() << "\n";
-
-        OPENVINO_ASSERT(!std::dynamic_pointer_cast<const ov::IRemoteTensor>(src), "[GPU] Unsupported Remote Tensor type");
 
         // MemWrapper use tensor pointer as read-only, so const_cast is safe here
         auto src_mem = MemWrapper(stream, nullptr, const_cast<void*>(src->data()));
