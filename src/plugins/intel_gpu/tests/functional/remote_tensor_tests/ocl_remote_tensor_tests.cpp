@@ -5,6 +5,7 @@
 #ifdef OV_GPU_WITH_OCL_RT
 
 #include <algorithm>
+#include <array>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -2840,6 +2841,37 @@ TEST(RemoteTensor, smoke_EmptyRoiTensor) {
     OV_EXPECT_THROW_HAS_SUBSTRING(ov::RemoteTensor(empty_remote_tensor, ov::Coordinate{}, ov::Coordinate{}),
                                   ov::Exception,
                                   "Cannot create RoiRemoteTensor on top of empty tensor");
+}
+
+TEST(RemoteTensor, smoke_RejectRoiCopyToInsufficientShape) {
+    ov::Core core;
+    auto context = core.get_default_context(ov::test::utils::DEVICE_GPU);
+    const auto type = ov::element::u8;
+    const ov::Shape shape{2, 4};
+    std::array<uint8_t, 8> input{11, 22, 33, 44, 55, 66, 77, 88};
+    auto source = context.create_tensor(type, shape);
+    source.copy_from(ov::Tensor(type, shape, input.data()));
+    ov::RemoteTensor roi(source, {0, 1}, {2, 3});
+
+    const std::array<uint8_t, 8> initial{99, 99, 99, 99, 99, 99, 99, 99};
+    auto output = initial;
+    // Keep enough backing storage while testing rejection of the logical shape.
+    ov::Tensor smaller(type, {2, 1}, output.data());
+    OV_EXPECT_THROW_HAS_SUBSTRING(roi.copy_to(smaller), ov::Exception, "does not fit destination tensor shape");
+    EXPECT_EQ(output, initial);
+
+    ov::Tensor larger(type, shape, output.data());
+    roi.copy_to(larger);
+    EXPECT_EQ(larger.get_shape(), shape);
+    EXPECT_EQ(output, (std::array<uint8_t, 8>{22, 33, 99, 99, 66, 77, 99, 99}));
+
+    const ov::Shape expanded_shape{1, 2, 2};
+    roi.set_shape(expanded_shape);
+    std::array<uint8_t, 4> expanded_output{};
+    ov::Tensor expanded(type, expanded_shape, expanded_output.data());
+    roi.copy_to(expanded);
+    EXPECT_EQ(expanded.get_shape(), expanded_shape);
+    EXPECT_EQ(expanded_output, (std::array<uint8_t, 4>{22, 33, 66, 77}));
 }
 
 struct TestParams {

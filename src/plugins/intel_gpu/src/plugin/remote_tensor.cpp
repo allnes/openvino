@@ -2,17 +2,19 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 
-#include "intel_gpu/plugin/common_utils.hpp"
-#include "intel_gpu/plugin/remote_context.hpp"
 #include "intel_gpu/plugin/remote_tensor.hpp"
+
+#include <algorithm>
+#include <cstdint>
+#include <memory>
+
+#include "intel_gpu/plugin/common_utils.hpp"
 #include "intel_gpu/plugin/plugin.hpp"
+#include "intel_gpu/plugin/remote_context.hpp"
 #include "intel_gpu/runtime/itt.hpp"
 #include "intel_gpu/runtime/memory_caps.hpp"
 #include "openvino/core/memory_util.hpp"
 #include "openvino/runtime/intel_gpu/remote_properties.hpp"
-
-#include <cstdint>
-#include <memory>
 
 template <>
 struct std::hash<ov::intel_gpu::SharedBufferHandle> {
@@ -134,7 +136,21 @@ void copy_roi(const MemWrapper& src_mem,
               const ov::Shape& dst_shape,
               const ov::Shape& roi_shape) {
     const size_t start_axis = 0;
-    copy_roi_recursively(src_mem, dst_mem, start_axis, src_offset, dst_offset, roi_shape, src_strides, dst_strides, roi_strides);
+    const auto copy = [&](const ov::Strides& src, const ov::Strides& dst) {
+        copy_roi_recursively(src_mem, dst_mem, start_axis, src_offset, dst_offset, roi_shape, src, dst, roi_strides);
+    };
+    if (src_shape.size() == roi_shape.size() && dst_shape.size() == roi_shape.size()) {
+        copy(src_strides, dst_strides);
+        return;
+    }
+
+    // A leading singleton ROI axis always uses index zero.
+    const auto align_strides = [&roi_shape](const ov::Strides& strides) {
+        ov::Strides aligned(roi_shape.size() - strides.size(), 0);
+        aligned.insert(aligned.end(), strides.begin(), strides.end());
+        return aligned;
+    };
+    copy(align_strides(src_strides), align_strides(dst_strides));
 }
 
 void validate_and_check_shapes(const std::shared_ptr<const ov::ITensor>& src, const std::shared_ptr<ov::ITensor>& dst, const ov::Shape& roi_shape) {
@@ -154,7 +170,25 @@ void validate_and_check_shapes(const std::shared_ptr<const ov::ITensor>& src, co
         if (shape != dst->get_shape()) {
             dst->set_shape(shape);
         }
+        return;
     }
+
+    const auto contains_roi = [&roi_shape](const ov::Shape& shape) {
+        if (shape.size() > roi_shape.size()) {
+            return false;
+        }
+        const auto aligned_begin = roi_shape.end() - shape.size();
+        return std::all_of(roi_shape.begin(),
+                           aligned_begin,
+                           [](size_t dim) {
+                               return dim == 1;
+                           }) &&
+               std::equal(aligned_begin, roi_shape.end(), shape.begin(), [](size_t roi_dim, size_t dim) {
+                   return roi_dim <= dim;
+               });
+    };
+    OPENVINO_ASSERT(contains_roi(src->get_shape()), "[GPU] ROI shape ", roi_shape, " does not fit source tensor shape ", src->get_shape());
+    OPENVINO_ASSERT(contains_roi(dst->get_shape()), "[GPU] ROI shape ", roi_shape, " does not fit destination tensor shape ", dst->get_shape());
 }
 }  // namespace
 
